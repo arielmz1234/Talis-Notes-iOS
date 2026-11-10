@@ -250,6 +250,8 @@ struct NotebookView: View {
             )
             .environment(\.tali, barColors)
             .presentationCompactAdaptation(.popover)
+            // The menu's own surface (Android's white or mist menu), not the system's popover colour.
+            .presentationBackground(barColors.surface)
           }
       }
     }

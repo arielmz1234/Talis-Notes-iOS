@@ -316,6 +316,7 @@ struct QuickSizes: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             .frame(width: 300)
             .presentationCompactAdaptation(.popover)
+            .presentationBackground(c.surface)
           }
       }
     }

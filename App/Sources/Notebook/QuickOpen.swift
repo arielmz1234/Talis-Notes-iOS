@@ -46,6 +46,7 @@ struct QuickOpen: View {
       .frame(minWidth: 260, maxWidth: 340)
       .environment(\.tali, c)
       .presentationCompactAdaptation(.popover)
+      .presentationBackground(c.surface)
     }
   }
 }
