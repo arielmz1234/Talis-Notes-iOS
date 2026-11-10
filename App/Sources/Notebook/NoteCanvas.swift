@@ -524,6 +524,26 @@ struct NoteCanvas: UIViewRepresentable {
       if let json = try? String(data: JSONEncoder().encode(vp), encoding: .utf8) {
         try? parent.db.run("UPDATE notebooks SET viewport=? WHERE id=?", [.text(json), .text(parent.notebook.id)])
       }
+      saveThumbnail()
+    }
+
+    /// The library card's preview: the top of page 1, or the writing last seen on an endless canvas.
+    private func saveThumbnail() {
+      guard let canvas, let pages else { return }
+      let region: CGRect
+      if paged {
+        region = Thumbnail.previewRegion(CGRect(layout.rect(0)))
+      } else {
+        let z = max(canvas.zoomScale, 0.01)
+        let visible = CGRect(x: canvas.contentOffset.x / z, y: canvas.contentOffset.y / z, width: canvas.bounds.width / z, height: canvas.bounds.height / z)
+        let seen = canvas.drawing.bounds.intersection(visible)
+        let around = seen.isNull || seen.isEmpty ? visible : seen.insetBy(dx: -48, dy: -48)
+        var w = max(around.width, around.height * Thumbnail.cardAspect, 560)
+        w = min(w, visible.width * 1.5)
+        let h = w / Thumbnail.cardAspect
+        region = CGRect(x: around.midX - w / 2, y: around.midY - h / 2, width: w, height: h)
+      }
+      Thumbnail.save(id: parent.notebook.id, region: region, pages: pages.pages, drawing: canvas.drawing, db: parent.db)
     }
   }
 }

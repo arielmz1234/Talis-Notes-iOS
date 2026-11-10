@@ -209,7 +209,12 @@ struct NotebookCard: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       ZStack(alignment: .topLeading) {
-        PaperPreview(style: notebook.paper, landscape: notebook.landscape, dark: notebook.dark, zoom: 1)
+        if let thumb = ThumbnailCache.shared.image(id: notebook.id, version: notebook.thumbVersion) {
+          // Its first page with the writing on it, from the top (Android's crop, top centre).
+          Color.clear.overlay(alignment: .top) { Image(uiImage: thumb).resizable().scaledToFill() }.clipped()
+        } else {
+          PaperPreview(style: notebook.paper, landscape: notebook.landscape, dark: notebook.dark, zoom: 1)
+        }
         if notebook.kind == .notebook {
           Rectangle().fill(Color(argb: notebook.cover)).frame(width: 9)
           Canvas { ctx, size in
