@@ -24,6 +24,25 @@ struct NewNotebookCard: View {
     Binding(get: { PaperStyle(rawValue: paperRaw) ?? .GRID }, set: { paperRaw = $0.rawValue })
   }
 
+  private var pagesChoice: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      SectionLabel(text: L("pages"))
+      Segmented(options: [true, false], selected: $paged) { $0 ? L("a4_pages") : L("endless") }
+    }
+  }
+
+  /// Fades out for an endless canvas but keeps its place, so nothing below jumps.
+  private var orientationChoice: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      SectionLabel(text: L("orientation"))
+      Segmented(options: [false, true], selected: Binding(get: { landscape }, set: { if paged { landscape = $0 } })) {
+        $0 ? L("landscape") : L("portrait")
+      }
+    }
+    .opacity(paged ? 1 : 0)
+    .animation(.easeOut(duration: paged ? 0.2 : 0.14), value: paged)
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       ScrollView {
@@ -47,21 +66,18 @@ struct NewNotebookCard: View {
           Spacer().frame(height: 14)
           SectionLabel(text: L("paper"))
           Spacer().frame(height: 4)
-          PaperPicker(style: paper, tileWidth: 80, perRow: 7, dark: dark || c.isDark)
+          PaperPicker(style: paper, tileWidth: PhoneWriting.onPhone ? 62 : 80, perRow: 7, dark: dark || c.isDark)
           Spacer().frame(height: 12)
-          HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-              SectionLabel(text: L("pages"))
-              Segmented(options: [true, false], selected: $paged) { $0 ? L("a4_pages") : L("endless") }
+          // Side by side, or one under the other on a narrow phone.
+          ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 14) {
+              pagesChoice
+              orientationChoice
             }
-            VStack(alignment: .leading, spacing: 6) {
-              SectionLabel(text: L("orientation"))
-              Segmented(options: [false, true], selected: Binding(get: { landscape }, set: { if paged { landscape = $0 } })) {
-                $0 ? L("landscape") : L("portrait")
-              }
+            VStack(alignment: .leading, spacing: 10) {
+              pagesChoice
+              orientationChoice
             }
-            .opacity(paged ? 1 : 0)
-            .animation(.easeOut(duration: paged ? 0.2 : 0.14), value: paged)
           }
           Spacer().frame(height: 6)
           Text(L(!paged ? "one_page_that_goes_on_forever" : (landscape ? "wide_a4_pages_on_their_side" : "upright_a4_pages_one_under_the")))

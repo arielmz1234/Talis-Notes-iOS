@@ -15,8 +15,13 @@ struct DialogOverlay<Card: View>: View {
         .onTapGesture(perform: onClose)
         .transition(.opacity)
         .accessibilityHidden(true)
-      card
-        .padding(24)
+      GeometryReader { geo in
+        card
+          // Never wider than the screen, whatever its contents would like.
+          .frame(maxWidth: max(geo.size.width - 32, 0))
+          .frame(width: geo.size.width, height: geo.size.height)
+      }
+      .padding(.vertical, 24)
         .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.96)), removal: .opacity.combined(with: .scale(scale: 0.98))))
     }
     .accessibilityAddTraits(.isModal)

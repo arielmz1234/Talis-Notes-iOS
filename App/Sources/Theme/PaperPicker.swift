@@ -18,7 +18,8 @@ struct PaperPicker: View {
   static let folded: [PaperStyle] = [.BLANK, .LINES, .GRID]
 
   private var fit: Int {
-    guard width > 0 else { return max(2, perRow) }
+    // Until it has measured its width it shows few tiles, so it never pushes its card wider than the screen.
+    guard width > 0 else { return 3 }
     return min(max(Int((width + 4) / (tileWidth + 4)), 2), max(2, perRow))
   }
 
