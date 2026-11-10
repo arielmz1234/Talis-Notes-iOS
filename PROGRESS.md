@@ -106,18 +106,38 @@ Later in session 1 (owner's requests, 10 Nov 2026 evening):
   - `EraserPanel` (whole strokes / precise, size);
   - page and zoom chips (go to page, tap zoom to fit).
 
+Night of 10–11 Nov 2026 (same session, continuing):
+- Seen in screenshots:
+  - the toolbar and pen panel match Android on iPad, light and dark (run 42901014073);
+  - the pen panel fits an iPhone (run 42906901522);
+  - the ⋯ menu (`Notebook/MoreMenu.swift`), readable in dark mode once popovers got the app's
+    surface colour (run 42913922426);
+  - quick open beside Back (`Notebook/QuickOpen.swift`);
+  - the new-notebook card on iPad (`Theme/PaperPicker.swift`, Android's paper picker with More);
+  - library cards showing the first page with its writing (`Notebook/Thumbnail.swift`, saved as
+    `thumbs/<id>.png` when a notebook closes).
+- Built, not yet seen in a screenshot (run 42919352781 has them):
+  - our own lasso (`Notebook/Selection.swift`): a dashed loop picks up whatever it touches
+    (`Lasso.touchesPath`), a dashed frame, drag inside to move;
+  - the selection menu (`Notebook/SelectionMenu.swift`): Copy, Cut, Duplicate, Box around, Delete;
+  - hold 0.6 s on the page with something copied → Paste bubble;
+  - the hint line;
+  - the new-notebook card fitting an iPhone.
+- Fixed: undo bringing back erased or deleted strokes stored them with the pen in use (wrong colour
+  or type). The coordinator now keeps `archive` (every stroke seen, by key) and `pending` (strokes
+  the app adds itself), and `sync` uses them.
+- Ported into the ⋯ menu: Whole page, Paper, Dark paper, Draw with finger (Auto/On/Off → PencilKit
+  drawingPolicy), Tap 2 fingers to undo and 3 to redo, Write between pages, Full screen, View only
+  (tablets keep a `viewOnly` list, as Android's `AppSettings.viewOnly`).
+
 Next (in this order):
-- Check the screenshots of the toolbar, panels, dialogs and Select mode (light, dark, iPhone).
-- Notebook, still missing compared with Android (`C:/dev/Talis-Notes/tools/emulator/shots/nb.png`):
-  - the ⋯ menu (paper, dark paper, pages overview, endless/pages, export PDF);
-  - quick open (recent notebooks), the lasso panel and our own selection menu
-    (copy, cut, duplicate, delete, colour, thickness…);
-  - fill, laser, shapes (with hold-to-shape), picture/camera/PDF insert, voice memo, typed text;
-  - two-finger undo / three-finger redo; line styles (dashes);
-  - the highlighter's straight lines and square tip.
-  Port each from its Android code with its behaviour.
-- New-notebook card: compare with Android's `NewNotebookDialog` (`ui/library/Dialogs.kt`).
-- Real page thumbnails on cards (render the first page with its strokes).
+- Check run 42919352781's screenshots: `4d-lasso` (selection frame and menu), iPhone new notebook.
+- Selection menu's ⋯ (Colour, Thickness, to front/back, mirror, lock); the resize chip, the move
+  chip and the rotate handle on the selection frame; the lasso panel (Lasso / Free form,
+  Screenshot, Pick up locked items).
+- Pages overview (⋯ menu › Pages), Endless canvas switch, Export PDF.
+- Fill, laser, shapes (with hold-to-shape), picture/camera/PDF insert, voice memo, typed text; line
+  styles (dashes); the highlighter's straight lines and square tip.
 - Shapes and pictures from Android show under the writing; typed text and "param" designs don't yet.
 - iCloud (switched off in the free-signing build), then Google Drive.
 
