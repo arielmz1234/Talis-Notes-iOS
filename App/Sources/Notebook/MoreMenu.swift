@@ -23,6 +23,7 @@ struct MoreMenu: View {
   @Binding var smartUndo: Bool
   @Binding var between: Bool
   @Binding var fullScreen: Bool
+  var onPages: () -> Void = {}
   var onFit: () -> Void
   var onViewOnly: () -> Void
   @Environment(\.tali) private var c
@@ -30,6 +31,7 @@ struct MoreMenu: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 6) {
+        if paged { tile("book.pages", L("pages"), action: onPages) }
         tile("arrow.up.left.and.arrow.down.right", paged ? L("whole_page") : L("everything"), action: onFit)
       }
       Text(L("paper").uppercased()).font(TaliType.labelSmall).tracking(0.66).foregroundStyle(c.inkFaint)

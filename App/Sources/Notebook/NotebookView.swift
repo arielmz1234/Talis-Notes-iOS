@@ -49,6 +49,8 @@ struct NotebookView: View {
   @State private var pasteOffer: CGPoint?
   @State private var hint: String?
   @State private var hintTask: Task<Void, Never>?
+  @State private var bridge = CanvasBridge()
+  @State private var showPages = false
   /// Draw with finger: -1 Auto, 0 off, 1 on (app-wide, as on Android).
   @AppStorage("fingerDraws") private var fingerDrawsRaw = -1
   @AppStorage("smartUndo") private var smartUndo = true
@@ -63,6 +65,7 @@ struct NotebookView: View {
         NoteCanvas(
           notebook: notebook, db: lib.db, tool: tool, pens: pens, viewOnly: viewing,
           settings: CanvasSettings(paper: paper, dark: dark, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between),
+          bridge: bridge,
           eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize)),
           onUndoState: { u, r in
             canUndo = u
@@ -154,6 +157,19 @@ struct NotebookView: View {
           Color.clear.contentShape(Rectangle()).ignoresSafeArea()
             .onTapGesture { withAnimation(.easeOut(duration: 0.12)) { pasteOffer = nil } }
           PasteBubble(at: at) { command = .paste }.ignoresSafeArea()
+        }
+        if showPages {
+          ZStack {
+            c.scrim.ignoresSafeArea().onTapGesture { withAnimation(.easeOut(duration: 0.16)) { showPages = false } }
+            PagesOverview(
+              count: pageCount, current: page, bridge: bridge,
+              onGo: { command = .goToPage($0) },
+              onAdd: { command = .addPage },
+              onDelete: { command = .deletePage($0) },
+              onClose: { withAnimation(.easeOut(duration: 0.16)) { showPages = false } }
+            )
+          }
+          .transition(.opacity)
         }
         if let hint {
           VStack {
@@ -271,6 +287,10 @@ struct NotebookView: View {
               paged: notebook.pages != nil, paper: $paper, dark: $dark,
               fingerDraws: Binding(get: { fingerDraws }, set: { fingerDrawsRaw = $0 == nil ? -1 : ($0! ? 1 : 0) }),
               smartUndo: $smartUndo, between: $between, fullScreen: $fullScreen,
+              onPages: {
+                moreOpen = false
+                withAnimation(Ease.outStrong(duration: 0.24)) { showPages = true }
+              },
               onFit: {
                 moreOpen = false
                 command = .fitZoom

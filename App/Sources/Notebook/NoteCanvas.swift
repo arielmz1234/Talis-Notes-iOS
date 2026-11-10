@@ -121,6 +121,8 @@ struct NoteCanvas: UIViewRepresentable {
   var pens: [PenSlot]
   var viewOnly = false
   var settings: CanvasSettings
+  /// Lets the notebook screen ask for page pictures.
+  var bridge: CanvasBridge? = nil
   var eraser = EraserSettings()
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
@@ -156,6 +158,7 @@ struct NoteCanvas: UIViewRepresentable {
     }
     c.applied = settings
     c.installSelection(on: v)
+    bridge?.coordinator = c
     v.minimumZoomScale = 0.3
     v.maximumZoomScale = 6
     v.showsVerticalScrollIndicator = false
@@ -364,6 +367,7 @@ struct NoteCanvas: UIViewRepresentable {
       case .thickenSelection(let v): thickenSelection(v)
       case .mirrorSelection(let h): mirrorSelection(horizontal: h)
       case .arrangeSelection(let f): arrangeSelection(toFront: f)
+      case .deletePage(let i): deletePage(i)
       case .goToPage(let i):
         let target = min(max(i, 0), pageCount - 1)
         let r = layout.rect(target)
@@ -594,6 +598,7 @@ enum CanvasCommand: Equatable {
   case undo, redo, addPage, fitZoom
   case copySelection, cutSelection, duplicateSelection, deleteSelection, boxSelection, paste
   case recolourSelection(UInt32), thickenSelection(Float), mirrorSelection(Bool), arrangeSelection(Bool)
+  case deletePage(Int)
   case goToPage(Int)
 }
 
