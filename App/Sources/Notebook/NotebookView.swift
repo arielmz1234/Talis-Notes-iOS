@@ -83,13 +83,15 @@ struct NotebookView: View {
 
   /// In dark mode the bars over a white page are the soft mist, as on Android.
   private var barColors: TaliColors {
-    scheme == .dark && !notebook.dark ? .lilacMist : (scheme == .dark ? .lilacDark : .lilacLight)
+    let f = ColorTheme.current
+    return scheme == .dark && !notebook.dark ? f.mist : (scheme == .dark ? f.dark : f.light)
   }
 
   private var topBar: some View {
-    HStack(spacing: 10) {
+    let bars = barColors
+    return     HStack(spacing: 10) {
       Button(action: onBack) {
-        Image(systemName: "chevron.backward").font(.system(size: 19, weight: .semibold)).foregroundStyle(c.ink)
+        Image(systemName: "chevron.backward").font(.system(size: 19, weight: .semibold)).foregroundStyle(bars.ink)
           .frame(width: 48, height: 48).cloudSurface(radius: 24, crown: .little, shadowDepth: 4)
       }
       .accessibilityLabel(L("back"))
@@ -100,9 +102,9 @@ struct NotebookView: View {
         Button { command = .redo } label: { Image(systemName: "arrow.uturn.forward").frame(width: 44, height: 48) }
           .disabled(!canRedo).accessibilityLabel(L("redo"))
       }
-      .font(.system(size: 17, weight: .semibold)).foregroundStyle(c.ink)
+      .font(.system(size: 17, weight: .semibold)).foregroundStyle(bars.ink)
       .padding(.horizontal, 4).cloudSurface(radius: 24, crown: .softEdge, shadowDepth: 4)
-      Text(notebook.title).font(TaliFont.body(16, .semibold)).foregroundStyle(c.ink).lineLimit(1)
+      Text(notebook.title).font(TaliFont.body(16, .semibold)).foregroundStyle(bars.ink).lineLimit(1)
         .padding(.horizontal, 16).frame(height: 48).cloudSurface(radius: 24, crown: .softEdge, shadowDepth: 4)
         .frame(maxWidth: 260, alignment: .leading)
     }

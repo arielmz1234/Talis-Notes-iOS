@@ -159,11 +159,48 @@ enum TaliFont {
   }
 }
 
-/// Picks light or dark colours from the system's colour scheme.
+/// The colour families (Settings › Colours), as on Android: Lilac (the original), Sky, Sage, Peach.
+/// Each has a light and a dark look, and a soft mist for a notebook's bars in dark mode on white paper.
+enum ColorTheme: String, CaseIterable, Identifiable {
+  case LILAC, SKY, SAGE, PEACH
+  var id: String { rawValue }
+
+  var light: TaliColors {
+    switch self {
+    case .LILAC: .lilacLight
+    case .SKY: .skyLight
+    case .SAGE: .sageLight
+    case .PEACH: .peachLight
+    }
+  }
+  var dark: TaliColors {
+    switch self {
+    case .LILAC: .lilacDark
+    case .SKY: .skyDark
+    case .SAGE: .sageDark
+    case .PEACH: .peachDark
+    }
+  }
+  var mist: TaliColors {
+    switch self {
+    case .LILAC: .lilacMist
+    case .SKY: .skyMist
+    case .SAGE: .sageMist
+    case .PEACH: .peachMist
+    }
+  }
+  var nameKey: String { "colours_" + rawValue.lowercased() }
+
+  static var current: ColorTheme { ColorTheme(rawValue: UserDefaults.standard.string(forKey: "colorTheme") ?? "") ?? .LILAC }
+}
+
+/// Picks the colour family's light or dark colours from the system's colour scheme.
 struct TaliTheme: ViewModifier {
   @Environment(\.colorScheme) private var scheme
+  @AppStorage("colorTheme") private var family = ColorTheme.LILAC.rawValue
   func body(content: Content) -> some View {
-    let colors = scheme == .dark ? TaliColors.lilacDark : TaliColors.lilacLight
+    let f = ColorTheme(rawValue: family) ?? .LILAC
+    let colors = scheme == .dark ? f.dark : f.light
     content.environment(\.tali, colors).tint(colors.accent)
   }
 }
