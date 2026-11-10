@@ -67,7 +67,7 @@ Restoring a real Android backup on iOS is covered by unit tests (ink fixture, sc
 not yet by opening one in the app.
 
 - Run 42883014643 (green): the library and notebook bars redone to match the Android app's
-  current screenshots (`C:\dev\Talis-Notes	ools\emulator\shots\lib.png`, `nb.png`, 9 Nov 2026):
+  current screenshots (`C:/dev/Talis-Notes/tools/emulator/shots\lib.png`, `nb.png`, 9 Nov 2026):
   - one continuous sky behind the sidebar and the main area;
   - the wordmark with its highlighter swipe;
   - the 52 pt heading with a count and date line;
@@ -80,7 +80,7 @@ not yet by opening one in the app.
 
 **Owner's rule (10 Nov 2026): the app must look exactly like Android.** Before any design
 decision, read the Android composable and look at its screenshots in
-`C:\dev\Talis-Notes	ools\emulator\shots` (newest first: `ls -t`). Copy crowns (`CloudCrown`), radii,
+`C:/dev/Talis-Notes/tools/emulator/shots` (newest first: `ls -t`). Copy crowns (`CloudCrown`), radii,
 sizes and type styles (`TaliType` mirrors Android's Material names) rather than guessing.
 
 Next (in this order):
