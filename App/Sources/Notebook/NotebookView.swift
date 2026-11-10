@@ -13,6 +13,8 @@ struct NotebookView: View {
     self.onBack = onBack
     _viewing = State(initialValue: PhoneWriting.opensViewOnly(notebook.id))
     _title = State(initialValue: notebook.title)
+    _paper = State(initialValue: notebook.paper)
+    _dark = State(initialValue: notebook.dark)
   }
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
@@ -35,14 +37,24 @@ struct NotebookView: View {
   /// The notebook's name as shown (tapping the name pill renames it, as on Android).
   @State private var title: String
   @State private var renaming = false
+  /// The notebook's paper and dark paper, changed from the ⋯ menu.
+  @State private var paper: PaperStyle
+  @State private var dark: Bool
+  @State private var moreOpen = false
+  /// Draw with finger: -1 Auto, 0 off, 1 on (app-wide, as on Android).
+  @AppStorage("fingerDraws") private var fingerDrawsRaw = -1
+  @AppStorage("smartUndo") private var smartUndo = true
+  @AppStorage("inkBetweenPages") private var between = false
+  @AppStorage("hideNavBar") private var fullScreen = false
 
   var body: some View {
     GeometryReader { geo in
       let narrow = geo.size.width < 900
       ZStack(alignment: .top) {
-        Color(uiColor: notebook.dark ? UIColor(argb: Int32(bitPattern: 0xFF2A_2338)) : UIColor(c.desk)).ignoresSafeArea()
+        Color(uiColor: dark ? UIColor(argb: Int32(bitPattern: 0xFF2A_2338)) : UIColor(c.desk)).ignoresSafeArea()
         NoteCanvas(
           notebook: notebook, db: lib.db, tool: tool, pens: pens, viewOnly: viewing,
+          settings: CanvasSettings(paper: paper, dark: dark, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between),
           eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize)),
           onUndoState: { u, r in
             canUndo = u
@@ -67,6 +79,7 @@ struct NotebookView: View {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                   viewing = false
                   PhoneWriting.startWriting(notebook.id)
+                  ViewOnly.set(notebook.id, false)
                 }
               } label: {
                 Label(L("write"), systemImage: "pencil").font(TaliType.labelLarge)
@@ -147,6 +160,10 @@ struct NotebookView: View {
       }
     }
     .onChange(of: pens) { _, new in PenStore.save(new) }
+    .onChange(of: paper) { _, p in try? lib.db.run("UPDATE notebooks SET paper=? WHERE id=?", [.text(p.rawValue), .text(notebook.id)]) }
+    .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
+    .statusBarHidden(fullScreen)
+    .persistentSystemOverlays(fullScreen ? .hidden : .automatic)
   }
 
   private var activePenIndex: Int? {
@@ -158,10 +175,12 @@ struct NotebookView: View {
     MainToolbar(pens: $pens, tool: $tool, panel: $panel, showColors: showColors)
   }
 
+  private var fingerDraws: Bool? { fingerDrawsRaw < 0 ? nil : fingerDrawsRaw == 1 }
+
   /// In dark mode the bars over a white page are the soft mist, as on Android.
   private var barColors: TaliColors {
     let f = ColorTheme.current
-    return scheme == .dark && !notebook.dark ? f.mist : (scheme == .dark ? f.dark : f.light)
+    return scheme == .dark && !dark ? f.mist : (scheme == .dark ? f.dark : f.light)
   }
 
   /// Back on a little cloud of its own, then undo and redo (Android's `TitlePill`).
@@ -202,6 +221,30 @@ struct NotebookView: View {
             hidden = true
           }
         }
+        // ⋯ always last, in the top-right corner.
+        ToolIcon(system: "ellipsis", label: L("more")) { moreOpen = true }
+          .accessibilityIdentifier("more")
+          .popover(isPresented: $moreOpen, arrowEdge: .top) {
+            MoreMenu(
+              paged: notebook.pages != nil, paper: $paper, dark: $dark,
+              fingerDraws: Binding(get: { fingerDraws }, set: { fingerDrawsRaw = $0 == nil ? -1 : ($0! ? 1 : 0) }),
+              smartUndo: $smartUndo, between: $between, fullScreen: $fullScreen,
+              onFit: {
+                moreOpen = false
+                command = .fitZoom
+              },
+              onViewOnly: {
+                moreOpen = false
+                ViewOnly.set(notebook.id, true)
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                  panel = nil
+                  viewing = true
+                }
+              }
+            )
+            .environment(\.tali, barColors)
+            .presentationCompactAdaptation(.popover)
+          }
       }
     }
   }
@@ -258,13 +301,25 @@ enum PhoneWriting {
   static var onPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
   static func opensViewOnly(_ id: String) -> Bool {
-    onPhone && !(UserDefaults.standard.stringArray(forKey: "phoneWriting") ?? []).contains(id)
+    if onPhone { return !(UserDefaults.standard.stringArray(forKey: "phoneWriting") ?? []).contains(id) }
+    return ViewOnly.contains(id)
   }
 
   static func startWriting(_ id: String) {
     var list = UserDefaults.standard.stringArray(forKey: "phoneWriting") ?? []
     if !list.contains(id) { list.append(id) }
     UserDefaults.standard.set(list, forKey: "phoneWriting")
+  }
+}
+
+/// Items set to View only from the ⋯ menu (Android's `AppSettings.viewOnly`), on a tablet.
+enum ViewOnly {
+  static func contains(_ id: String) -> Bool { (UserDefaults.standard.stringArray(forKey: "viewOnly") ?? []).contains(id) }
+  static func set(_ id: String, _ on: Bool) {
+    var list = UserDefaults.standard.stringArray(forKey: "viewOnly") ?? []
+    list.removeAll { $0 == id }
+    if on { list.append(id) }
+    UserDefaults.standard.set(list, forKey: "viewOnly")
   }
 }
 

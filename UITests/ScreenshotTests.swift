@@ -77,6 +77,13 @@ final class ScreenshotTests: XCTestCase {
     shot("4b-pen-panel")
     app.buttons["pen-p1"].firstMatch.tap()
     settle()
+    if app.buttons["more"].exists {
+      app.buttons["more"].firstMatch.tap()
+      settle()
+      shot("4c-more-menu")
+      app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.9)).tap()
+      settle()
+    }
     app.buttons["back"].firstMatch.tap()
     settle()
     shot("5-library-after")

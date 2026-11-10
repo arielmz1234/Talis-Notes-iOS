@@ -120,6 +120,7 @@ struct NoteCanvas: UIViewRepresentable {
   var tool: Tool
   var pens: [PenSlot]
   var viewOnly = false
+  var settings: CanvasSettings
   var eraser = EraserSettings()
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
@@ -139,7 +140,15 @@ struct NoteCanvas: UIViewRepresentable {
     v.isOpaque = false
     // PencilKit lightens dark ink in dark mode; the page is white unless the notebook has dark paper,
     // so the canvas keeps the paper's own style (ink stays as written, as on Android).
-    v.overrideUserInterfaceStyle = notebook.dark ? .dark : .light
+    v.overrideUserInterfaceStyle = settings.dark ? .dark : .light
+    // Tap 2 fingers to undo, 3 to redo (Android's smart undo), when it's on.
+    for n in [2, 3] {
+      let tap = UITapGestureRecognizer(target: c, action: n == 2 ? #selector(Coordinator.twoFingerTap) : #selector(Coordinator.threeFingerTap))
+      tap.numberOfTouchesRequired = n
+      tap.cancelsTouchesInView = false
+      v.addGestureRecognizer(tap)
+    }
+    c.applied = settings
     v.minimumZoomScale = 0.3
     v.maximumZoomScale = 6
     v.showsVerticalScrollIndicator = false
@@ -148,8 +157,8 @@ struct NoteCanvas: UIViewRepresentable {
     v.alwaysBounceVertical = true
     let pages = PagesView(frame: .zero)
     pages.pages.layout = notebook.pageLayout
-    pages.pages.paper = notebook.paper
-    pages.pages.dark = notebook.dark
+    pages.pages.paper = settings.paper
+    pages.pages.dark = settings.dark
     v.insertSubview(pages, at: 0)
     c.canvas = v
     c.pages = pages
@@ -160,6 +169,7 @@ struct NoteCanvas: UIViewRepresentable {
   func updateUIView(_ v: PKCanvasView, context: Context) {
     let c = context.coordinator
     c.parent = self
+    c.applySettings()
     c.applyTool()
     if let cmd = command {
       DispatchQueue.main.async {
@@ -224,7 +234,7 @@ struct NoteCanvas: UIViewRepresentable {
     /// The page a stroke belongs to (where it began), as a PencilKit mask.
     private func mask(for s: InkStroke) -> UIBezierPath? {
       guard paged, let first = s.inputs.points.first else { return nil }
-      guard let r = layout.clip(anchorY: first.y, count: pageCount, between: false) else { return nil }
+      guard let r = layout.clip(anchorY: first.y, count: pageCount, between: parent.settings.between) else { return nil }
       return UIBezierPath(rect: CGRect(x: CGFloat(r.left), y: CGFloat(r.top), width: CGFloat(r.width), height: CGFloat(r.height)))
     }
 
@@ -257,8 +267,49 @@ struct NoteCanvas: UIViewRepresentable {
       reportUndo()
     }
 
+    /// The settings the canvas was last given, to change only what changed.
+    var applied: CanvasSettings?
+
+    func applySettings() {
+      guard let canvas, let pages, applied != parent.settings else { return }
+      let old = applied
+      applied = parent.settings
+      let s = parent.settings
+      if old?.paper != s.paper || old?.dark != s.dark {
+        pages.pages.paper = s.paper
+        pages.pages.dark = s.dark
+        pages.layer.setNeedsDisplay()
+        canvas.overrideUserInterfaceStyle = s.dark ? .dark : .light
+      }
+      if old?.between != s.between, old != nil {
+        // Strokes are hidden past their page or the page column: their masks change.
+        saveNow()
+        load()
+      }
+    }
+
+    @objc func twoFingerTap() {
+      guard parent.settings.smartUndo, !parent.viewOnly else { return }
+      canvas?.undoManager?.undo()
+      reportUndo()
+    }
+
+    @objc func threeFingerTap() {
+      guard parent.settings.smartUndo, !parent.viewOnly else { return }
+      canvas?.undoManager?.redo()
+      reportUndo()
+    }
+
     func applyTool() {
       guard let canvas else { return }
+      // Draw with finger: Auto follows iOS's own Apple Pencil setting.
+      if !ProcessInfo.processInfo.arguments.contains("-uitest") {
+        switch parent.settings.fingerDraws {
+        case nil: canvas.drawingPolicy = .default
+        case true?: canvas.drawingPolicy = .anyInput
+        case false?: canvas.drawingPolicy = .pencilOnly
+        }
+      }
       // Just looking: fingers and the pencil scroll and zoom, nothing writes.
       canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly
       switch parent.tool {
