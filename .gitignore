@@ -1,0 +1,13 @@
+RUNNING
+*.xcodeproj/
+*.xcworkspace/
+!Packages/**/*.xcworkspace
+DerivedData/
+build/
+.build/
+.swiftpm/
+*.ipa
+*.xcresult
+shots/
+xcuserdata/
+.DS_Store
