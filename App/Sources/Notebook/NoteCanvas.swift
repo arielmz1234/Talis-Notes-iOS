@@ -120,8 +120,11 @@ struct NoteCanvas: UIViewRepresentable {
   var tool: Tool
   var pens: [PenSlot]
   var viewOnly = false
+  var eraser = EraserSettings()
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
+  /// The page in the middle of the screen and the zoom, as they change (for the page and zoom chips).
+  var onView: (Int, CGFloat) -> Void = { _, _ in }
   @Binding var command: CanvasCommand?
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -263,7 +266,12 @@ struct NoteCanvas: UIViewRepresentable {
         let pen = parent.pens.first { $0.id == id } ?? PenSlot.defaults[0]
         canvas.tool = PKInkingTool(pen.type.ink, color: UIColor(argb: pen.inkColor), width: CGFloat(pen.size))
       case .eraser:
-        canvas.tool = PKEraserTool(.vector)
+        // Whole strokes, or precise (rubs out just what it passes over), at her size.
+        if parent.eraser.precise {
+          canvas.tool = PKEraserTool(.bitmap, width: CGFloat(parent.eraser.size))
+        } else {
+          canvas.tool = PKEraserTool(.vector, width: CGFloat(parent.eraser.size))
+        }
       case .lasso:
         canvas.tool = PKLassoTool()
       }
@@ -278,6 +286,15 @@ struct NoteCanvas: UIViewRepresentable {
         pageCount += 1
         updateContent()
         persistPages()
+      case .goToPage(let i):
+        let target = min(max(i, 0), pageCount - 1)
+        let r = layout.rect(target)
+        let y = CGFloat(r.top) * canvas.zoomScale - canvas.contentInset.top
+        canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: y), animated: true)
+      case .fitZoom:
+        guard let pages else { break }
+        let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
+        canvas.setZoomScale(fit, animated: true)
       }
       reportUndo()
     }
@@ -320,12 +337,25 @@ struct NoteCanvas: UIViewRepresentable {
       canvas.contentInset = UIEdgeInsets(top: 104, left: side, bottom: 40, right: side)
     }
 
-    func scrollViewDidZoom(_ scrollView: UIScrollView) { updateContent() }
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+      updateContent()
+      reportView()
+    }
+
+    /// Which page is in the middle of the screen, and the zoom.
+    private func reportView() {
+      guard let canvas else { return }
+      let z = max(canvas.zoomScale, 0.01)
+      let midY = (canvas.contentOffset.y + canvas.bounds.height / 2) / z
+      let p = min(max(layout.indexAt(Float(midY)), 0), max(pageCount - 1, 0))
+      parent.onView(p, z)
+    }
 
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateContent() }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
       if !didFit { updateContent() }
+      reportView()
     }
 
     // MARK: Keeping the store in step
@@ -448,7 +478,14 @@ struct NoteCanvas: UIViewRepresentable {
 }
 
 enum CanvasCommand: Equatable {
-  case undo, redo, addPage
+  case undo, redo, addPage, fitZoom
+  case goToPage(Int)
+}
+
+/// The eraser as she set it in its panel.
+struct EraserSettings: Equatable {
+  var precise = false
+  var size: Float = 20
 }
 
 /// A plain log of things that went wrong, kept on the device (Android's CrashLog, simplified).

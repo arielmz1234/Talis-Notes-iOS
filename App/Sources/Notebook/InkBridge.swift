@@ -44,6 +44,33 @@ struct PenSlot: Codable, Hashable, Identifiable, Sendable {
   var type: PenType
   var color: Int32
   var size: Float
+  /// Her three thicknesses (empty until she sets them) and which one is in use (Android's `sizes`, `sizeSlot`).
+  var sizes: [Float] = []
+  var sizeSlot = 1
+  /// How many of its palette's colours sit in the toolbar; nil until set (the app-wide number).
+  var toolbarColors: Int? = nil
+
+  init(id: String, type: PenType, color: Int32, size: Float, sizes: [Float] = [], sizeSlot: Int = 1, toolbarColors: Int? = nil) {
+    self.id = id
+    self.type = type
+    self.color = color
+    self.size = size
+    self.sizes = sizes
+    self.sizeSlot = sizeSlot
+    self.toolbarColors = toolbarColors
+  }
+
+  // Missing keys take their defaults, as kotlinx.serialization does (pens saved before these fields, or from Android).
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    id = try c.decode(String.self, forKey: .id)
+    type = try c.decode(PenType.self, forKey: .type)
+    color = try c.decode(Int32.self, forKey: .color)
+    size = try c.decode(Float.self, forKey: .size)
+    sizes = try c.decodeIfPresent([Float].self, forKey: .sizes) ?? []
+    sizeSlot = try c.decodeIfPresent(Int.self, forKey: .sizeSlot) ?? 1
+    toolbarColors = try c.decodeIfPresent(Int.self, forKey: .toolbarColors)
+  }
 
   static let highlighterAlpha: UInt32 = 0x66
   static let defaultColors: [UInt32] = [
