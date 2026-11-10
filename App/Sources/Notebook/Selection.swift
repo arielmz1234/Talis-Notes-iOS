@@ -325,3 +325,84 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     if parent.tool == .lasso { select(copies) }
   }
 }
+
+// MARK: The menu's ⋯ part: colour, thickness, order, mirror
+
+extension NoteCanvas.Coordinator {
+  /// Replaces what's picked up with [change] applied to each stroke (same ids), as one undo step.
+  private func restyle(_ change: (inout InkStroke) -> Void) {
+    guard let canvas, !lasso.picked.isEmpty else { return }
+    let before = canvas.drawing
+    var strokes: [PKStroke] = []
+    var changedAll: [InkStroke] = []
+    for (i, pk) in before.strokes.enumerated() {
+      guard i < stored.count, lasso.picked.contains(stored[i].stroke.id) else {
+        strokes.append(pk)
+        continue
+      }
+      var s = stored[i].stroke
+      change(&s)
+      let fresh = s.pkStroke(mask: mask(for: s))
+      pending[StrokeKey(fresh)] = s
+      strokes.append(fresh)
+      changedAll.append(s)
+    }
+    record(before)
+    canvas.drawing = PKDrawing(strokes: strokes)
+    reportUndo()
+    lasso.bounds = changedAll.reduce(nil as CGRect?) { acc, s in
+      let r = CGRect(s.bounds)
+      return acc.map { $0.union(r) } ?? r
+    }
+    redrawSelection()
+  }
+
+  func recolourSelection(_ argb: UInt32) {
+    restyle { s in
+      let c = argb | 0xFF00_0000
+      s.color = Int32(bitPattern: s.pen == .HIGHLIGHTER ? (c & 0x00FF_FFFF) | (PenSlot.highlighterAlpha << 24) : c)
+    }
+  }
+
+  func thickenSelection(_ size: Float) {
+    restyle { s in s.size = size }
+  }
+
+  /// Mirrors what's picked up around its own middle (writing flips, as on Android).
+  func mirrorSelection(horizontal: Bool) {
+    guard let b = lasso.bounds else { return }
+    let cx = Float(b.midX), cy = Float(b.midY)
+    restyle { s in
+      s.inputs.points = s.inputs.points.map { p in
+        var q = p
+        if horizontal { q.x = 2 * cx - p.x } else { q.y = 2 * cy - p.y }
+        return q
+      }
+    }
+  }
+
+  /// Brings what's picked up in front of everything else, or sends it behind (Android's Arrange).
+  func arrangeSelection(toFront: Bool) {
+    guard let canvas, !lasso.picked.isEmpty else { return }
+    let before = canvas.drawing
+    let indices = before.strokes.indices
+    let mine = indices.filter { $0 < stored.count && lasso.picked.contains(stored[$0].stroke.id) }
+    let others = indices.filter { !mine.contains($0) }
+    let order = toFront ? others + mine : mine + others
+    // New stacking numbers in the new order, saved straight away (the strokes themselves don't change).
+    let zs = stored.map(\.stroke.z)
+    let lo = zs.min() ?? 0
+    var newStored = order.compactMap { $0 < stored.count ? stored[$0] : nil }
+    for k in newStored.indices {
+      newStored[k].stroke.z = lo + Int64(k)
+      try? parent.db.put(newStored[k].stroke.row, in: parent.notebook.id)
+    }
+    stored = newStored
+    record(before)
+    loading = true
+    canvas.drawing = PKDrawing(strokes: order.map { before.strokes[$0] })
+    loading = false
+    reportUndo()
+    redrawSelection()
+  }
+}

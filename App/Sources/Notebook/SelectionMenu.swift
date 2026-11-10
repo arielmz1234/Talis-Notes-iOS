@@ -6,18 +6,86 @@ import SwiftUI
 struct SelectionMenu: View {
   var onCommand: (CanvasCommand) -> Void
   @Environment(\.tali) private var c
+  /// ⋯ adds the rest of the buttons in the same row, right after itself.
+  @State private var more = false
+  /// Colour or Thickness, dropped down under the row (one at a time).
+  @State private var extra: Extra?
+  @State private var thickness: Float = 2.5
+
+  enum Extra { case colour, thickness }
 
   var body: some View {
-    HStack(spacing: 0) {
-      ToolIcon(system: "doc.on.doc", label: L("copy_hold_anywhere_to_paste_it")) { onCommand(.copySelection) }
-      ToolIcon(system: "scissors", label: L("cut_hold_anywhere_to_paste_it")) { onCommand(.cutSelection) }
-      ToolIcon(system: "plus.square.on.square", label: L("duplicate")) { onCommand(.duplicateSelection) }
-      ToolIcon(system: "square", label: L("draw_a_box_around_it")) { onCommand(.boxSelection) }
-      ToolIcon(system: "trash", label: L("delete")) { onCommand(.deleteSelection) }
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 0) {
+        ToolIcon(system: "doc.on.doc", label: L("copy_hold_anywhere_to_paste_it")) { onCommand(.copySelection) }
+        ToolIcon(system: "scissors", label: L("cut_hold_anywhere_to_paste_it")) { onCommand(.cutSelection) }
+        ToolIcon(system: "plus.square.on.square", label: L("duplicate")) { onCommand(.duplicateSelection) }
+        ToolIcon(system: "square", label: L("draw_a_box_around_it")) { onCommand(.boxSelection) }
+        ToolIcon(system: "trash", label: L("delete")) { onCommand(.deleteSelection) }
+        Rectangle().fill(c.line).frame(width: 1, height: 24).padding(.horizontal, 2)
+        // Like the toolbar's chevron: > opens the rest to its right, and turns round into < to fold them away.
+        Button {
+          withAnimation(Ease.outStrong(duration: 0.22)) {
+            more.toggle()
+            extra = nil
+          }
+        } label: {
+          Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(c.inkMuted)
+            .rotationEffect(.degrees(more ? 180 : 0)).frame(width: 30, height: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(more ? L("fewer_options") : L("more_options"))
+        if more {
+          Group {
+            toggleIcon("paintpalette", L("colour"), .colour)
+            toggleIcon("lineweight", L("thickness"), .thickness)
+            ToolIcon(system: "square.3.layers.3d.top.filled", label: L("bring_to_front")) { onCommand(.arrangeSelection(true)) }
+            ToolIcon(system: "square.3.layers.3d.bottom.filled", label: L("send_to_back")) { onCommand(.arrangeSelection(false)) }
+            ToolIcon(system: "arrow.left.and.right", label: L("mirror_left_to_right")) { onCommand(.mirrorSelection(true)) }
+            ToolIcon(system: "arrow.up.and.down", label: L("mirror_upside_down")) { onCommand(.mirrorSelection(false)) }
+          }
+          .transition(.opacity.combined(with: .offset(x: -8)))
+        }
+      }
+      .frame(height: 44)
+      if let extra {
+        Group {
+          switch extra {
+          case .colour:
+            HStack(spacing: 0) {
+              ForEach(Palette.saved, id: \.self) { col in
+                ColorDot(color: Color(argb: col), selected: false, size: 22) { onCommand(.recolourSelection(col)) }
+                  .frame(maxWidth: .infinity)
+              }
+            }
+          case .thickness:
+            HStack(spacing: 8) {
+              StepSlider(value: $thickness, range: 0.5...20, step: 0.5) { onCommand(.thickenSelection(thickness)) }
+              Text(String(format: "%.1f", thickness)).font(TaliType.titleSmall).foregroundStyle(c.ink).frame(width: 40)
+            }
+            .frame(width: 300)
+          }
+        }
+        .padding(.top, 6)
+        .transition(.opacity.combined(with: .offset(y: -6)))
+      }
     }
     .padding(.horizontal, 6).padding(.vertical, 4)
-    .frame(height: 52)
+    .fixedSize(horizontal: true, vertical: false)
     .cloudSurface(radius: 22, crown: .softEdge)
+    .animation(Ease.outStrong(duration: 0.22), value: more)
+  }
+
+  private func toggleIcon(_ icon: String, _ label: String, _ kind: Extra) -> some View {
+    Button {
+      withAnimation(Ease.outStrong(duration: 0.2)) { extra = extra == kind ? nil : kind }
+    } label: {
+      Image(systemName: icon).font(.system(size: 19)).foregroundStyle(extra == kind ? c.accent : c.ink)
+        .frame(width: 44, height: 44)
+        .background { if extra == kind { RoundedRectangle(cornerRadius: 14).fill(c.accentSoft) } }
+    }
+    .buttonStyle(PressStyle(scale: 0.9))
+    .accessibilityLabel(label)
   }
 }
 
@@ -42,7 +110,7 @@ struct SelectionMenuLayer: View {
       let x = min(max(rect.midX - size.width / 2, gap), max(geo.size.width - size.width - gap, gap))
       SelectionMenu(onCommand: onCommand)
         .fixedSize()
-        .background(GeometryReader { g in Color.clear.onAppear { size = g.size } })
+        .background(GeometryReader { g in Color.clear.onAppear { size = g.size }.onChange(of: g.size) { _, v in size = v } })
         .position(x: x + size.width / 2, y: y + size.height / 2)
         .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }

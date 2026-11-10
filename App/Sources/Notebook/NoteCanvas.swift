@@ -360,6 +360,10 @@ struct NoteCanvas: UIViewRepresentable {
       case .deleteSelection: deleteSelection()
       case .boxSelection: boxSelection()
       case .paste: pasteAtOffer()
+      case .recolourSelection(let c): recolourSelection(c)
+      case .thickenSelection(let v): thickenSelection(v)
+      case .mirrorSelection(let h): mirrorSelection(horizontal: h)
+      case .arrangeSelection(let f): arrangeSelection(toFront: f)
       case .goToPage(let i):
         let target = min(max(i, 0), pageCount - 1)
         let r = layout.rect(target)
@@ -501,7 +505,9 @@ struct NoteCanvas: UIViewRepresentable {
           }
         }
       }
-      let removed = stored.indices.filter { !used.contains($0) }.map { stored[$0].stroke.id }
+      // A stroke replaced under the same id (recoloured, mirrored) isn't removed.
+      let keptIds = Set(next.map(\.stroke.id))
+      let removed = stored.indices.filter { !used.contains($0) }.map { stored[$0].stroke.id }.filter { !keptIds.contains($0) }
       // Every stroke seen, so one brought back by undo is stored exactly as it was (not with the pen in use).
       for (k, st) in stored { archive[k] = st }
       stored = next
@@ -587,6 +593,7 @@ struct NoteCanvas: UIViewRepresentable {
 enum CanvasCommand: Equatable {
   case undo, redo, addPage, fitZoom
   case copySelection, cutSelection, duplicateSelection, deleteSelection, boxSelection, paste
+  case recolourSelection(UInt32), thickenSelection(Float), mirrorSelection(Bool), arrangeSelection(Bool)
   case goToPage(Int)
 }
 
