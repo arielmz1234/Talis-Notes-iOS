@@ -7,6 +7,7 @@ public struct MergeResult: Sendable, Equatable {
   public var kept = 0
   /// Notebooks that came from the backup (added or newer there).
   public var changed: Set<String> = []
+  public init() {}
 }
 
 extension NotesDb {
