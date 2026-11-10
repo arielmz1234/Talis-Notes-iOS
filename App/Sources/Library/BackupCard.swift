@@ -77,9 +77,9 @@ struct BackupCard: View {
         Text(status).font(TaliFont.body(15, .semibold)).foregroundStyle(c.accent).transition(.opacity)
       }
     }
-    .padding(26)
+    .padding(28)
     .frame(maxWidth: 600)
-    .cloudSurface(radius: 28, crown: .edge)
+    .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
     .padding(16)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .presentationBackground(.clear)

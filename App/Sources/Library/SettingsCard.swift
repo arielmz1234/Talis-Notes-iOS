@@ -53,9 +53,9 @@ struct SettingsCard: View {
         .buttonStyle(QuietButtonStyle())
       }
     }
-    .padding(26)
+    .padding(28)
     .frame(maxWidth: 600)
-    .cloudSurface(radius: 28, crown: .edge)
+    .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
     .padding(16)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .presentationBackground(.clear)

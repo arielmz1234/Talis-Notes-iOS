@@ -89,7 +89,7 @@ struct NewNotebookCard: View {
     }
     .padding(compact ? 20 : 28)
     .frame(maxWidth: 680)
-    .cloudSurface(radius: 28, crown: .edge)
+    .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
     .padding(compact ? 12 : 20)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color.clear)
