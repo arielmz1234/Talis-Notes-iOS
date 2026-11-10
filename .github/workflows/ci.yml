@@ -45,6 +45,8 @@ jobs:
           ipad=$(sh scripts/sim.sh "iPad Pro 13" iPad)
           iphone=$(sh scripts/sim.sh "iPhone 16" iPhone)
           echo "iPad $ipad, iPhone $iphone"
+          # Boot both simulators fully first: a cold boot inside the first test timed out the app's launch.
+          for d in "$ipad" "$iphone"; do xcrun simctl boot "$d" 2>/dev/null || true; xcrun simctl bootstatus "$d" -b > /dev/null; done
           run() { # device tag dark lang
             TEST_RUNNER_SHOT_DIR="$PWD/shots" TEST_RUNNER_SHOT_TAG="$2" TEST_RUNNER_SHOT_DARK="$3" TEST_RUNNER_SHOT_LANG="$4" \
             xcodebuild test-without-building -project TalisNotes.xcodeproj -scheme TalisNotes \

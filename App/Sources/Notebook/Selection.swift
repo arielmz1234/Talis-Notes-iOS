@@ -61,7 +61,11 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-    g === lasso.hold
+    // The hold runs alongside everything; the lasso alongside PencilKit's own recognisers (scrolling
+    // waits for it to fail instead).
+    if g === lasso.hold { return true }
+    if g === lasso.pan { return other !== canvas?.panGestureRecognizer }
+    return false
   }
 
   func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
@@ -150,6 +154,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     }
     lasso.picked = picked
     lasso.bounds = picked.isEmpty ? nil : bounds
+    if ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso \(loop.count) points, \(picked.count) picked") }
     if !picked.isEmpty { UISelectionFeedbackGenerator().selectionChanged() }
     redrawSelection()
   }
