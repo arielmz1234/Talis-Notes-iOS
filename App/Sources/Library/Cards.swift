@@ -202,6 +202,8 @@ struct NotebookCard: View {
   var notebook: NotebookMeta
   var starred: Bool
   var inTrash: Bool
+  var picking = false
+  var picked = false
   @Environment(\.tali) private var c
 
   var body: some View {
@@ -224,7 +226,20 @@ struct NotebookCard: View {
       .aspectRatio(1.32, contentMode: .fit)
       .background(c.paper)
       .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-      .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(c.line, lineWidth: 1))
+      .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(picked ? c.accent : c.line, lineWidth: picked ? 2.5 : 1))
+      .overlay(alignment: .topTrailing) {
+        if picking {
+          ZStack {
+            Circle().fill(picked ? c.accent : Color.white.opacity(0.85))
+            Circle().stroke(picked ? c.accent : c.inkFaint, lineWidth: 1.5)
+            if picked { Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.white) }
+          }
+          .frame(width: 28, height: 28)
+          .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+          .padding(10)
+          .transition(.scale(scale: 0.7).combined(with: .opacity))
+        }
+      }
       .overlay(alignment: .bottomTrailing) {
         if starred && !inTrash {
           Image(systemName: "star.fill").font(.system(size: 13)).foregroundStyle(starGold)
@@ -233,6 +248,7 @@ struct NotebookCard: View {
         }
       }
       .shadow(color: c.accent.opacity(0.2), radius: 12, x: 0, y: 6)
+      .scaleEffect(picked ? 0.955 : 1)
       Spacer().frame(height: 10)
       Text(notebook.title).font(TaliType.titleMedium).foregroundStyle(c.ink).lineLimit(1).padding(.leading, 2)
       Text(subtitle).font(TaliType.bodySmall).foregroundStyle(c.inkFaint).lineLimit(1).padding(.leading, 2)

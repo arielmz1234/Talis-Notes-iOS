@@ -18,6 +18,9 @@ struct LibraryView: View {
   @State private var newFolder = false
   @State private var backups = false
   @State private var settings = false
+  /// Picking several notebooks (Select): the ones ticked, or nil when not picking.
+  @State private var picked: Set<String>?
+  @State private var deletingPicked = false
   @AppStorage("minimal") private var minimal = false
 
   var body: some View {
@@ -52,6 +55,18 @@ struct LibraryView: View {
         onOpen(n)
       }
       .presentationDetents([.large])
+    }
+    .onChange(of: lib.shelf) { _, _ in picked = nil }
+    .confirmationDialog(
+      (picked?.count ?? 0) == 1 ? L("delete_1_notebook") : L("delete_n_notebooks", picked?.count ?? 0), isPresented: $deletingPicked,
+      titleVisibility: .visible
+    ) {
+      Button(L("delete"), role: .destructive) {
+        withAnimation(.easeOut(duration: 0.22)) { for id in picked ?? [] { lib.moveToTrash(id) } }
+        picked = nil
+      }
+    } message: {
+      Text((picked?.count ?? 0) == 1 ? L("it_moves_to_recently_deleted_where", trashDays) : L("they_move_to_recently_deleted_where", trashDays))
     }
     .sheet(isPresented: $backups) { BackupCard() }
     .sheet(isPresented: $settings) { SettingsCard() }
@@ -168,18 +183,44 @@ struct LibraryView: View {
 
   @ViewBuilder private func actions(searchWidth: CGFloat?) -> some View {
     @Bindable var lib = lib
-    HStack(spacing: 0) {
-      SearchField(text: $lib.search).frame(width: searchWidth).frame(maxWidth: searchWidth == nil ? .infinity : nil)
-      if lib.shelf != .trash {
-        Spacer().frame(width: 8)
-        SortButton()
+    if let chosen = picked {
+      PickBar(
+        count: chosen.count, allPicked: !lib.shown.isEmpty && lib.shown.allSatisfy { chosen.contains($0.id) }, folders: lib.folders,
+        onAll: {
+          let ids = Set(lib.shown.map(\.id))
+          picked = ids.isSubset(of: chosen) ? [] : ids
+        },
+        onMove: { folder in
+          for id in chosen { lib.move(id, to: folder) }
+          picked = nil
+        },
+        onDuplicate: {
+          for id in chosen { lib.duplicate(id) }
+          picked = nil
+        },
+        onDelete: { deletingPicked = true },
+        onDone: { withAnimation(.easeOut(duration: 0.2)) { picked = nil } }
+      )
+      .transition(.opacity.combined(with: .offset(y: 8)))
+    } else {
+      HStack(spacing: 0) {
+        SearchField(text: $lib.search).frame(width: searchWidth).frame(maxWidth: searchWidth == nil ? .infinity : nil)
+        if lib.shelf != .trash {
+          Spacer().frame(width: 8)
+          SortButton()
+        }
+        Spacer().frame(width: 12)
+        if lib.shelf == .trash {
+          if !lib.trash.isEmpty { Button(L("empty")) { lib.emptyTrash() }.buttonStyle(QuietButtonStyle(warning: true)) }
+        } else {
+          if !lib.shown.isEmpty {
+            Button(L("select")) { withAnimation(.easeOut(duration: 0.2)) { picked = [] } }.buttonStyle(QuietButtonStyle())
+            Spacer().frame(width: 8)
+          }
+          AddButton { creating = true }
+        }
       }
-      Spacer().frame(width: 12)
-      if lib.shelf == .trash {
-        if !lib.trash.isEmpty { Button(L("empty")) { lib.emptyTrash() }.buttonStyle(QuietButtonStyle(warning: true)) }
-      } else {
-        AddButton { creating = true }
-      }
+      .transition(.opacity.combined(with: .offset(y: 8)))
     }
   }
 
@@ -206,9 +247,20 @@ struct LibraryView: View {
         if !items.isEmpty {
           Section {
             ForEach(items) { n in
-              NotebookCard(notebook: n, starred: lib.starred.contains(n.id), inTrash: lib.shelf == .trash)
-                .onTapGesture { if lib.shelf == .trash { restoring = n } else { onOpen(n) } }
-                .contextMenu { if lib.shelf != .trash { menu(for: n) } }
+              NotebookCard(
+                notebook: n, starred: lib.starred.contains(n.id), inTrash: lib.shelf == .trash, picking: picked != nil,
+                picked: picked?.contains(n.id) == true
+              )
+              .onTapGesture {
+                if let chosen = picked {
+                  togglePick(n.id, in: chosen)
+                } else if lib.shelf == .trash {
+                  restoring = n
+                } else {
+                  onOpen(n)
+                }
+              }
+              .contextMenu { if lib.shelf != .trash && picked == nil { menu(for: n) } }
                 .transition(.opacity.combined(with: .scale(scale: 0.93)).combined(with: .offset(y: -10)))
             }
           } header: {
@@ -217,6 +269,13 @@ struct LibraryView: View {
         }
       }
     }
+  }
+
+  /// Ticks or unticks a notebook; unticking the last one ends picking, as on Android.
+  private func togglePick(_ id: String, in chosen: Set<String>) {
+    var next = chosen
+    if next.contains(id) { next.remove(id) } else { next.insert(id) }
+    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) { picked = next.isEmpty ? nil : next }
   }
 
   private var sectionTitle: String {
@@ -231,6 +290,7 @@ struct LibraryView: View {
   }
 
   @ViewBuilder private func menu(for n: NotebookMeta) -> some View {
+    Button { withAnimation(.easeOut(duration: 0.2)) { picked = [n.id] } } label: { Label(L("select"), systemImage: "checkmark.circle") }
     Button { lib.toggleStar(n.id) } label: {
       Label(L(lib.starred.contains(n.id) ? "remove_star" : "star"), systemImage: lib.starred.contains(n.id) ? "star.fill" : "star")
     }
@@ -251,6 +311,47 @@ struct LibraryView: View {
         .frame(maxHeight: .infinity)
         .background(LinearGradient(colors: [c.background, c.sidebarEnd], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
         .transition(.move(edge: .leading))
+    }
+  }
+}
+
+/// While picking: "N selected", Select all/none, then move, duplicate and delete together in one
+/// frosted pill, and Done (Android's `PickBar`).
+struct PickBar: View {
+  var count: Int
+  var allPicked: Bool
+  var folders: [Folder]
+  var onAll: () -> Void
+  var onMove: (String?) -> Void
+  var onDuplicate: () -> Void
+  var onDelete: () -> Void
+  var onDone: () -> Void
+  @Environment(\.tali) private var c
+
+  var body: some View {
+    HStack(spacing: 0) {
+      Text(count == 1 ? L("t_1_selected") : L("n_selected", count)).font(TaliType.titleMedium).foregroundStyle(c.ink).lineLimit(1)
+      Spacer().frame(width: 12)
+      Button(allPicked ? L("select_none") : L("select_all"), action: onAll).buttonStyle(QuietButtonStyle())
+      Spacer().frame(width: 10)
+      HStack(spacing: 0) {
+        Menu {
+          Section(L("move_to")) {
+            Button(L("no_folder")) { onMove(nil) }
+            ForEach(folders) { f in Button(f.name) { onMove(f.id) } }
+          }
+        } label: {
+          Image(systemName: "folder").font(.system(size: 19)).foregroundStyle(count > 0 ? c.ink : c.inkFaint.opacity(0.5)).frame(width: 44, height: 44)
+        }
+        .disabled(count == 0)
+        .accessibilityLabel(L("move_to_folder"))
+        ToolIcon(system: "doc.on.doc", label: L("duplicate"), enabled: count > 0, action: onDuplicate)
+        ToolIcon(system: "trash", label: L("delete"), enabled: count > 0, action: onDelete)
+      }
+      .padding(.horizontal, 4)
+      .background(RoundedRectangle(cornerRadius: 16).fill(c.surface.opacity(0.72)))
+      Spacer().frame(width: 10)
+      Button(L("done"), action: onDone).buttonStyle(PrimaryButtonStyle())
     }
   }
 }
