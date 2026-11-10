@@ -11,6 +11,7 @@ struct NotebookView: View {
     self.notebook = notebook
     self.onBack = onBack
     _viewing = State(initialValue: PhoneWriting.opensViewOnly(notebook.id))
+    _title = State(initialValue: notebook.title)
   }
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
@@ -25,6 +26,9 @@ struct NotebookView: View {
   @State private var viewing: Bool
   /// Toolbars hidden with the eye (Android's focus mode).
   @State private var hidden = false
+  /// The notebook's name as shown (tapping the name pill renames it, as on Android).
+  @State private var title: String
+  @State private var renaming = false
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
@@ -96,6 +100,12 @@ struct NotebookView: View {
       }
     }
     .environment(\.tali, barColors)
+    .alert(L("rename"), isPresented: $renaming) {
+      RenameField(initial: title) { name in
+        lib.rename(notebook.id, to: name)
+        title = lib.notebooks.first { $0.id == notebook.id }?.title ?? name
+      }
+    }
     .onChange(of: pens) { _, new in PenStore.save(new) }
   }
 
@@ -126,10 +136,14 @@ struct NotebookView: View {
       if showName {
         FloatingBar(crown: .none, height: 44) {
           HStack(spacing: 8) {
-            Text(notebook.title).font(TaliType.titleSmall).foregroundStyle(barColors.ink).lineLimit(1).frame(maxWidth: 200, alignment: .leading)
+            Text(title).font(TaliType.titleSmall).foregroundStyle(barColors.ink).lineLimit(1).frame(maxWidth: 200, alignment: .leading)
             Image(systemName: "pencil").font(.system(size: 14)).foregroundStyle(barColors.inkFaint)
           }
           .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 6)
+          .contentShape(Rectangle())
+          .onTapGesture { renaming = true }
+          .accessibilityAddTraits(.isButton)
+          .accessibilityHint(L("rename"))
         }
       }
       FloatingBar(crown: .softEdge) {
