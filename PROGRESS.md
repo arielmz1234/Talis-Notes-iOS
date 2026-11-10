@@ -83,15 +83,41 @@ decision, read the Android composable and look at its screenshots in
 `C:/dev/Talis-Notes/tools/emulator/shots` (newest first: `ls -t`). Copy crowns (`CloudCrown`), radii,
 sizes and type styles (`TaliType` mirrors Android's Material names) rather than guessing.
 
+Later in session 1 (owner's requests, 10 Nov 2026 evening):
+- CI moved to `macos-26` (Xcode 26.6, iOS 26 simulators) for Liquid Glass. Screenshot runs take
+  about 25–35 minutes there.
+- The owner allows iOS-only touches that are clearly better (BRIEF.md, "Look"); behaviour and logic
+  stay exactly as on Android. Apple design rules: `docs/apple-design-SKILL.md`.
+- Done and seen in screenshots (run 42891226523):
+  - glass thickness slider (`Theme/StepSlider.swift`, native Slider plus glass − / + on iOS 26);
+  - Settings laid out like Android (Language row, colour tiles, Theme | Style segmented);
+  - Android's `Segmented` with the gliding white pill (`Theme/Segmented.swift`).
+- Done, build green, not yet seen in screenshots:
+  - sky clouds burst into mist when tapped and re-form after 4 s (`Theme/CloudPuff.swift` ports
+    `CloudPuff.kt`: same wisp grid, timing, easing);
+  - cards shown over a dimmed screen (`Theme/DialogOverlay.swift`) instead of sheets (iOS 26 drew a
+    panel behind them);
+  - Select mode in the library (PickBar);
+  - tap the notebook's name to rename it;
+  - the main toolbar like Android's (`Notebook/Toolbar.swift`): `PenGlyph` ported exactly, pens
+    standing in a tray with the active one lifted, the arrow to pen settings, toolbar colours,
+    `QuickSizes`, eraser and lasso with the blue gliding highlight;
+  - `PenPanel` (types, sample stroke, three sizes, Size slider, colours, how many in the toolbar);
+  - `EraserPanel` (whole strokes / precise, size);
+  - page and zoom chips (go to page, tap zoom to fit).
+
 Next (in this order):
-- Settings card like Android's `settings.png`: Language row, Colours tiles, Theme and Style side
-  by side, PDFs from other apps, Take the tour, Done at the bottom right; section labels in caps.
+- Check the screenshots of the toolbar, panels, dialogs and Select mode (light, dark, iPhone).
+- Notebook, still missing compared with Android (`C:/dev/Talis-Notes/tools/emulator/shots/nb.png`):
+  - the ⋯ menu (paper, dark paper, pages overview, endless/pages, export PDF);
+  - quick open (recent notebooks), the lasso panel and our own selection menu
+    (copy, cut, duplicate, delete, colour, thickness…);
+  - fill, laser, shapes (with hold-to-shape), picture/camera/PDF insert, voice memo, typed text;
+  - two-finger undo / three-finger redo; line styles (dashes);
+  - the highlighter's straight lines and square tip.
+  Port each from its Android code with its behaviour.
 - New-notebook card: compare with Android's `NewNotebookDialog` (`ui/library/Dialogs.kt`).
-- The main toolbar like `nb.png`: pens drawn like Android's `PenGlyph`, a chevron, the quick
-  colours and three sizes, then eraser, lasso, fill, laser, shapes, picture, mic, keyboard (the ones
-  not ported yet should wait rather than show dead buttons). Page and zoom chips at the bottom right.
 - Real page thumbnails on cards (render the first page with its strokes).
-- Our own lasso and selection menu, the ⋯ menu, quick open, Select (picking several notebooks).
 - Shapes and pictures from Android show under the writing; typed text and "param" designs don't yet.
 - iCloud (switched off in the free-signing build), then Google Drive.
 
