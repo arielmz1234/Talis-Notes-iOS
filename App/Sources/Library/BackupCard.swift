@@ -59,7 +59,7 @@ struct BackupCard: View {
       HStack {
         Text(L("backups")).font(TaliFont.heading(26)).foregroundStyle(c.ink)
         Spacer()
-        Button(L("done")) { dismiss() }.buttonStyle(QuietButtonStyle())
+        Button(L("done")) { dismiss() }.buttonStyle(QuietButtonStyle()).accessibilityIdentifier("backups-done")
       }
       Text(L("every_stroke_is_saved_the_moment")).font(TaliFont.body(15)).foregroundStyle(c.inkMuted)
       VStack(alignment: .leading, spacing: 10) {

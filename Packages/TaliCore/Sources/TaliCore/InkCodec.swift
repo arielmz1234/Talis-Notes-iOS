@@ -204,7 +204,8 @@ struct ProtoReader {
 
   mutating func float() throws -> Float {
     guard i + 4 <= b.count else { throw InkCodec.Failure.badProto }
-    let bits = UInt32(b[i]) | UInt32(b[i + 1]) << 8 | UInt32(b[i + 2]) << 16 | UInt32(b[i + 3]) << 24
+    var bits: UInt32 = 0
+    for k in (0..<4).reversed() { bits = (bits << 8) | UInt32(b[i + k]) }
     i += 4
     return Float(bitPattern: bits)
   }

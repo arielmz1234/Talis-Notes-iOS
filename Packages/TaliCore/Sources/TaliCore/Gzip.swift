@@ -65,7 +65,8 @@ public enum Gzip {
     if flags & 2 != 0 { i += 2 }  // header crc
     guard i <= b.count - 8 else { throw InkCodec.Failure.notGzip }
     let n = b.count
-    let size = Int(b[n - 4]) | Int(b[n - 3]) << 8 | Int(b[n - 2]) << 16 | Int(b[n - 1]) << 24
+    var size = 0
+    for k in (0..<4).reversed() { size = (size << 8) | Int(b[n - 4 + k]) }
     return try Deflate.inflate(Data(b[i..<(n - 8)]), expected: size)
   }
 

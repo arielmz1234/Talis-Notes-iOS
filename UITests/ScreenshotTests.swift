@@ -72,6 +72,11 @@ final class ScreenshotTests: XCTestCase {
       app.buttons["backups"].firstMatch.tap()
       settle()
       shot("6-backups")
+      app.buttons["backups-done"].firstMatch.tap()
+      settle()
+      app.buttons["settings"].firstMatch.tap()
+      settle()
+      shot("7-settings")
     }
   }
 }

@@ -8,6 +8,7 @@ struct Sidebar: View {
   var onNewFolder: () -> Void
   var onPicked: () -> Void
   var onBackups: () -> Void = {}
+  var onSettings: () -> Void = {}
   @AppStorage("minimal") private var minimal = false
 
   var body: some View {
@@ -33,24 +34,32 @@ struct Sidebar: View {
         }
       }
       Spacer(minLength: 0)
-      Button {
+      footerRow(L("settings"), "gearshape", id: "settings") {
+        onPicked()
+        onSettings()
+      }
+      footerRow(L("backups"), "externaldrive.badge.icloud", id: "backups") {
         onPicked()
         onBackups()
-      } label: {
-        HStack(spacing: 12) {
-          Image(systemName: "externaldrive.badge.icloud").frame(width: 22).foregroundStyle(c.inkMuted)
-          Text(L("backups")).font(TaliFont.body(16)).foregroundStyle(c.inkMuted)
-          Spacer()
-        }
-        .padding(.horizontal, 12).frame(height: 44).contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
-      .accessibilityIdentifier("backups")
       .padding(.bottom, 12)
     }
     .padding(.horizontal, 12)
     .frame(maxHeight: .infinity, alignment: .top)
     .background(LinearGradient(colors: [c.sidebar, c.sidebarEnd], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+  }
+
+  private func footerRow(_ title: String, _ icon: String, id: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      HStack(spacing: 12) {
+        Image(systemName: icon).frame(width: 22).foregroundStyle(c.inkMuted)
+        Text(title).font(TaliFont.body(16)).foregroundStyle(c.inkMuted)
+        Spacer()
+      }
+      .padding(.horizontal, 12).frame(height: 44).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier(id)
   }
 
   /// Folders in order, each followed by the ones inside it.

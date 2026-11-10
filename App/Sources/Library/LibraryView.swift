@@ -14,6 +14,7 @@ struct LibraryView: View {
   @State private var deleting: NotebookMeta?
   @State private var newFolder = false
   @State private var backups = false
+  @State private var settings = false
 
   var body: some View {
     GeometryReader { geo in
@@ -22,7 +23,7 @@ struct LibraryView: View {
         c.background.ignoresSafeArea()
         HStack(spacing: 0) {
           if !phone {
-            Sidebar(onNewFolder: { newFolder = true }, onPicked: {}, onBackups: { backups = true })
+            Sidebar(onNewFolder: { newFolder = true }, onPicked: {}, onBackups: { backups = true }, onSettings: { settings = true })
               .frame(width: 264)
           }
           main(width: phone ? geo.size.width : geo.size.width - 264, phone: phone)
@@ -39,6 +40,7 @@ struct LibraryView: View {
       .presentationDetents([.large])
     }
     .sheet(isPresented: $backups) { BackupCard() }
+    .sheet(isPresented: $settings) { SettingsCard() }
     .alert(L("rename"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }), presenting: renaming) { n in
       RenameField(initial: n.title) { lib.rename(n.id, to: $0) }
     }
@@ -175,7 +177,7 @@ struct LibraryView: View {
       c.scrim.ignoresSafeArea()
         .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { drawer = false } }
         .transition(.opacity)
-      Sidebar(onNewFolder: { newFolder = true }, onPicked: { withAnimation(.easeOut(duration: 0.2)) { drawer = false } }, onBackups: { backups = true })
+      Sidebar(onNewFolder: { newFolder = true }, onPicked: { withAnimation(.easeOut(duration: 0.2)) { drawer = false } }, onBackups: { backups = true }, onSettings: { settings = true })
         .frame(width: 290)
         .frame(maxHeight: .infinity)
         .background(c.sidebar)

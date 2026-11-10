@@ -24,7 +24,11 @@ public enum Zip {
       self.data = data
       let b = [UInt8](data)
       func u16(_ i: Int) -> Int { Int(b[i]) | Int(b[i + 1]) << 8 }
-      func u32(_ i: Int) -> Int { Int(b[i]) | Int(b[i + 1]) << 8 | Int(b[i + 2]) << 16 | Int(b[i + 3]) << 24 }
+      func u32(_ i: Int) -> Int {
+        var v = 0
+        for k in (0..<4).reversed() { v = (v << 8) | Int(b[i + k]) }
+        return v
+      }
       guard b.count >= 22 else { throw Failure.notZip }
       // End of central directory: the last "PK\5\6" (a comment may follow it).
       var eocd = -1
@@ -146,9 +150,15 @@ public enum Zip {
 
     static func dosNow() -> (UInt16, UInt16) {
       let c = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date())
-      let time = UInt16((c.hour ?? 0) << 11 | (c.minute ?? 0) << 5 | (c.second ?? 0) / 2)
-      let date = UInt16(max((c.year ?? 1980) - 1980, 0) << 9 | (c.month ?? 1) << 5 | (c.day ?? 1))
-      return (time, date)
+      let hour: Int = c.hour ?? 0
+      let minute: Int = c.minute ?? 0
+      let second: Int = c.second ?? 0
+      let year: Int = max((c.year ?? 1980) - 1980, 0)
+      let month: Int = c.month ?? 1
+      let day: Int = c.day ?? 1
+      let time: Int = (hour << 11) | (minute << 5) | (second / 2)
+      let date: Int = (year << 9) | (month << 5) | day
+      return (UInt16(truncatingIfNeeded: time), UInt16(truncatingIfNeeded: date))
     }
   }
 }
