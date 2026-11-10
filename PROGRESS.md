@@ -45,25 +45,35 @@ Done:
 - Strings: 827 keys in six languages generated from Android.
 - App icon from `tools/icon-source.png`.
 
-Verified (CI run 42853258304, screenshots looked at):
-- Core tests pass (20 at the time).
-- The library on iPad (landscape, portrait, dark, Hebrew mirrored with the sidebar on the right)
-  and iPhone (light, dark). The sky, clouds, cloud surfaces and cards look as intended.
-- Found and fixed after that run (fixes not yet seen in a screenshot):
-  - Fonts weren't loading (wrong bundle path).
-  - Paper previews faded to blank at small sizes; the landscape card preview was split.
-  - The new-notebook card overflowed on iPhone.
+Verified by looking at CI screenshots:
+- Run 42853258304: the library on iPad (landscape, portrait, dark, Hebrew mirrored with the
+  sidebar on the right) and iPhone (light, dark).
+- Run 42863082146 (all green, core tests included):
+  - Fonts load: Figtree for text, Bricolage for headings, Heebo in Hebrew.
+  - Paper previews show their lines.
+  - The new-notebook card fits iPad and iPhone.
+  - Backups and Settings cards look right.
+  - Writing works: two finger strokes drawn in the UI test show on the page in a new notebook,
+    on iPad and iPhone.
+  - The notebook keeps the English layout in Hebrew.
+- Found in that run and fixed in the next commit (run 42870297252):
+  - Dark mode lightened black ink on the white page (PencilKit adapts ink to the interface style).
+  - The bars should be the mist colours.
+  - The page started under the toolbar.
+  - Also added in that commit: iPhone view-only with Write.
 
-Not verified yet: everything from the commit "Writing with Apple Pencil…" onward (canvas, pens,
-backups card). See the next CI run.
+Not verified yet: anything about real Apple Pencil feel (pressure, latency) — needs a device.
+Restoring a real Android backup on iOS is covered by unit tests (ink fixture, schema 7 database),
+not yet by opening one in the app.
 
 Next:
-- Check the canvas screenshots; fix compile errors if any.
-- Ink look: PencilKit's inks differ from Android's brushes. Compare and tune widths.
-- Shapes, pictures and text from Android backups are kept in the database but not shown yet:
-  port `ItemCodec` and `model/Shapes.kt` next, so restored notebooks show everything.
-- Our own lasso (move, resize, copy, delete with the selection menu), page overview, top bar ⋯ menu.
-- Settings card (theme, colour families, minimal, language), then iCloud.
+- Check run 42870297252's screenshots (dark notebook, iPhone viewing and Write).
+- Shapes and pictures from Android show under the writing (drawn by the page layer); typed text
+  and subject-pack designs ("param") don't show yet. Port `ShapeTemplates.kt` later.
+- Our own lasso (move, resize, copy, delete with the selection menu), page overview, top bar ⋯ menu
+  (paper, dark paper, export PDF), quick open.
+- Colour families (Sky, Sage, Peach) in Settings, gliding selection, cloud-puff deletion mist.
+- iCloud (a build setting for the free-signing build without it), then Google Drive.
 
 Decisions:
 - The bundle id is `com.tali.notes`, the same as Android (Apple's ids are separate).

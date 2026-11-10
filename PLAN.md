@@ -18,7 +18,8 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 - [x] XcodeGen project, Swift package, CI on macOS (core tests, build, screenshots, unsigned .ipa)
 - [x] Colours (lilac light/dark), fonts (Figtree, Bricolage, Heebo, Vazirmatn), cloud surface, sky clouds
 - [x] String catalog from Android, six languages
-- [ ] Colour families (Sky, Sage, Peach), Minimal style, Settings card
+- [x] Settings card (theme, Cloudy/Minimal style, language via iOS Settings)
+- [ ] Colour families (Sky, Sage, Peach)
 - [ ] Gliding selection, cloud-puff "goes away" mist
 
 ### 2. Library
@@ -32,15 +33,18 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 
 ### 3. Notebook
 - [x] A4 pages in a column with papers, zoom (first version, SwiftUI)
-- [ ] Canvas in UIKit: world camera, tiles, pages, desk (port `NoteCanvasView` structure)
-- [ ] Ink: Apple Pencil strokes (PencilKit live layer vs custom Metal/CoreGraphics; measure), stored as Android ink inputs
-- [ ] Pens (fineliner, ballpoint, fountain, pencil, highlighter), sizes, colours, line styles
-- [ ] Erasers (stroke, precise), undo/redo, lasso (move, resize, copy, delete), page overview
+- [x] Canvas: PKCanvasView over a tiled page layer (paper, Android shapes and pictures), zoom, pages grow as you write
+- [x] Ink: PencilKit live drawing, every stroke stored as an Android ink row (round trip tested)
+- [x] Pens (fineliner, fountain, pencil, calligraphy, highlighter), type/colour/thickness panel
+- [ ] Line styles (dashes) for ink, quick colours and three sizes in the toolbar
+- [x] Eraser and lasso (PencilKit's own for now), undo/redo
+- [ ] Our own lasso and selection menu, precise eraser, page overview
+- [x] iPhone: opens view-only, Write button remembered per notebook
 - [ ] Toolbar, panels, top bar (quick open, undo/redo, eye, ⋯)
 
 ### 4. Backups
-- [ ] Item codec (`ItemCodec.kt`), Android ink format (`StrokeInputBatch.encode`: gzip'd protobuf) read/write
-- [ ] Backup .zip read/write (`BackupArchive.kt`), merge restore
+- [x] Android ink format (`StrokeInputBatch.encode`: gzip'd protobuf) read/write; shape JSON read (drawing only)
+- [x] Backup .zip read/write (`BackupArchive.kt`), merge restore, Backups card (save file / restore files)
 - [ ] iCloud (per-notebook files, off in the free-signing build)
 - [ ] Google Drive (same layout and appProperties as Android)
 
