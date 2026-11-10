@@ -46,9 +46,9 @@ struct BackupDocument: FileDocument {
 /// Backups: save everything into one file, or bring notebooks back from backup files (merging,
 /// never deleting). iCloud and Google Drive come later (see PLAN.md).
 struct BackupCard: View {
+  var onClose: () -> Void = {}
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
-  @Environment(\.dismiss) private var dismiss
   @State private var saving: BackupDocument?
   @State private var picking = false
   @State private var status: String?
@@ -59,7 +59,7 @@ struct BackupCard: View {
       HStack {
         Text(L("backups")).font(TaliFont.heading(26)).foregroundStyle(c.ink)
         Spacer()
-        Button(L("done")) { dismiss() }.buttonStyle(QuietButtonStyle()).accessibilityIdentifier("backups-done")
+        Button(L("done")) { onClose() }.buttonStyle(QuietButtonStyle()).accessibilityIdentifier("backups-done")
       }
       Text(L("every_stroke_is_saved_the_moment")).font(TaliFont.body(15)).foregroundStyle(c.inkMuted)
       VStack(alignment: .leading, spacing: 10) {
@@ -81,8 +81,6 @@ struct BackupCard: View {
     .frame(maxWidth: 600)
     .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
     .padding(16)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .presentationBackground(.clear)
     .fileExporter(
       isPresented: Binding(get: { saving != nil }, set: { if !$0 { saving = nil } }), document: saving, contentType: .zip,
       defaultFilename: BackupArchive.fileName()

@@ -4,8 +4,8 @@ import TaliCore
 /// The new-notebook card: name, paper, pages and orientation side by side, cover colours, then
 /// Cancel / Create. Fits a landscape tablet without scrolling.
 struct NewNotebookCard: View {
+  var onClose: () -> Void = {}
   var onCreate: (String, PaperStyle, Bool, Bool, UInt32) -> Void
-  @Environment(\.dismiss) private var dismiss
   @Environment(\.tali) private var c
   @State private var title = ""
   @AppStorage("defaultPaper") private var paperRaw = PaperStyle.GRID.rawValue
@@ -82,7 +82,7 @@ struct NewNotebookCard: View {
       }
       HStack {
         Spacer()
-        Button(L("cancel")) { dismiss() }.buttonStyle(QuietButtonStyle())
+        Button(L("cancel")) { onClose() }.buttonStyle(QuietButtonStyle())
         Button(L("create")) { onCreate(title, paper, paged, landscape, cover) }.buttonStyle(PrimaryButtonStyle())
           .accessibilityIdentifier("create")
       }
@@ -91,9 +91,6 @@ struct NewNotebookCard: View {
     .frame(maxWidth: 680)
     .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
     .padding(compact ? 12 : 20)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color.clear)
-    .presentationBackground(.clear)
   }
 
   private func section<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {

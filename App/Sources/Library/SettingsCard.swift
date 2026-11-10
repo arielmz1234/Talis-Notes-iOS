@@ -4,8 +4,8 @@ import SwiftUI
 /// library in that family), Theme beside Style, a line about the style, then Done, and who made it.
 /// The language is iOS's own per-app setting, so its row opens the app's page in iOS Settings.
 struct SettingsCard: View {
+  var onClose: () -> Void = {}
   @Environment(\.tali) private var c
-  @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
   @Environment(\.colorScheme) private var scheme
   @AppStorage("themeMode") private var themeMode = "LIGHT"
@@ -41,7 +41,7 @@ struct SettingsCard: View {
       Spacer().frame(height: 22)
       HStack {
         Spacer()
-        Button(L("done")) { dismiss() }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("settings-done")
+        Button(L("done")) { onClose() }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("settings-done")
       }
       Spacer().frame(height: 14)
       Text(L("made_by_n", "Ariel M.") + " · " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
@@ -51,8 +51,6 @@ struct SettingsCard: View {
     .frame(maxWidth: 600)
     .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
     .padding(16)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .presentationBackground(.clear)
   }
 
   private var languageRow: some View {

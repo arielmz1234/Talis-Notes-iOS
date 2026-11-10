@@ -48,28 +48,21 @@ struct LibraryView: View {
         if phone { drawerLayer }
       }
     }
-    .sheet(isPresented: $creating) {
-      NewNotebookCard { title, paper, pages, landscape, cover in
-        let n = lib.create(title: title, paper: paper, pages: pages, landscape: landscape, cover: cover)
-        creating = false
-        onOpen(n)
+    .overlay {
+      if creating {
+        DialogOverlay(onClose: { creating = false }) {
+          NewNotebookCard(onClose: { closeDialogs() }) { title, paper, pages, landscape, cover in
+            let n = lib.create(title: title, paper: paper, pages: pages, landscape: landscape, cover: cover)
+            closeDialogs()
+            onOpen(n)
+          }
+        }
+      } else if backups {
+        DialogOverlay(onClose: { closeDialogs() }) { BackupCard(onClose: { closeDialogs() }) }
+      } else if settings {
+        DialogOverlay(onClose: { closeDialogs() }) { SettingsCard(onClose: { closeDialogs() }) }
       }
-      .presentationDetents([.large])
     }
-    .onChange(of: lib.shelf) { _, _ in picked = nil }
-    .confirmationDialog(
-      (picked?.count ?? 0) == 1 ? L("delete_1_notebook") : L("delete_n_notebooks", picked?.count ?? 0), isPresented: $deletingPicked,
-      titleVisibility: .visible
-    ) {
-      Button(L("delete"), role: .destructive) {
-        withAnimation(.easeOut(duration: 0.22)) { for id in picked ?? [] { lib.moveToTrash(id) } }
-        picked = nil
-      }
-    } message: {
-      Text((picked?.count ?? 0) == 1 ? L("it_moves_to_recently_deleted_where", trashDays) : L("they_move_to_recently_deleted_where", trashDays))
-    }
-    .sheet(isPresented: $backups) { BackupCard() }
-    .sheet(isPresented: $settings) { SettingsCard() }
     .alert(L("rename"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }), presenting: renaming) { n in
       RenameField(initial: n.title) { lib.rename(n.id, to: $0) }
     }
@@ -97,11 +90,19 @@ struct LibraryView: View {
     }
   }
 
+  private func closeDialogs() {
+    withAnimation(.easeOut(duration: 0.16)) {
+      creating = false
+      backups = false
+      settings = false
+    }
+  }
+
   private func sidebar(phone: Bool) -> some View {
     Sidebar(
       onNewFolder: { newFolder = true },
       onPicked: { if phone { withAnimation(.easeOut(duration: 0.2)) { drawer = false } } },
-      onBackups: { backups = true }, onSettings: { settings = true })
+      onBackups: { withAnimation(Ease.outStrong(duration: 0.24)) { backups = true } }, onSettings: { withAnimation(Ease.outStrong(duration: 0.24)) { settings = true } })
   }
 
   @ViewBuilder private func main(width: CGFloat, phone: Bool) -> some View {
@@ -217,7 +218,7 @@ struct LibraryView: View {
             Button(L("select")) { withAnimation(.easeOut(duration: 0.2)) { picked = [] } }.buttonStyle(QuietButtonStyle())
             Spacer().frame(width: 8)
           }
-          AddButton { creating = true }
+          AddButton { withAnimation(Ease.outStrong(duration: 0.24)) { creating = true } }
         }
       }
       .transition(.opacity.combined(with: .offset(y: 8)))
