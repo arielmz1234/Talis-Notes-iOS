@@ -1,8 +1,10 @@
 import SwiftUI
 import TaliCore
 
-/// The library: a sidebar of shelves and folders, the sky with its clouds, a greeting and heading,
-/// search and sort, then the notebooks. On a phone the sidebar is a drawer (☰).
+/// The library, laid out like Android's `LibraryScreen`: one continuous sky across the top of the
+/// whole screen with the sidebar and notebooks below it; a greeting, the big heading and a count
+/// line; search, sort and + beside it (under it when narrow); a ruler; then the notebooks. On a phone
+/// the sidebar is a drawer (☰).
 struct LibraryView: View {
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
@@ -12,21 +14,33 @@ struct LibraryView: View {
   @State private var renaming: NotebookMeta?
   @State private var moving: NotebookMeta?
   @State private var deleting: NotebookMeta?
+  @State private var restoring: NotebookMeta?
   @State private var newFolder = false
   @State private var backups = false
   @State private var settings = false
+  @AppStorage("minimal") private var minimal = false
 
   var body: some View {
     GeometryReader { geo in
       let phone = geo.size.width < Layout.phoneWidth
       ZStack(alignment: .topLeading) {
-        c.background.ignoresSafeArea()
-        HStack(spacing: 0) {
-          if !phone {
-            Sidebar(onNewFolder: { newFolder = true }, onPicked: {}, onBackups: { backups = true }, onSettings: { settings = true })
-              .frame(width: 264)
+        LinearGradient(
+          stops: [.init(color: c.background, location: 0), .init(color: c.background, location: 0.7), .init(color: c.sidebarEnd, location: 1)],
+          startPoint: .top, endPoint: .bottom
+        )
+        .ignoresSafeArea()
+        if !minimal {
+          ZStack(alignment: .topLeading) {
+            SkyBand(height: 360)
+            SkyClouds(width: geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing)
           }
-          main(width: phone ? geo.size.width : geo.size.width - 264, phone: phone)
+          .ignoresSafeArea()
+        }
+        HStack(alignment: .top, spacing: 0) {
+          if !phone {
+            sidebar(phone: false).frame(width: 268)
+          }
+          main(width: phone ? geo.size.width : geo.size.width - 268, phone: phone)
         }
         if phone { drawerLayer }
       }
@@ -50,55 +64,81 @@ struct LibraryView: View {
         lib.createFolder(name: name, color: Covers.soft[lib.folders.count % Covers.soft.count], parent: parent)
       }
     }
-    .confirmationDialog(
-      L("move_to_folder"), isPresented: Binding(get: { moving != nil }, set: { if !$0 { moving = nil } }), presenting: moving
-    ) { n in
+    .confirmationDialog(L("move_to"), isPresented: Binding(get: { moving != nil }, set: { if !$0 { moving = nil } }), presenting: moving) { n in
       Button(L("no_folder")) { lib.move(n.id, to: nil) }
       ForEach(lib.folders) { f in Button(f.name) { lib.move(n.id, to: f.id) } }
     }
-    .confirmationDialog(
-      L("delete"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting
-    ) { n in
+    .confirmationDialog(L("delete"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { n in
       Button(L("delete"), role: .destructive) { withAnimation(.easeOut(duration: 0.22)) { lib.moveToTrash(n.id) } }
     } message: { _ in
       Text(L("it_moves_to_recently_deleted_where", trashDays))
     }
+    .confirmationDialog(
+      restoring?.title ?? "", isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } }), titleVisibility: .visible,
+      presenting: restoring
+    ) { n in
+      Button(L("restore")) { withAnimation(.easeOut(duration: 0.22)) { lib.restore(n.id) } }
+      Button(L("delete_forever"), role: .destructive) { withAnimation(.easeOut(duration: 0.22)) { lib.eraseForGood(n.id) } }
+    }
+  }
+
+  private func sidebar(phone: Bool) -> some View {
+    Sidebar(
+      onNewFolder: { newFolder = true },
+      onPicked: { if phone { withAnimation(.easeOut(duration: 0.2)) { drawer = false } } },
+      onBackups: { backups = true }, onSettings: { settings = true })
   }
 
   @ViewBuilder private func main(width: CGFloat, phone: Bool) -> some View {
-    let side: CGFloat = phone ? 16 : 32
-    ScrollView {
-      ZStack(alignment: .topLeading) {
-        SkyBand(height: 320)
-        SkyClouds(width: width)
-        VStack(alignment: .leading, spacing: 14) {
-          if phone {
-            Button { withAnimation(.easeOut(duration: 0.24)) { drawer = true } } label: {
-              Image(systemName: "line.3.horizontal").font(.title2).foregroundStyle(c.ink).frame(width: 44, height: 44)
-            }
-            .accessibilityLabel(L("folders"))
-          }
-          GreetingLine().padding(.top, phone ? 4 : 112)
-          HStack(alignment: .firstTextBaseline) {
-            Text(heading).font(TaliFont.heading(phone ? 30 : 38)).foregroundStyle(c.ink).lineLimit(1).minimumScaleFactor(0.6)
-            Spacer()
-          }
-          toolsRow(phone: phone)
-          content(phone: phone)
+    let side: CGFloat = phone ? 16 : 36
+    VStack(alignment: .leading, spacing: 0) {
+      if phone {
+        Spacer().frame(height: minimal ? 8 : 64)
+        Button { withAnimation(.easeOut(duration: 0.24)) { drawer = true } } label: {
+          Image(systemName: "line.3.horizontal").font(.system(size: 20)).foregroundStyle(c.ink)
+            .frame(width: 44, height: 44).background(RoundedRectangle(cornerRadius: 14).fill(c.surface.opacity(0.7)))
         }
-        .padding(.horizontal, side)
-        .padding(.bottom, 40)
+        .accessibilityLabel(L("folders"))
+        Spacer().frame(height: 12)
+      } else {
+        Spacer().frame(height: minimal ? 36 : 112)
       }
+      // Narrow, there isn't room for all of it on one line: the search and buttons go underneath.
+      if phone || width < 732 {
+        heading
+        Spacer().frame(height: 16)
+        actions(searchWidth: nil)
+      } else {
+        HStack(alignment: .bottom, spacing: 0) {
+          heading.frame(maxWidth: .infinity, alignment: .leading)
+          actions(searchWidth: 240)
+        }
+      }
+      Spacer().frame(height: 18)
+      RulerDivider()
+      Spacer().frame(height: 22)
+      ScrollView {
+        content(phone: phone).padding(.bottom, 40)
+      }
+      .scrollIndicators(.hidden)
     }
-    .scrollIndicators(.hidden)
-    .overlay(alignment: .bottomTrailing) {
+    .padding(.horizontal, side)
+  }
+
+  private var heading: some View {
+    VStack(alignment: .leading, spacing: 0) {
       if lib.shelf != .trash {
-        AddButton { creating = true }.padding(side)
+        GreetingLine()
+        Spacer().frame(height: 2)
       }
+      Text(headingText).font(TaliType.displayLarge).tracking(-1.04).foregroundStyle(c.ink)
+        .lineLimit(1).minimumScaleFactor(0.62)
+      Spacer().frame(height: 6)
+      Text(countLine).font(TaliType.bodyLarge).foregroundStyle(c.inkMuted).lineLimit(2)
     }
   }
 
-  private var heading: String {
+  private var headingText: String {
     switch lib.shelf {
     case .all: return L("all_notebooks")
     case .starred: return L("starred_notebooks")
@@ -107,69 +147,98 @@ struct LibraryView: View {
     }
   }
 
-  @ViewBuilder private func toolsRow(phone: Bool) -> some View {
+  /// "4 notebooks · Monday, 9 November" (or how long Recently deleted keeps things).
+  private var countLine: String {
+    if lib.shelf == .trash { return L("notebooks_stay_here_for_n_days", trashDays) }
+    let count: Int
+    var inside = 0
+    switch lib.shelf {
+    case .all: count = lib.notebooks.count
+    case .starred: count = lib.notebooks.filter { lib.starred.contains($0.id) }.count
+    case .folder(let id):
+      count = lib.notebooks.filter { $0.folderId == id }.count
+      inside = lib.folders.filter { $0.parentId == id }.count
+    case .trash: count = 0
+    }
+    var counts = count == 1 ? L("t_1_notebook") : L("n_notebooks", count)
+    if inside == 1 { counts += L("t_1_folder") } else if inside > 1 { counts += L("n_folders", inside) }
+    let today = Date().formatted(Date.FormatStyle().weekday(.wide).day().month(.wide))
+    return L("n_n_2", counts, today)
+  }
+
+  @ViewBuilder private func actions(searchWidth: CGFloat?) -> some View {
     @Bindable var lib = lib
-    HStack(spacing: 10) {
-      HStack(spacing: 8) {
-        Image(systemName: "magnifyingglass").foregroundStyle(c.inkFaint)
-        TextField(L("search_notebooks"), text: $lib.search).font(TaliFont.body(16)).foregroundStyle(c.ink)
-          .textInputAutocapitalization(.never).autocorrectionDisabled()
-        if !lib.search.isEmpty {
-          Button { lib.search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(c.inkFaint) }
-            .accessibilityLabel(L("clear_search"))
-        }
+    HStack(spacing: 0) {
+      SearchField(text: $lib.search).frame(width: searchWidth).frame(maxWidth: searchWidth == nil ? .infinity : nil)
+      if lib.shelf != .trash {
+        Spacer().frame(width: 8)
+        SortButton()
       }
-      .padding(.horizontal, 16).frame(height: 46).frame(maxWidth: 420)
-      .cloudSurface(radius: 23, crown: .softEdge, shadowDepth: 4)
-      SortButton()
-      if lib.shelf == .trash, !lib.trash.isEmpty {
-        Button(L("empty")) { lib.emptyTrash() }.buttonStyle(QuietButtonStyle(warning: true))
+      Spacer().frame(width: 12)
+      if lib.shelf == .trash {
+        if !lib.trash.isEmpty { Button(L("empty")) { lib.emptyTrash() }.buttonStyle(QuietButtonStyle(warning: true)) }
+      } else {
+        AddButton { creating = true }
       }
-      Spacer(minLength: 0)
     }
   }
 
   @ViewBuilder private func content(phone: Bool) -> some View {
     let items = lib.shown
-    let folders = lib.subfolders
-    let columns = [GridItem(.adaptive(minimum: phone ? 150 : 190, maximum: 260), spacing: phone ? 14 : 22, alignment: .top)]
+    let folders: [Folder] = lib.search.isEmpty ? lib.subfoldersOfOpenFolder : []
     if items.isEmpty && folders.isEmpty {
       EmptyShelf(shelf: lib.shelf, searching: !lib.search.isEmpty, search: lib.search) { creating = true }
-        .frame(maxWidth: .infinity).padding(.top, 40)
+        .frame(maxWidth: .infinity).padding(.top, 30)
     } else {
-      LazyVGrid(columns: columns, alignment: .leading, spacing: phone ? 18 : 26) {
-        ForEach(folders) { f in
-          FolderCard(folder: f, count: lib.notebooks.filter { $0.folderId == f.id }.count)
-            .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { lib.shelf = .folder(f.id) } }
-            .contextMenu {
-              Button(role: .destructive) { lib.deleteFolder(f.id) } label: { Label(L("delete_folder"), systemImage: "trash") }
+      let columns = [GridItem(.adaptive(minimum: phone ? 150 : 210), spacing: 24, alignment: .top)]
+      LazyVGrid(columns: columns, alignment: .leading, spacing: 28) {
+        if !folders.isEmpty {
+          Section {
+            ForEach(folders) { f in
+              FolderTile(folder: f, count: lib.notebooks.filter { $0.folderId == f.id }.count, inner: lib.folders.filter { $0.parentId == f.id }.count)
+                .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { lib.shelf = .folder(f.id) } }
+                .contextMenu { Button(role: .destructive) { lib.deleteFolder(f.id) } label: { Label(L("delete_folder"), systemImage: "trash") } }
             }
+          } header: {
+            SectionLabel(text: L("folders"))
+          }
         }
-        ForEach(items) { n in
-          NotebookCard(notebook: n, starred: lib.starred.contains(n.id), inTrash: lib.shelf == .trash)
-            .onTapGesture { if lib.shelf != .trash { onOpen(n) } }
-            .contextMenu { menu(for: n) }
-            .transition(.opacity.combined(with: .scale(scale: 0.93)).combined(with: .offset(y: -10)))
+        if !items.isEmpty {
+          Section {
+            ForEach(items) { n in
+              NotebookCard(notebook: n, starred: lib.starred.contains(n.id), inTrash: lib.shelf == .trash)
+                .onTapGesture { if lib.shelf == .trash { restoring = n } else { onOpen(n) } }
+                .contextMenu { if lib.shelf != .trash { menu(for: n) } }
+                .transition(.opacity.combined(with: .scale(scale: 0.93)).combined(with: .offset(y: -10)))
+            }
+          } header: {
+            SectionLabel(text: sectionTitle)
+          }
         }
       }
-      .padding(.top, 6)
+    }
+  }
+
+  private var sectionTitle: String {
+    switch lib.shelf {
+    case .trash: return L("tap_a_notebook_to_bring_it")
+    case .folder: return L("notebooks")
+    default:
+      if lib.sort == .EDITED && !lib.sortReversed { return L("recent") }
+      if lib.sort == .OPENED && !lib.sortReversed { return L("recently_opened") }
+      return L("notebooks")
     }
   }
 
   @ViewBuilder private func menu(for n: NotebookMeta) -> some View {
-    if lib.shelf == .trash {
-      Button { lib.restore(n.id) } label: { Label(L("restore"), systemImage: "arrow.uturn.backward") }
-      Button(role: .destructive) { lib.eraseForGood(n.id) } label: { Label(L("delete_forever"), systemImage: "trash") }
-    } else {
-      Button { onOpen(n) } label: { Label(L("open"), systemImage: "book") }
-      Button { lib.toggleStar(n.id) } label: {
-        Label(L(lib.starred.contains(n.id) ? "remove_star" : "star"), systemImage: lib.starred.contains(n.id) ? "star.slash" : "star")
-      }
-      Button { renaming = n } label: { Label(L("rename"), systemImage: "pencil") }
-      Button { moving = n } label: { Label(L("move_to_folder"), systemImage: "folder") }
-      Button { lib.duplicate(n.id) } label: { Label(L("duplicate"), systemImage: "plus.square.on.square") }
-      Button(role: .destructive) { deleting = n } label: { Label(L("delete"), systemImage: "trash") }
+    Button { lib.toggleStar(n.id) } label: {
+      Label(L(lib.starred.contains(n.id) ? "remove_star" : "star"), systemImage: lib.starred.contains(n.id) ? "star.fill" : "star")
     }
+    Button { renaming = n } label: { Label(L("rename"), systemImage: "pencil") }
+    Button { lib.duplicate(n.id) } label: { Label(L("duplicate"), systemImage: "doc.on.doc") }
+    Button { moving = n } label: { Label(L("move_to_folder"), systemImage: "folder") }
+    Divider()
+    Button(role: .destructive) { deleting = n } label: { Label(L("delete"), systemImage: "trash") }
   }
 
   @ViewBuilder private var drawerLayer: some View {
@@ -177,62 +246,75 @@ struct LibraryView: View {
       c.scrim.ignoresSafeArea()
         .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { drawer = false } }
         .transition(.opacity)
-      Sidebar(onNewFolder: { newFolder = true }, onPicked: { withAnimation(.easeOut(duration: 0.2)) { drawer = false } }, onBackups: { backups = true }, onSettings: { settings = true })
+      sidebar(phone: true)
         .frame(width: 290)
         .frame(maxHeight: .infinity)
-        .background(c.sidebar)
+        .background(LinearGradient(colors: [c.background, c.sidebarEnd], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
         .transition(.move(edge: .leading))
     }
   }
 }
 
-/// "Good morning" by the device's clock (no name: other people may use the app).
+/// "Good morning" in the accent colour, by the device's clock (no name: other people may use the app).
 struct GreetingLine: View {
   @Environment(\.tali) private var c
   var body: some View {
     TimelineView(.periodic(from: .now, by: 30)) { ctx in
       Text(L(Greeting.forHour(Calendar.current.component(.hour, from: ctx.date)).rawValue))
-        .font(TaliFont.body(17, .semibold)).foregroundStyle(c.inkMuted)
+        .font(TaliType.titleMedium).foregroundStyle(c.accent)
     }
   }
 }
 
-/// The round + that starts a new notebook.
-struct AddButton: View {
-  var action: () -> Void
+/// The search box: white with a hairline edge and 16 pt corners (no cloud), as on Android.
+struct SearchField: View {
+  @Binding var text: String
   @Environment(\.tali) private var c
   var body: some View {
-    Button(action: action) {
-      Image(systemName: "plus").font(.system(size: 26, weight: .semibold)).foregroundStyle(c.onAccent)
-        .frame(width: 64, height: 64)
-        .background(Circle().fill(c.accentGradient))
-        .shadow(color: c.glow.opacity(0.3), radius: 12, y: 6)
+    HStack(spacing: 10) {
+      Image(systemName: "magnifyingglass").font(.system(size: 17)).foregroundStyle(c.inkFaint)
+      TextField("", text: $text, prompt: Text(L("search_notebooks")).foregroundStyle(c.inkFaint))
+        .font(TaliType.bodyMedium).foregroundStyle(c.ink).tint(c.accent)
+        .textInputAutocapitalization(.never).autocorrectionDisabled()
+      if !text.isEmpty {
+        Button { text = "" } label: { Image(systemName: "xmark").font(.system(size: 14, weight: .medium)).foregroundStyle(c.inkMuted) }
+          .accessibilityLabel(L("clear_search"))
+      }
     }
-    .buttonStyle(PressStyle())
-    .accessibilityLabel(L("new_notebook"))
-    .accessibilityIdentifier("add")
+    .padding(.horizontal, 14)
+    .frame(minHeight: 48)
+    .background(RoundedRectangle(cornerRadius: 16).fill(c.surface))
+    .overlay(RoundedRectangle(cornerRadius: 16).stroke(c.line, lineWidth: 1))
   }
 }
 
-/// Sort: Last edited, Last opened, Date created, Name; picking the one in use turns it round.
+/// Sort, beside the search box and shaped like it.
 struct SortButton: View {
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
   var body: some View {
     Menu {
-      ForEach(LibrarySort.allCases, id: \.self) { s in
-        Button {
-          if lib.sort == s { lib.sortReversed.toggle() } else {
-            lib.sort = s
-            lib.sortReversed = false
+      Section(L("sort_by")) {
+        ForEach(LibrarySort.allCases, id: \.self) { s in
+          Button {
+            if lib.sort == s { lib.sortReversed.toggle() } else {
+              lib.sort = s
+              lib.sortReversed = false
+            }
+          } label: {
+            if lib.sort == s {
+              Label(label(s), systemImage: lib.sortReversed ? "arrow.up" : "arrow.down")
+            } else {
+              Text(label(s))
+            }
           }
-        } label: {
-          if lib.sort == s { Label(label(s), systemImage: lib.sortReversed ? "arrow.up" : "arrow.down") } else { Text(label(s)) }
         }
       }
     } label: {
-      Image(systemName: "arrow.up.arrow.down").font(.system(size: 17, weight: .semibold)).foregroundStyle(c.accent)
-        .frame(width: 46, height: 46).cloudSurface(radius: 23, crown: .little, shadowDepth: 4)
+      Image(systemName: "line.3.horizontal.decrease").font(.system(size: 18)).foregroundStyle(c.inkMuted)
+        .frame(width: 48, height: 48)
+        .background(RoundedRectangle(cornerRadius: 16).fill(c.surface))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(c.line, lineWidth: 1))
     }
     .accessibilityLabel(L("sort_notebooks"))
   }
@@ -244,6 +326,65 @@ struct SortButton: View {
     case .CREATED: return L("sort_created")
     case .NAME: return L("sort_name")
     }
+  }
+}
+
+/// The + : a 48 pt rounded square in the violet-to-blue gradient.
+struct AddButton: View {
+  var action: () -> Void
+  @Environment(\.tali) private var c
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: "plus").font(.system(size: 22, weight: .medium)).foregroundStyle(c.onAccent)
+        .frame(width: 48, height: 48)
+        .background(RoundedRectangle(cornerRadius: 16).fill(c.accentGradient))
+    }
+    .buttonStyle(PressStyle(scale: 0.94))
+    .accessibilityLabel(L("add"))
+    .accessibilityIdentifier("add")
+  }
+}
+
+/// A ruler along the top of the notebooks (Android's `RulerDivider`): ticks, taller every fifth,
+/// numbered every tenth.
+struct RulerDivider: View {
+  @Environment(\.tali) private var c
+  var body: some View {
+    Canvas { ctx, size in
+      let step: CGFloat = 6.3 / 1.6
+      let base = size.height - 0.5
+      var line = Path()
+      line.move(to: CGPoint(x: 0, y: base))
+      line.addLine(to: CGPoint(x: size.width, y: base))
+      ctx.stroke(line, with: .color(c.line), lineWidth: 1)
+      var i = 0
+      var x: CGFloat = 0
+      while x <= size.width {
+        let h: CGFloat = i % 10 == 0 ? 9 : (i % 5 == 0 ? 6 : 3.5)
+        var t = Path()
+        t.move(to: CGPoint(x: x, y: base))
+        t.addLine(to: CGPoint(x: x, y: base - h))
+        ctx.stroke(t, with: .color(i % 10 == 0 ? c.blue.opacity(0.55) : c.line), lineWidth: 1)
+        if i % 10 == 0 && i > 0 {
+          ctx.draw(Text("\(i / 10)").font(TaliFont.body(9, .semibold)).foregroundStyle(c.inkFaint), at: CGPoint(x: x + 3, y: 0), anchor: .topLeading)
+        }
+        i += 1
+        x += step
+      }
+    }
+    .frame(height: 22)
+    .environment(\.layoutDirection, .leftToRight)
+    .accessibilityHidden(true)
+  }
+}
+
+/// A small upper-case label over a section.
+struct SectionLabel: View {
+  var text: String
+  @Environment(\.tali) private var c
+  var body: some View {
+    Text(text.uppercased()).font(TaliType.labelSmall).tracking(0.66).foregroundStyle(c.inkFaint)
+      .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
@@ -268,20 +409,20 @@ struct EmptyShelf: View {
   var body: some View {
     VStack(spacing: 14) {
       if searching {
-        Text(L("no_notebooks_match_n", search)).font(TaliFont.body(17)).foregroundStyle(c.inkMuted)
+        Text(L("no_notebooks_match_n", search)).font(TaliType.bodyLarge).foregroundStyle(c.inkMuted)
       } else {
         switch shelf {
-        case .trash: Text(L("notebooks_stay_here_for_n_days", trashDays)).font(TaliFont.body(17)).foregroundStyle(c.inkMuted)
+        case .trash: EmptyView()
         case .starred:
-          Text(L("no_starred_notebooks_yet")).font(TaliFont.heading(22)).foregroundStyle(c.ink)
-          Text(L("hold_a_notebook_and_choose_star")).font(TaliFont.body(16)).foregroundStyle(c.inkMuted)
+          Text(L("no_starred_notebooks_yet")).font(TaliType.titleLarge).foregroundStyle(c.ink)
+          Text(L("hold_a_notebook_and_choose_star")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted)
         case .folder:
-          Text(L("this_folder_is_empty")).font(TaliFont.heading(22)).foregroundStyle(c.ink)
+          Text(L("this_folder_is_empty")).font(TaliType.titleLarge).foregroundStyle(c.ink)
           Button(L("new_notebook"), action: onCreate).buttonStyle(PrimaryButtonStyle())
         case .all:
           PaperPreview(style: .ENGINEERING, zoom: 2.2).frame(width: 220, height: 150).clipShape(RoundedRectangle(cornerRadius: 14))
             .shadow(color: c.glow.opacity(0.15), radius: 14, y: 6)
-          Text(L("start_your_first_notebook")).font(TaliFont.heading(24)).foregroundStyle(c.ink)
+          Text(L("start_your_first_notebook")).font(TaliType.titleLarge).foregroundStyle(c.ink)
           Button(L("new_notebook"), action: onCreate).buttonStyle(PrimaryButtonStyle())
         }
       }

@@ -149,14 +149,31 @@ enum TaliFont {
     }
   }
 
-  static func heading(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
+  static func heading(_ size: CGFloat, _ weight: Font.Weight = .bold, opsz: CGFloat? = nil) -> Font {
     let w = numeric(weight)
     switch language {
     case "he": return variable("Heebo-Regular", size, ["wght": w])
     case "ar": return variable("Vazirmatn-Regular", size, ["wght": w])
-    default: return variable("BricolageGrotesque-96ptExtraBold", size, ["wght": min(w, 800), "opsz": min(max(size * 1.5, 12), 96), "wdth": 92])
+    default: return variable("BricolageGrotesque-96ptExtraBold", size, ["wght": min(w, 800), "opsz": opsz ?? min(max(size * 1.5, 12), 96), "wdth": 92])
     }
   }
+}
+
+/// Android's type scale (`TaliTypography` in theme/Theme.kt), by its Material names.
+enum TaliType {
+  /// The library's big heading: Bricolage 700, optical size 72, 52 pt, tracked in a little.
+  static let displayLarge = TaliFont.heading(52, .bold, opsz: 72)
+  /// The wordmark and dialog titles: Bricolage 600 at optical size 36, 28 pt.
+  static let headlineMedium = TaliFont.heading(28, .semibold, opsz: 36)
+  static let titleLarge = TaliFont.heading(20, .semibold, opsz: 24)
+  static let titleMedium = TaliFont.body(16, .semibold)
+  static let titleSmall = TaliFont.body(14, .semibold)
+  static let bodyLarge = TaliFont.body(16)
+  static let bodyMedium = TaliFont.body(14)
+  static let bodySmall = TaliFont.body(12)
+  static let labelLarge = TaliFont.body(14, .semibold)
+  static let labelMedium = TaliFont.body(12, .semibold)
+  static let labelSmall = TaliFont.body(11, .semibold)
 }
 
 /// The colour families (Settings › Colours), as on Android: Lilac (the original), Sky, Sage, Peach.

@@ -91,6 +91,12 @@ final class Library {
     }
   }
 
+  /// Folders inside the open folder (at the top level, folders are only in the sidebar, as on Android).
+  var subfoldersOfOpenFolder: [Folder] {
+    if case .folder(let id) = shelf { return folders.filter { $0.parentId == id } }
+    return []
+  }
+
   func folder(_ id: String?) -> Folder? { folders.first { $0.id == id } }
 
   /// Names already used beside a notebook going into [folder] (names are kept apart per place).

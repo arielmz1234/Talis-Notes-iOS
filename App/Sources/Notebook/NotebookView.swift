@@ -23,6 +23,8 @@ struct NotebookView: View {
   @State private var editingPen: String?
   /// On a phone a notebook opens just for looking until Write is tapped (remembered per notebook, on this phone only).
   @State private var viewing: Bool
+  /// Toolbars hidden with the eye (Android's focus mode).
+  @State private var hidden = false
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
@@ -39,42 +41,58 @@ struct NotebookView: View {
           onPageCount: { pageCount = $0 }, command: $command
         )
         .ignoresSafeArea(edges: .bottom)
-        VStack(spacing: narrow ? 10 : 0) {
+        VStack(spacing: narrow ? 18 : 0) {
           if viewing {
-            HStack {
-              topBar
-              Spacer()
+            HStack(spacing: 10) {
+              leftBars
+              Spacer(minLength: 10)
               Button {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                   viewing = false
                   PhoneWriting.startWriting(notebook.id)
                 }
               } label: {
-                Label(L("write"), systemImage: "pencil.tip").font(TaliFont.body(16, .semibold))
+                Label(L("write"), systemImage: "pencil").font(TaliType.labelLarge)
               }
               .buttonStyle(PrimaryButtonStyle())
+              .frame(height: 52)
               .accessibilityIdentifier("write")
             }
+          } else if hidden {
+            HStack {
+              Spacer()
+              FloatingBar(crown: .softEdge) {
+                ToolIcon(system: "eye", label: L("show_toolbars")) { withAnimation(.easeOut(duration: 0.22)) { hidden = false } }
+              }
+            }
+            .transition(.opacity)
           } else if narrow {
-            topBar
+            HStack(spacing: 10) {
+              leftBars
+              Spacer(minLength: 10)
+              rightBars(showName: !PhoneWriting.onPhone)
+            }
             toolbar.frame(maxWidth: .infinity)
               .transition(.move(edge: .top).combined(with: .opacity))
           } else {
             ZStack(alignment: .top) {
-              HStack {
-                topBar
-                Spacer()
+              HStack(spacing: 10) {
+                leftBars
+                Spacer(minLength: 10)
+                rightBars(showName: true)
               }
+              .frame(height: 60)
               toolbar
             }
+            .transition(.opacity)
           }
-          if let id = editingPen, let i = pens.firstIndex(where: { $0.id == id }) {
+          if !hidden, !viewing, let id = editingPen, let i = pens.firstIndex(where: { $0.id == id }) {
             PenPanel(pen: $pens[i]) { editingPen = nil }
               .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: -8)), removal: .opacity))
           }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.top, 20)
       }
     }
     .environment(\.tali, barColors)
@@ -87,26 +105,41 @@ struct NotebookView: View {
     return scheme == .dark && !notebook.dark ? f.mist : (scheme == .dark ? f.dark : f.light)
   }
 
-  private var topBar: some View {
-    let bars = barColors
-    return     HStack(spacing: 10) {
-      Button(action: onBack) {
-        Image(systemName: "chevron.backward").font(.system(size: 19, weight: .semibold)).foregroundStyle(bars.ink)
-          .frame(width: 48, height: 48).cloudSurface(radius: 24, crown: .little, shadowDepth: 4)
+  /// Back on a little cloud of its own, then undo and redo (Android's `TitlePill`).
+  private var leftBars: some View {
+    HStack(spacing: 10) {
+      FloatingBar(crown: .little) {
+        ToolIcon(system: "arrow.backward", label: L("back"), action: onBack).accessibilityIdentifier("back")
       }
-      .accessibilityLabel(L("back"))
-      .accessibilityIdentifier("back")
-      HStack(spacing: 2) {
-        Button { command = .undo } label: { Image(systemName: "arrow.uturn.backward").frame(width: 44, height: 48) }
-          .disabled(!canUndo).accessibilityLabel(L("undo"))
-        Button { command = .redo } label: { Image(systemName: "arrow.uturn.forward").frame(width: 44, height: 48) }
-          .disabled(!canRedo).accessibilityLabel(L("redo"))
+      if !viewing {
+        FloatingBar(crown: .softEdge) {
+          ToolIcon(system: "arrow.uturn.backward", label: L("undo"), enabled: canUndo) { command = .undo }
+          ToolIcon(system: "arrow.uturn.forward", label: L("redo"), enabled: canRedo) { command = .redo }
+        }
       }
-      .font(.system(size: 17, weight: .semibold)).foregroundStyle(bars.ink)
-      .padding(.horizontal, 4).cloudSurface(radius: 24, crown: .softEdge, shadowDepth: 4)
-      Text(notebook.title).font(TaliFont.body(16, .semibold)).foregroundStyle(bars.ink).lineLimit(1)
-        .padding(.horizontal, 16).frame(height: 48).cloudSurface(radius: 24, crown: .softEdge, shadowDepth: 4)
-        .frame(maxWidth: 260, alignment: .leading)
+    }
+  }
+
+  /// The notebook's name with a pencil (no crown), then the eye, in the top-right corner.
+  private func rightBars(showName: Bool) -> some View {
+    HStack(spacing: 10) {
+      if showName {
+        FloatingBar(crown: .none, height: 44) {
+          HStack(spacing: 8) {
+            Text(notebook.title).font(TaliType.titleSmall).foregroundStyle(barColors.ink).lineLimit(1).frame(maxWidth: 200, alignment: .leading)
+            Image(systemName: "pencil").font(.system(size: 14)).foregroundStyle(barColors.inkFaint)
+          }
+          .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 6)
+        }
+      }
+      FloatingBar(crown: .softEdge) {
+        ToolIcon(system: "eye.slash", label: L("hide_toolbars")) {
+          withAnimation(.easeOut(duration: 0.2)) {
+            editingPen = nil
+            hidden = true
+          }
+        }
+      }
     }
   }
 
@@ -128,9 +161,9 @@ struct NotebookView: View {
       ToolButton(icon: "eraser", label: L("eraser"), on: tool == .eraser) { select(.eraser) }
       ToolButton(icon: "lasso", label: L("lasso"), on: tool == .lasso) { select(.lasso) }
     }
-    .padding(.horizontal, 12)
+    .padding(.horizontal, 6)
     .frame(height: 60)
-    .cloudSurface(radius: 26, crown: .edge)
+    .cloudSurface(radius: 22, crown: .edge)
   }
 
   private func select(_ t: Tool) {
@@ -188,6 +221,39 @@ struct PenGlyph: View {
       tip.closeSubpath()
       ctx.fill(tip, with: .color(color.opacity(type == .HIGHLIGHTER ? 0.75 : 1)))
     }
+  }
+}
+
+/// A floating bar (Android's `FloatingBar`): a cloud surface with 22 pt corners, 52 pt tall.
+struct FloatingBar<Content: View>: View {
+  var crown: CloudCrown = .none
+  var height: CGFloat = 52
+  @ViewBuilder var content: Content
+
+  var body: some View {
+    HStack(spacing: 0) { content }
+      .padding(.horizontal, 6).padding(.vertical, 4)
+      .frame(height: height)
+      .cloudSurface(radius: 22, crown: crown)
+  }
+}
+
+/// A 44 pt icon button with 14 pt corners and a 22 pt icon (Android's `ToolButton`).
+struct ToolIcon: View {
+  var system: String
+  var label: String
+  var enabled = true
+  var action: () -> Void
+  @Environment(\.tali) private var c
+
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: system).font(.system(size: 19)).foregroundStyle(enabled ? c.ink : c.inkFaint.opacity(0.5))
+        .frame(width: 44, height: 44).contentShape(RoundedRectangle(cornerRadius: 14))
+    }
+    .buttonStyle(PressStyle(scale: 0.9))
+    .disabled(!enabled)
+    .accessibilityLabel(label)
   }
 }
 
