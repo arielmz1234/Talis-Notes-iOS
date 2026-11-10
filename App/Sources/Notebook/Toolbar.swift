@@ -328,8 +328,9 @@ struct ToolPanel<Content: View>: View {
   var width: CGFloat
   @ViewBuilder var content: Content
   var body: some View {
+    // Its own width, or less on a phone so it never runs off the screen.
     VStack(alignment: .leading, spacing: 0) { content }
-      .frame(width: width, alignment: .leading)
+      .frame(maxWidth: width, alignment: .leading)
       .padding(18)
       .cloudSurface(radius: 22, crown: .none, shadowDepth: 10)
   }
@@ -383,7 +384,7 @@ struct PenPanel: View {
       Spacer().frame(height: 8)
       let palette = Palette.colors(for: pen)
       let inBar = Palette.toolbarCount(for: pen)
-      LazyVGrid(columns: Array(repeating: GridItem(.fixed(38), spacing: 2), count: 9), alignment: .leading, spacing: 2) {
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 38, maximum: 38), spacing: 2)], alignment: .leading, spacing: 2) {
         ForEach(Array(palette.enumerated()), id: \.element) { i, col in
           ColorDot(color: Color(argb: col), selected: UInt32(bitPattern: pen.color) | 0xFF00_0000 == col | 0xFF00_0000) {
             pen.color = Int32(bitPattern: col)
