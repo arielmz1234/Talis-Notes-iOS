@@ -124,6 +124,12 @@ struct NoteCanvas: UIViewRepresentable {
   var eraser = EraserSettings()
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
+  /// Where what the lasso picked up is on screen (window coordinates), or nil; for the selection menu.
+  var onSelection: (CGRect?) -> Void = { _ in }
+  /// A short message at the bottom ("Copied — hold anywhere to paste it").
+  var onHint: (String) -> Void = { _ in }
+  /// A hold on the page offering Paste there (window coordinates), or nil.
+  var onPasteOffer: (CGPoint?) -> Void = { _ in }
   /// The page in the middle of the screen and the zoom, as they change (for the page and zoom chips).
   var onView: (Int, CGFloat) -> Void = { _, _ in }
   @Binding var command: CanvasCommand?
@@ -149,6 +155,7 @@ struct NoteCanvas: UIViewRepresentable {
       v.addGestureRecognizer(tap)
     }
     c.applied = settings
+    c.installSelection(on: v)
     v.minimumZoomScale = 0.3
     v.maximumZoomScale = 6
     v.showsVerticalScrollIndicator = false
@@ -189,9 +196,9 @@ struct NoteCanvas: UIViewRepresentable {
     weak var canvas: PKCanvasView?
     weak var pages: PagesView?
     /// What's stored, in drawing order, with the key that recognises each stroke in the PKDrawing.
-    private var stored: [(key: StrokeKey, stroke: InkStroke)] = []
-    private var pageCount = 1
-    private var loading = false
+    var stored: [(key: StrokeKey, stroke: InkStroke)] = []
+    var pageCount = 1
+    var loading = false
     private var didFit = false
     private var saveWork: DispatchWorkItem?
 
@@ -228,11 +235,11 @@ struct NoteCanvas: UIViewRepresentable {
       }
     }
 
-    private var layout: Pages { parent.notebook.pageLayout }
-    private var paged: Bool { parent.notebook.pages != nil }
+    var layout: Pages { parent.notebook.pageLayout }
+    var paged: Bool { parent.notebook.pages != nil }
 
     /// The page a stroke belongs to (where it began), as a PencilKit mask.
-    private func mask(for s: InkStroke) -> UIBezierPath? {
+    func mask(for s: InkStroke) -> UIBezierPath? {
       guard paged, let first = s.inputs.points.first else { return nil }
       guard let r = layout.clip(anchorY: first.y, count: pageCount, between: parent.settings.between) else { return nil }
       return UIBezierPath(rect: CGRect(x: CGFloat(r.left), y: CGFloat(r.top), width: CGFloat(r.width), height: CGFloat(r.height)))
@@ -266,6 +273,13 @@ struct NoteCanvas: UIViewRepresentable {
       applyTool()
       reportUndo()
     }
+
+    /// Strokes added by the app itself (duplicate, paste, a box), waiting to be stored with their own pen.
+    var pending: [StrokeKey: InkStroke] = [:]
+    /// Strokes that were in the drawing at some point this session, by their key.
+    var archive: [StrokeKey: InkStroke] = [:]
+    /// The lasso and what it picked up (see Selection.swift).
+    var lasso = LassoState()
 
     /// The settings the canvas was last given, to change only what changed.
     var applied: CanvasSettings?
@@ -310,8 +324,10 @@ struct NoteCanvas: UIViewRepresentable {
         case false?: canvas.drawingPolicy = .pencilOnly
         }
       }
-      // Just looking: fingers and the pencil scroll and zoom, nothing writes.
-      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly
+      // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own loop.
+      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso
+      lasso.pan?.isEnabled = !parent.viewOnly && parent.tool == .lasso
+      if parent.tool != .lasso { clearSelection() }
       switch parent.tool {
       case .pen(let id):
         let pen = parent.pens.first { $0.id == id } ?? PenSlot.defaults[0]
@@ -324,7 +340,8 @@ struct NoteCanvas: UIViewRepresentable {
           canvas.tool = PKEraserTool(.vector, width: CGFloat(parent.eraser.size))
         }
       case .lasso:
-        canvas.tool = PKLassoTool()
+        // Our own lasso (Android's): the canvas doesn't draw while it's in use.
+        canvas.tool = PKInkingTool(.monoline, color: .clear, width: 1)
       }
     }
 
@@ -337,6 +354,12 @@ struct NoteCanvas: UIViewRepresentable {
         pageCount += 1
         updateContent()
         persistPages()
+      case .copySelection: copySelection()
+      case .cutSelection: cutSelection()
+      case .duplicateSelection: duplicateSelection()
+      case .deleteSelection: deleteSelection()
+      case .boxSelection: boxSelection()
+      case .paste: pasteAtOffer()
       case .goToPage(let i):
         let target = min(max(i, 0), pageCount - 1)
         let r = layout.rect(target)
@@ -350,7 +373,7 @@ struct NoteCanvas: UIViewRepresentable {
       reportUndo()
     }
 
-    private func reportUndo() {
+    func reportUndo() {
       let u = canvas?.undoManager
       parent.onUndoState(u?.canUndo ?? false, u?.canRedo ?? false)
       parent.onPageCount(pageCount)
@@ -390,6 +413,7 @@ struct NoteCanvas: UIViewRepresentable {
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
       updateContent()
+      redrawSelection()
       reportView()
     }
 
@@ -407,6 +431,7 @@ struct NoteCanvas: UIViewRepresentable {
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
       if !didFit { updateContent() }
       reportView()
+      reportSelection()
     }
 
     // MARK: Keeping the store in step
@@ -419,7 +444,7 @@ struct NoteCanvas: UIViewRepresentable {
 
     /// Matches the drawing's strokes to what's stored: new ones are stored, moved ones rewritten,
     /// missing ones removed. Only ink rows are touched; shapes, pictures and text stay as they are.
-    private func sync(_ drawing: PKDrawing) {
+    func sync(_ drawing: PKDrawing) {
       var byKey: [StrokeKey: [Int]] = [:]
       for (i, s) in stored.enumerated() { byKey[s.key, default: []].append(i) }
       var next: [(key: StrokeKey, stroke: InkStroke)] = []
@@ -447,6 +472,15 @@ struct NoteCanvas: UIViewRepresentable {
             rebuilt.append(pk)
             next.append((key, s))
           }
+        } else if let given = pending.removeValue(forKey: key) ?? archive[key] {
+          // A copy we put there ourselves (duplicate, paste, a box): it keeps its own pen.
+          var s = given
+          s.z = z
+          z += 1
+          changed.append(s)
+          growPages(for: s)
+          rebuilt.append(pk)
+          next.append((key, s))
         } else {
           // A new stroke from the pen.
           let s = InkStroke.from(pk, pen: pen, id: newId(), z: z)
@@ -468,6 +502,8 @@ struct NoteCanvas: UIViewRepresentable {
         }
       }
       let removed = stored.indices.filter { !used.contains($0) }.map { stored[$0].stroke.id }
+      // Every stroke seen, so one brought back by undo is stored exactly as it was (not with the pen in use).
+      for (k, st) in stored { archive[k] = st }
       stored = next
       do {
         for s in changed { try parent.db.put(s.row, in: parent.notebook.id) }
@@ -486,7 +522,7 @@ struct NoteCanvas: UIViewRepresentable {
       }
     }
 
-    private var currentPen: PenSlot {
+    var currentPen: PenSlot {
       if case .pen(let id) = parent.tool, let p = parent.pens.first(where: { $0.id == id }) { return p }
       return PenSlot.defaults[0]
     }
@@ -550,6 +586,7 @@ struct NoteCanvas: UIViewRepresentable {
 
 enum CanvasCommand: Equatable {
   case undo, redo, addPage, fitZoom
+  case copySelection, cutSelection, duplicateSelection, deleteSelection, boxSelection, paste
   case goToPage(Int)
 }
 

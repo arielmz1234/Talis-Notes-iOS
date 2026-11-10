@@ -44,6 +44,11 @@ struct NotebookView: View {
   @State private var paper: PaperStyle
   @State private var dark: Bool
   @State private var moreOpen = false
+  /// What the lasso picked up (window coordinates), a held spot offering Paste, and a hint line.
+  @State private var selection: CGRect?
+  @State private var pasteOffer: CGPoint?
+  @State private var hint: String?
+  @State private var hintTask: Task<Void, Never>?
   /// Draw with finger: -1 Auto, 0 off, 1 on (app-wide, as on Android).
   @AppStorage("fingerDraws") private var fingerDrawsRaw = -1
   @AppStorage("smartUndo") private var smartUndo = true
@@ -64,6 +69,9 @@ struct NotebookView: View {
             canRedo = r
           },
           onPageCount: { pageCount = $0 },
+          onSelection: { r in withAnimation(.easeOut(duration: 0.14)) { selection = r } },
+          onHint: { show($0) },
+          onPasteOffer: { p in withAnimation(.easeOut(duration: 0.16)) { pasteOffer = p } },
           onView: { p, z in
             page = p
             zoom = z
@@ -137,6 +145,23 @@ struct NotebookView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 20)
+        if let sel = selection, !hidden, !viewing {
+          SelectionMenuLayer(selection: sel, narrow: narrow) { command = $0 }
+            .ignoresSafeArea()
+        }
+        if let at = pasteOffer {
+          // A tap anywhere else takes the offer away.
+          Color.clear.contentShape(Rectangle()).ignoresSafeArea()
+            .onTapGesture { withAnimation(.easeOut(duration: 0.12)) { pasteOffer = nil } }
+          PasteBubble(at: at) { command = .paste }.ignoresSafeArea()
+        }
+        if let hint {
+          VStack {
+            Spacer()
+            HintPill(text: hint).padding(.bottom, 64)
+          }
+          .allowsHitTesting(false)
+        }
         // The page and zoom chips, bottom right.
         if !hidden {
           VStack {
@@ -167,6 +192,17 @@ struct NotebookView: View {
     .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
     .statusBarHidden(fullScreen)
     .persistentSystemOverlays(fullScreen ? .hidden : .automatic)
+  }
+
+  /// Shows [text] for a few seconds.
+  private func show(_ text: String) {
+    hintTask?.cancel()
+    withAnimation(Ease.outStrong(duration: 0.22)) { hint = text }
+    hintTask = Task { @MainActor in
+      try? await Task.sleep(for: .seconds(2.8))
+      guard !Task.isCancelled else { return }
+      withAnimation(.easeOut(duration: 0.2)) { hint = nil }
+    }
   }
 
   private var activePenIndex: Int? {
