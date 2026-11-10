@@ -7,10 +7,13 @@ import TaliCore
 struct NotebookView: View {
   var notebook: NotebookMeta
   var onBack: () -> Void
+  /// Quick open: another notebook in place of this one (Back still goes to the library).
+  var onSwitch: (NotebookMeta) -> Void
 
-  init(notebook: NotebookMeta, onBack: @escaping () -> Void) {
+  init(notebook: NotebookMeta, onBack: @escaping () -> Void, onSwitch: @escaping (NotebookMeta) -> Void = { _ in }) {
     self.notebook = notebook
     self.onBack = onBack
+    self.onSwitch = onSwitch
     _viewing = State(initialValue: PhoneWriting.opensViewOnly(notebook.id))
     _title = State(initialValue: notebook.title)
     _paper = State(initialValue: notebook.paper)
@@ -188,6 +191,9 @@ struct NotebookView: View {
     HStack(spacing: 10) {
       FloatingBar(crown: .little) {
         ToolIcon(system: "arrow.backward", label: L("back"), action: onBack).accessibilityIdentifier("back")
+      }
+      if !PhoneWriting.onPhone || !viewing {
+        QuickOpen(current: notebook.id, onOpen: onSwitch)
       }
       if !viewing {
         FloatingBar(crown: .softEdge) {

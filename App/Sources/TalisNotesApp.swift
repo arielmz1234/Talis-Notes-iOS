@@ -40,8 +40,15 @@ struct RootView: View {
       }
       if let n = open {
         // A notebook never mirrors in Hebrew or Arabic: only its words change.
-        NotebookView(notebook: n) { withAnimation(.easeInOut(duration: 0.42)) { open = nil } }
-          .environment(\.layoutDirection, .leftToRight)
+        NotebookView(
+          notebook: n, onBack: { withAnimation(.easeInOut(duration: 0.42)) { open = nil } },
+          onSwitch: { next in
+            lib.noteOpened(next.id)
+            withAnimation(.easeInOut(duration: 0.3)) { open = next }
+          }
+        )
+        .id(n.id)
+        .environment(\.layoutDirection, .leftToRight)
           .transition(.opacity)
           .zIndex(1)
       }
