@@ -13,18 +13,33 @@ public final class NotesDb: @unchecked Sendable {
   public enum DbError: Error { case open(String), sql(String) }
 
   /// Opens (or creates) the database at [path]; ":memory:" for tests.
-  public init(path: String) throws {
-    var handle: OpaquePointer?
-    if sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) != SQLITE_OK {
-      throw DbError.open(String(cString: sqlite3_errmsg(handle)))
-    }
-    db = handle
+  public convenience init(path: String) throws {
+    try self.init(rawPath: path)
     try exec("PRAGMA journal_mode=WAL")
     try exec("PRAGMA foreign_keys=ON")
     try migrate()
   }
 
+  /// Opens [path] as it is, without creating or upgrading tables (tests build old schemas with it).
+  public init(rawPath path: String) throws {
+    var handle: OpaquePointer?
+    if sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) != SQLITE_OK {
+      let message = String(cString: sqlite3_errmsg(handle))
+      sqlite3_close(handle)
+      throw DbError.open(message)
+    }
+    db = handle
+  }
+
   deinit { sqlite3_close(db) }
+
+  /// The whole database as one file's bytes.
+  public func copyBytes() throws -> Data {
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("copy-\(UUID().uuidString).db")
+    try snapshot(to: tmp.path)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+    return try Data(contentsOf: tmp)
+  }
 
   private func migrate() throws {
     let v = Int32(try scalarInt("PRAGMA user_version") ?? 0)

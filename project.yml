@@ -44,7 +44,7 @@ targets:
         CFBundleAllowMixedLocalizations: true
         UILaunchScreen:
           UIColorName: LaunchBackground
-        UIAppFonts: [Fonts/figtree.ttf, Fonts/bricolage.ttf, Fonts/heebo.ttf, Fonts/vazirmatn.ttf]
+        UIAppFonts: [figtree.ttf, bricolage.ttf, heebo.ttf, vazirmatn.ttf]
         UIRequiresFullScreen: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad:

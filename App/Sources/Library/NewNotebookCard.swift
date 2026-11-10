@@ -13,12 +13,15 @@ struct NewNotebookCard: View {
   @State private var paged = true
   @State private var cover = Covers.soft[0]
   @FocusState private var nameFocused: Bool
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  private var compact: Bool { sizeClass == .compact }
 
   private var paper: PaperStyle { PaperStyle(rawValue: paperRaw) ?? .GRID }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
-      HStack(spacing: 14) {
+      let titleRow = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 14))
+      titleRow {
         Text(L("new_notebook")).font(TaliFont.heading(26)).foregroundStyle(c.ink)
         TextField(English.newNotebook, text: $title)
           .font(TaliFont.body(17)).focused($nameFocused).submitLabel(.done)
@@ -44,7 +47,8 @@ struct NewNotebookCard: View {
         }
         .scrollIndicators(.hidden)
       }
-      HStack(alignment: .top, spacing: 24) {
+      let pagesRow = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14)) : AnyLayout(HStackLayout(alignment: .top, spacing: 24))
+      pagesRow {
         section(L("pages")) {
           Picker(L("pages"), selection: $paged) {
             Text(L("a4_pages")).tag(true)
@@ -65,7 +69,7 @@ struct NewNotebookCard: View {
       Text(L(paged ? (landscape ? "wide_a4_pages_on_their_side" : "upright_a4_pages_one_under_the") : "one_page_that_goes_on_forever"))
         .font(TaliFont.body(14)).foregroundStyle(c.inkMuted)
       section(L("cover")) {
-        HStack(spacing: 10) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 36), spacing: 6)], alignment: .leading, spacing: 10) {
           ForEach(Covers.all, id: \.self) { col in
             Button { withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) { cover = col } } label: {
               Circle().fill(Color(argb: col)).frame(width: 26, height: 26)
@@ -83,10 +87,10 @@ struct NewNotebookCard: View {
           .accessibilityIdentifier("create")
       }
     }
-    .padding(28)
+    .padding(compact ? 20 : 28)
     .frame(maxWidth: 680)
     .cloudSurface(radius: 28, crown: .edge)
-    .padding(20)
+    .padding(compact ? 12 : 20)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color.clear)
     .presentationBackground(.clear)

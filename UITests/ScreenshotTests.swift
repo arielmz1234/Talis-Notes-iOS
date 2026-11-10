@@ -21,7 +21,11 @@ final class ScreenshotTests: XCTestCase {
   }
 
   private func shot(_ name: String) {
-    let png = XCUIScreen.main.screenshot().pngRepresentation
+    // The screenshot's image carries its orientation; draw it upright so landscape shots aren't sideways.
+    let image = XCUIScreen.main.screenshot().image
+    let upright = UIGraphicsImageRenderer(size: image.size, format: { let f = UIGraphicsImageRendererFormat(); f.scale = image.scale; return f }())
+      .image { _ in image.draw(in: CGRect(origin: .zero, size: image.size)) }
+    let png = upright.pngData() ?? XCUIScreen.main.screenshot().pngRepresentation
     let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
     attachment.name = "\(tag)-\(name)"
     attachment.lifetime = .keepAlways
@@ -53,6 +57,12 @@ final class ScreenshotTests: XCTestCase {
     settle()
     shot("3-new-notebook")
     app.buttons["create"].firstMatch.tap()
+    settle()
+    // A quick zigzag with a finger (UI tests let a finger draw).
+    let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.45))
+    start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)))
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.55))
+      .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.62)))
     settle()
     shot("4-notebook")
     app.buttons["back"].firstMatch.tap()

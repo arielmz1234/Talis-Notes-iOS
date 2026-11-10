@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 extension Color {
   /// From an Android-style 0xAARRGGBB value.
@@ -83,27 +84,56 @@ extension EnvironmentValues {
   }
 }
 
-/// Fonts as on Android: Figtree for text and Bricolage Grotesque for headings, Heebo in Hebrew and
-/// Vazirmatn in Arabic (Figtree and Bricolage have no Hebrew or Arabic letters).
+/// Fonts as on Android: Figtree for text and Bricolage Grotesque for headings (optical size and a
+/// slightly narrow width, as `theme/Theme.kt` sets them), Heebo in Hebrew and Vazirmatn in Arabic
+/// (Figtree and Bricolage have no Hebrew or Arabic letters). All four are variable fonts, so the
+/// weight is set on their axes.
 enum TaliFont {
-  static func script() -> String {
-    let lang = Locale.preferredLanguages.first.map { Locale(identifier: $0).language.languageCode?.identifier ?? "en" } ?? "en"
-    return lang
+  static var language: String {
+    let id = Bundle.main.preferredLocalizations.first ?? Locale.preferredLanguages.first ?? "en"
+    return Locale(identifier: id).language.languageCode?.identifier ?? "en"
+  }
+
+  private static func numeric(_ w: Font.Weight) -> CGFloat {
+    switch w {
+    case .ultraLight: 200
+    case .thin: 250
+    case .light: 300
+    case .medium: 500
+    case .semibold: 600
+    case .bold: 700
+    case .heavy: 800
+    case .black: 900
+    default: 400
+    }
+  }
+
+  private static func tag(_ s: String) -> Int { s.unicodeScalars.reduce(0) { $0 << 8 | Int($1.value) } }
+
+  private static func variable(_ postScript: String, _ size: CGFloat, _ axes: [String: CGFloat]) -> Font {
+    var variations: [Int: CGFloat] = [:]
+    for (k, v) in axes { variations[tag(k)] = v }
+    let d = UIFontDescriptor(fontAttributes: [
+      .name: postScript, UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): variations,
+    ])
+    return Font(UIFont(descriptor: d, size: size) as CTFont)
   }
 
   static func body(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-    switch script() {
-    case "he": return .custom("Heebo", size: size).weight(weight)
-    case "ar": return .custom("Vazirmatn", size: size).weight(weight)
-    default: return .custom("Figtree", size: size).weight(weight)
+    let w = numeric(weight)
+    switch language {
+    case "he": return variable("Heebo-Regular", size, ["wght": w])
+    case "ar": return variable("Vazirmatn-Regular", size, ["wght": w])
+    default: return variable("Figtree-Light", size, ["wght": w])
     }
   }
 
   static func heading(_ size: CGFloat, _ weight: Font.Weight = .bold) -> Font {
-    switch script() {
-    case "he": return .custom("Heebo", size: size).weight(weight)
-    case "ar": return .custom("Vazirmatn", size: size).weight(weight)
-    default: return .custom("Bricolage Grotesque", size: size).weight(weight)
+    let w = numeric(weight)
+    switch language {
+    case "he": return variable("Heebo-Regular", size, ["wght": w])
+    case "ar": return variable("Vazirmatn-Regular", size, ["wght": w])
+    default: return variable("BricolageGrotesque-96ptExtraBold", size, ["wght": min(w, 800), "opsz": min(max(size * 1.5, 12), 96), "wdth": 92])
     }
   }
 }
