@@ -105,13 +105,13 @@ final class Library {
   }
 
   @discardableResult
-  func create(title: String, paper: PaperStyle, pages: Bool, landscape: Bool, cover: UInt32) -> NotebookMeta {
+  func create(title: String, paper: PaperStyle, pages: Bool, landscape: Bool, dark: Bool = false, cover: UInt32) -> NotebookMeta {
     let folder: String? = if case .folder(let id) = shelf { id } else { nil }
     let name = Names.numbered(title.isEmpty ? English.newNotebook : title, taken: takenTitles(in: folder))
     let now = nowMillis()
     let n = NotebookMeta(
       id: newId(), title: name, created: now, updated: now, cover: cover, paper: paper, folderId: folder, pages: pages ? 1 : nil,
-      landscape: pages && landscape)
+      dark: dark, landscape: pages && landscape)
     try? db.insert(n)
     if shelf == .starred { starred.insert(n.id) }
     reload()

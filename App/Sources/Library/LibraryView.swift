@@ -51,8 +51,8 @@ struct LibraryView: View {
     .overlay {
       if creating {
         DialogOverlay(onClose: { creating = false }) {
-          NewNotebookCard(onClose: { closeDialogs() }) { title, paper, pages, landscape, cover in
-            let n = lib.create(title: title, paper: paper, pages: pages, landscape: landscape, cover: cover)
+          NewNotebookCard(onClose: { closeDialogs() }, folderName: openFolderName) { title, paper, pages, landscape, dark, cover in
+            let n = lib.create(title: title, paper: paper, pages: pages, landscape: landscape, dark: dark, cover: cover)
             closeDialogs()
             onOpen(n)
           }
@@ -88,6 +88,11 @@ struct LibraryView: View {
       Button(L("restore")) { withAnimation(.easeOut(duration: 0.22)) { lib.restore(n.id) } }
       Button(L("delete_forever"), role: .destructive) { withAnimation(.easeOut(duration: 0.22)) { lib.eraseForGood(n.id) } }
     }
+  }
+
+  private var openFolderName: String? {
+    if case .folder(let id) = lib.shelf { return lib.folder(id)?.name }
+    return nil
   }
 
   private func closeDialogs() {

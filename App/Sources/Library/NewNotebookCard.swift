@@ -1,103 +1,106 @@
 import SwiftUI
 import TaliCore
 
-/// The new-notebook card: name, paper, pages and orientation side by side, cover colours, then
-/// Cancel / Create. Fits a landscape tablet without scrolling.
+/// The new-notebook card, as Android's `NewNotebookDialog`: the title with a little drifting cloud,
+/// the name field, the papers, Pages beside Orientation (which fades out for an endless canvas but
+/// keeps its place), a line saying what that means, Dark paper, the cover colours, Cancel / Create.
+/// It fits a landscape tablet without scrolling; on a short screen the middle scrolls.
 struct NewNotebookCard: View {
   var onClose: () -> Void = {}
-  var onCreate: (String, PaperStyle, Bool, Bool, UInt32) -> Void
+  /// In the folder being looked at, shown under the title.
+  var folderName: String? = nil
+  var onCreate: (_ title: String, _ paper: PaperStyle, _ paged: Bool, _ landscape: Bool, _ dark: Bool, _ cover: UInt32) -> Void
   @Environment(\.tali) private var c
   @State private var title = ""
   @AppStorage("defaultPaper") private var paperRaw = PaperStyle.GRID.rawValue
   @AppStorage("defaultLandscape") private var landscape = false
-  @State private var paged = true
+  @AppStorage("defaultPaged") private var paged = true
+  @State private var dark = false
   @State private var cover = Covers.soft[0]
   @FocusState private var nameFocused: Bool
-  @Environment(\.horizontalSizeClass) private var sizeClass
-  private var compact: Bool { sizeClass == .compact }
+  @Namespace private var ring
 
-  private var paper: PaperStyle { PaperStyle(rawValue: paperRaw) ?? .GRID }
+  private var paper: Binding<PaperStyle> {
+    Binding(get: { PaperStyle(rawValue: paperRaw) ?? .GRID }, set: { paperRaw = $0.rawValue })
+  }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      let titleRow = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 14))
-      titleRow {
-        Text(L("new_notebook")).font(TaliFont.heading(26)).foregroundStyle(c.ink)
-        TextField(English.newNotebook, text: $title)
-          .font(TaliFont.body(17)).focused($nameFocused).submitLabel(.done)
-          .padding(.horizontal, 14).frame(height: 46)
-          .background(RoundedRectangle(cornerRadius: 14).fill(c.sunken))
-          .accessibilityLabel(L("notebook_name"))
-      }
-      section(L("paper")) {
-        ScrollView(.horizontal) {
-          HStack(spacing: 12) {
-            ForEach(PaperStyle.allCases, id: \.self) { p in
-              Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { paperRaw = p.rawValue } } label: {
-                VStack(spacing: 6) {
-                  PaperPreview(style: p, zoom: 2.4).frame(width: 74, height: 74).clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(p == paper ? c.accent : c.line, lineWidth: p == paper ? 2.5 : 1))
-                  Text(paperName(p)).font(TaliFont.body(13, p == paper ? .semibold : .regular)).foregroundStyle(p == paper ? c.accent : c.inkMuted)
-                }
+    VStack(alignment: .leading, spacing: 0) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
+          HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(L("new_notebook")).font(TaliType.titleLarge).foregroundStyle(c.ink)
+              if let folderName { Text(L("in_n", folderName)).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted) }
+            }
+            Spacer()
+            DriftingCloud(width: 64, variant: 2, drift: 4)
+          }
+          Spacer().frame(height: 10)
+          TextField("", text: $title, prompt: Text(English.newNotebook).foregroundStyle(c.inkFaint))
+            .font(TaliType.bodyLarge).foregroundStyle(c.ink).tint(c.accent)
+            .focused($nameFocused).submitLabel(.done).onSubmit { nameFocused = false }
+            .padding(.horizontal, 16).frame(height: 52)
+            .background(RoundedRectangle(cornerRadius: 14).fill(c.background))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(c.line, lineWidth: 1))
+            .accessibilityLabel(L("notebook_name"))
+          Spacer().frame(height: 14)
+          SectionLabel(text: L("paper"))
+          Spacer().frame(height: 4)
+          PaperPicker(style: paper, tileWidth: 80, perRow: 7, dark: dark || c.isDark)
+          Spacer().frame(height: 12)
+          HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+              SectionLabel(text: L("pages"))
+              Segmented(options: [true, false], selected: $paged) { $0 ? L("a4_pages") : L("endless") }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+              SectionLabel(text: L("orientation"))
+              Segmented(options: [false, true], selected: Binding(get: { landscape }, set: { if paged { landscape = $0 } })) {
+                $0 ? L("landscape") : L("portrait")
               }
-              .buttonStyle(.plain)
             }
+            .opacity(paged ? 1 : 0)
+            .animation(.easeOut(duration: paged ? 0.2 : 0.14), value: paged)
           }
-          .padding(4)
-        }
-        .scrollIndicators(.hidden)
-      }
-      let pagesRow = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14)) : AnyLayout(HStackLayout(alignment: .top, spacing: 24))
-      pagesRow {
-        section(L("pages")) {
-          Picker(L("pages"), selection: $paged) {
-            Text(L("a4_pages")).tag(true)
-            Text(L("endless")).tag(false)
-          }
-          .pickerStyle(.segmented)
-        }
-        section(L("orientation")) {
-          Picker(L("orientation"), selection: $landscape) {
-            Text(L("portrait")).tag(false)
-            Text(L("landscape")).tag(true)
-          }
-          .pickerStyle(.segmented)
-          .disabled(!paged)
-        }
-        .opacity(paged ? 1 : 0.35)
-      }
-      Text(L(paged ? (landscape ? "wide_a4_pages_on_their_side" : "upright_a4_pages_one_under_the") : "one_page_that_goes_on_forever"))
-        .font(TaliFont.body(14)).foregroundStyle(c.inkMuted)
-      section(L("cover")) {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 30, maximum: 36), spacing: 6)], alignment: .leading, spacing: 10) {
-          ForEach(Covers.all, id: \.self) { col in
-            Button { withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) { cover = col } } label: {
+          Spacer().frame(height: 6)
+          Text(L(!paged ? "one_page_that_goes_on_forever" : (landscape ? "wide_a4_pages_on_their_side" : "upright_a4_pages_one_under_the")))
+            .font(TaliType.bodySmall).foregroundStyle(c.inkMuted)
+          Spacer().frame(height: 6)
+          ToggleRow(label: L("dark_paper"), on: $dark, detail: L("a_black_page_your_pens_switch"))
+          Spacer().frame(height: 8)
+          SectionLabel(text: L("cover"))
+          Spacer().frame(height: 6)
+          LazyVGrid(columns: [GridItem(.adaptive(minimum: 26, maximum: 26), spacing: 6)], alignment: .leading, spacing: 6) {
+            ForEach(Covers.all, id: \.self) { col in
               Circle().fill(Color(argb: col)).frame(width: 26, height: 26)
-                .overlay(Circle().stroke(c.accent, lineWidth: 2.5).padding(-4).opacity(col == cover ? 1 : 0))
+                .overlay {
+                  if col == cover {
+                    Circle().stroke(c.ink, lineWidth: 2).padding(-4).matchedGeometryEffect(id: "ring", in: ring)
+                  }
+                }
+                .contentShape(Circle())
+                .onTapGesture { withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) { cover = col } }
+                .accessibilityAddTraits(col == cover ? [.isButton, .isSelected] : .isButton)
             }
-            .buttonStyle(.plain)
           }
+          .padding(.leading, 7).padding(.vertical, 4)
         }
-        .padding(.vertical, 4)
       }
-      HStack {
+      .scrollBounceBehavior(.basedOnSize)
+      .fixedSize(horizontal: false, vertical: true)
+      Spacer().frame(height: 16)
+      HStack(spacing: 10) {
         Spacer()
-        Button(L("cancel")) { onClose() }.buttonStyle(QuietButtonStyle())
-        Button(L("create")) { onCreate(title, paper, paged, landscape, cover) }.buttonStyle(PrimaryButtonStyle())
+        Button(L("cancel"), action: onClose).buttonStyle(QuietButtonStyle())
+        Button(L("create")) { onCreate(title, paper.wrappedValue, paged, paged && landscape, dark, cover) }
+          .buttonStyle(PrimaryButtonStyle())
           .accessibilityIdentifier("create")
       }
     }
-    .padding(compact ? 20 : 28)
-    .frame(maxWidth: 680)
+    .padding(28)
+    .frame(maxWidth: 640)
     .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
-    .padding(compact ? 12 : 20)
-  }
-
-  private func section<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text(label).font(TaliFont.body(14, .bold)).foregroundStyle(c.inkMuted)
-      content()
-    }
   }
 }
 
