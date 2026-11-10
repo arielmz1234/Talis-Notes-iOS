@@ -119,6 +119,7 @@ struct NoteCanvas: UIViewRepresentable {
   let db: NotesDb
   var tool: Tool
   var pens: [PenSlot]
+  var viewOnly = false
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
   @Binding var command: CanvasCommand?
@@ -133,6 +134,9 @@ struct NoteCanvas: UIViewRepresentable {
     if ProcessInfo.processInfo.arguments.contains("-uitest") { v.drawingPolicy = .anyInput }
     v.backgroundColor = .clear
     v.isOpaque = false
+    // PencilKit lightens dark ink in dark mode; the page is white unless the notebook has dark paper,
+    // so the canvas keeps the paper's own style (ink stays as written, as on Android).
+    v.overrideUserInterfaceStyle = notebook.dark ? .dark : .light
     v.minimumZoomScale = 0.3
     v.maximumZoomScale = 6
     v.showsVerticalScrollIndicator = false
@@ -252,6 +256,8 @@ struct NoteCanvas: UIViewRepresentable {
 
     func applyTool() {
       guard let canvas else { return }
+      // Just looking: fingers and the pencil scroll and zoom, nothing writes.
+      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly
       switch parent.tool {
       case .pen(let id):
         let pen = parent.pens.first { $0.id == id } ?? PenSlot.defaults[0]
@@ -299,6 +305,10 @@ struct NoteCanvas: UIViewRepresentable {
         didFit = true
         let fit = min((canvas.bounds.width - 48) / world.width, 1.2)
         canvas.zoomScale = fit
+        centre()
+        // Start at the top of the first page, below the toolbars.
+        canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
+        return
       }
       centre()
     }

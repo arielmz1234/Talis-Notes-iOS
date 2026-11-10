@@ -73,6 +73,27 @@ struct TaliColors: Sendable {
     desk: Color(argb: 0xFF2A_2338))
 }
 
+extension TaliColors {
+  /// A notebook's bars in dark mode while the page is white: soft lilac clouds rather than deep plum,
+  /// so they sit gently on the paper (Android's `LilacMist`).
+  static let lilacMist: TaliColors = {
+    var m = TaliColors.lilacLight
+    m.surface = Color(argb: 0xFFF5_EFFF)
+    m.sunken = Color(argb: 0xFFE6_DBFB)
+    m.line = Color(argb: 0xFFD5_C7F2)
+    m.ink = Color(argb: 0xFF26_1D3B)
+    m.inkMuted = Color(argb: 0xFF5D_5279)
+    m.inkFaint = Color(argb: 0xFF8C_82AA)
+    m.accentSoft = Color(argb: 0xFFE0_D1FD)
+    m.blueSoft = Color(argb: 0xFFE1_EAFF)
+    m.cloudTop = Color(argb: 0xFFF1_E9FF)
+    m.cloudBelly = Color(argb: 0xFFDC_CEF9)
+    m.cloudEdge = Color(argb: 0xFFC6_B5EE)
+    m.cloudShadow = Color(argb: 0x4D2A_1F55)
+    return m
+  }()
+}
+
 private struct TaliColorsKey: EnvironmentKey {
   static let defaultValue = TaliColors.lilacLight
 }

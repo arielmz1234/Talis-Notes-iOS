@@ -58,6 +58,12 @@ final class ScreenshotTests: XCTestCase {
     shot("3-new-notebook")
     app.buttons["create"].firstMatch.tap()
     settle()
+    // On a phone it opens just for looking: one shot of that, then Write.
+    if app.buttons["write"].exists {
+      shot("4a-viewing")
+      app.buttons["write"].firstMatch.tap()
+      settle()
+    }
     // A quick zigzag with a finger (UI tests let a finger draw).
     let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.45))
     start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)))
