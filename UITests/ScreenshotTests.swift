@@ -2,10 +2,8 @@ import XCTest
 
 /// Opens the app with sample notebooks and saves screenshots for review. CI runs this once per
 /// device and setting (light/dark, Hebrew), passing SHOT_DIR and SHOT_TAG through the environment.
+@MainActor
 final class ScreenshotTests: XCTestCase {
-  override func setUp() {
-    continueAfterFailure = true
-  }
 
   private var tag: String { ProcessInfo.processInfo.environment["SHOT_TAG"] ?? "local" }
 
@@ -37,6 +35,7 @@ final class ScreenshotTests: XCTestCase {
   private func settle() { Thread.sleep(forTimeInterval: 1.2) }
 
   func testLibraryAndNotebook() {
+    continueAfterFailure = true
     let device = XCUIDevice.shared
     let isPad = UIDevice.current.userInterfaceIdiom == .pad
     device.orientation = isPad ? .landscapeLeft : .portrait
