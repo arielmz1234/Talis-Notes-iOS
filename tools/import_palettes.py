@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 src = Path(sys.argv[1] if len(sys.argv) > 1 else "C:/dev/Talis-Notes/app/src/main/java/com/tali/notes/theme/Palettes.kt").read_text(encoding="utf-8")
-blocks = re.findall(r"internal val (\w+) =\s*\n\s*(\w+)\(\s*\n(.*?)\n\s*\)\n", src, re.S)
+blocks = re.findall(r"internal val (\w+) =\s*\n\s*([\w.]+)\(\s*\n(.*?)\n\s*\)\n", src, re.S)
 
 
 def value(v):
