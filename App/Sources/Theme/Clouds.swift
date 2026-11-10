@@ -94,11 +94,11 @@ struct Cloud: View {
     }
     .frame(width: width, height: width * cloudAspect)
     .drawingGroup()
-    .allowsHitTesting(false)
   }
 }
 
-/// A cloud drifting gently from side to side.
+/// A cloud drifting gently from side to side. Tapped, it bursts: it swells a touch and melts into
+/// mist, then quietly forms again a few seconds later (Android's burstable `Cloud`).
 struct DriftingCloud: View {
   var width: CGFloat
   var variant = 0
@@ -106,18 +106,42 @@ struct DriftingCloud: View {
   var period: Double = 9
   var alpha: Double = 1
   @State private var out = false
+  @State private var gone: Double = 0
+  @State private var puffStart: Date?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage("minimal") private var minimal = false
 
   var body: some View {
     if !minimal {
       Cloud(width: width, variant: variant)
-        .opacity(alpha)
+        .scaleEffect(1 + 0.08 * gone)
+        .blur(radius: 8 * gone)
+        .opacity(alpha * (1 - gone))
+        .overlay {
+          if let start = puffStart {
+            PuffPlayer(start: start, duration: PuffTiming.burstMist)
+          }
+        }
+        .contentShape(Ellipse())
+        .onTapGesture(perform: burst)
         .offset(x: out ? drift : -drift)
         .onAppear {
           guard !reduceMotion, !ProcessInfo.processInfo.arguments.contains("-uitest") else { return }
           withAnimation(.easeInOut(duration: period / 2).repeatForever(autoreverses: true)) { out = true }
         }
+    }
+  }
+
+  private func burst() {
+    guard gone < 0.3 else { return }
+    UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.6)
+    puffStart = Date()
+    withAnimation(Ease.outStrong(duration: PuffTiming.elementLeave)) { gone = 1 }
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(PuffTiming.burstMist))
+      puffStart = nil
+      try? await Task.sleep(for: .seconds(PuffTiming.reformAfter - PuffTiming.burstMist))
+      withAnimation(Ease.outStrong(duration: 1.1)) { gone = 0 }
     }
   }
 }
@@ -162,7 +186,6 @@ struct SkyClouds: View {
       }
     }
     .frame(width: width, alignment: .topLeading)
-    .allowsHitTesting(false)
   }
 }
 

@@ -84,6 +84,26 @@ Get a working app early, then widen it. Roughly:
 7. iPhone layout throughout.
 8. App Store readiness: icon from `tools/icon-source.png`, privacy manifest, screenshots, store text.
 
+## Look: Android first, iOS where it's clearly better (the owner, 10 Nov 2026)
+
+- The app must look exactly like the Android app, as closely as possible. Before any design
+  decision, read the matching Android composable and look at its screenshots
+  (`C:/dev/Talis-Notes/tools/emulator/shots`, newest first). Copy crowns (`CloudCrown`), radii,
+  sizes, colours and type styles; never guess.
+- Exception: where iOS offers something that clearly looks better or makes the app nicer to use,
+  use it even if Android differs. The owner named Apple's glass design (Liquid Glass, iOS 26) for
+  sliders. Others in that spirit: native haptics, Apple Pencil hover, squeeze and double-tap, smooth
+  system sheets. Use such iOS-only touches only when you're sure they're better. Keep the
+  app's own character (lilac sky, clouds, mist) everywhere else, and keep iOS 17 working
+  (`if #available(iOS 26, *)` with the Android-style look as the fallback).
+- For those iOS touches, follow `docs/apple-design-SKILL.md` (Emil Kowalski's Apple design skill,
+  MIT, found by the owner). Its main rules: respond on touch-down, springs (damping 1.0, bounce only
+  after a flick), interruptible animations, velocity handoff, materials for hierarchy, haptics only
+  at meaningful moments, reduced motion.
+- **Behaviour and logic stay exactly as on Android** (the owner, 10 Nov 2026). Only the look may
+  take an iOS touch; what a tap, hold or gesture does, and every rule behind it, comes from the
+  Android code.
+
 ## How to work
 
 - All code goes in `C:\dev\Talis-Notes-iOS`. Don't change the Android app.

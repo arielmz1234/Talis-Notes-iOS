@@ -196,6 +196,7 @@ struct PenButton: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(penName(pen.type))
+    .accessibilityIdentifier("pen-\(pen.id)")
   }
 }
 
@@ -314,7 +315,7 @@ struct PenPanel: View {
       }
       HStack(spacing: 12) {
         Text(L("thickness")).font(TaliFont.body(14, .bold)).foregroundStyle(c.inkMuted)
-        Slider(value: Binding(get: { Double(pen.size) }, set: { pen.size = Float(($0 * 2).rounded() / 2) }), in: 0.5...Double(pen.type.maxSize))
+        StepSlider(value: $pen.size, range: 0.5...pen.type.maxSize, step: 0.5)
         Text(String(format: "%.1f", pen.size)).font(TaliFont.body(14)).foregroundStyle(c.ink).frame(width: 36)
       }
     }

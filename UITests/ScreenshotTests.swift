@@ -71,6 +71,12 @@ final class ScreenshotTests: XCTestCase {
       .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.62)))
     settle()
     shot("4-notebook")
+    // The pen's panel with its thickness slider (glass on iOS 26).
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
+    shot("4b-pen-panel")
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
     app.buttons["back"].firstMatch.tap()
     settle()
     shot("5-library-after")
