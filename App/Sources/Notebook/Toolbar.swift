@@ -5,7 +5,7 @@ import SwiftUI
 // the pen's settings, her first few colours, her three thicknesses, then the tools.
 
 /// Which panel hangs under the toolbar.
-enum PanelKind { pen, eraser }
+enum PanelKind { case pen, eraser }
 
 /// Saved colours (Android's `savedColors` / `highlighterColors`) and how many sit in the toolbar.
 enum Palette {
