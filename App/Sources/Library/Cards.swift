@@ -7,6 +7,7 @@ struct Sidebar: View {
   @Environment(\.tali) private var c
   var onNewFolder: () -> Void
   var onPicked: () -> Void
+  var onBackups: () -> Void = {}
   @AppStorage("minimal") private var minimal = false
 
   var body: some View {
@@ -32,6 +33,20 @@ struct Sidebar: View {
         }
       }
       Spacer(minLength: 0)
+      Button {
+        onPicked()
+        onBackups()
+      } label: {
+        HStack(spacing: 12) {
+          Image(systemName: "externaldrive.badge.icloud").frame(width: 22).foregroundStyle(c.inkMuted)
+          Text(L("backups")).font(TaliFont.body(16)).foregroundStyle(c.inkMuted)
+          Spacer()
+        }
+        .padding(.horizontal, 12).frame(height: 44).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("backups")
+      .padding(.bottom, 12)
     }
     .padding(.horizontal, 12)
     .frame(maxHeight: .infinity, alignment: .top)

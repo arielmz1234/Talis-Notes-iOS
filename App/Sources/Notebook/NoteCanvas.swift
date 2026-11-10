@@ -1,3 +1,4 @@
+import ImageIO
 import PencilKit
 import SwiftUI
 import TaliCore
@@ -10,22 +11,96 @@ enum Tool: Equatable {
   case lasso
 }
 
-/// The page column under the writing: paper, drawn by a tiled layer so it stays sharp at any zoom.
-final class PagesView: UIView {
-  var layout = Pages.portrait
-  var count = 1
-  var paper = PaperStyle.GRID
-  var dark = false
-  var desk = UIColor.systemGroupedBackground
+/// What the page layer draws besides paper: shapes and pictures from the notebook (pictures first,
+/// then shapes, all under the writing for now).
+struct UnderItems: @unchecked Sendable {
+  var shapes: [ShapeRow] = []
+  var pictures: [(rect: CGRect, image: CGImage)] = []
+}
 
-  override class var layerClass: AnyClass { CATiledLayer.self }
+/// Paper, pictures and shapes for the page column, drawn in tiles off the main thread so they stay
+/// sharp at any zoom. Everything it reads is set from the main thread before it's asked to draw.
+final class PagesLayer: CATiledLayer, @unchecked Sendable {
+  nonisolated(unsafe) var layout = Pages.portrait
+  nonisolated(unsafe) var count = 1
+  nonisolated(unsafe) var paper = PaperStyle.GRID
+  nonisolated(unsafe) var dark = false
+  nonisolated(unsafe) var under = UnderItems()
+
+  override class func fadeDuration() -> CFTimeInterval { 0.08 }
+
+  var worldSize: CGSize { CGSize(width: CGFloat(layout.width), height: CGFloat(layout.rect(max(count, 1) - 1).bottom)) }
+
+  override func draw(in cg: CGContext) {
+    let rect = cg.boundingBoxOfClipPath
+    let scale = max(cg.ctm.a / max(contentsScale, 1), 0.01)
+    for i in 0..<max(count, 1) {
+      let page = CGRect(layout.rect(i))
+      guard page.intersects(rect) else { continue }
+      PaperPainter.draw(paper, page: page, in: cg, scale: scale, dark: dark)
+    }
+    for pic in under.pictures where pic.rect.intersects(rect) {
+      cg.saveGState()
+      cg.translateBy(x: pic.rect.minX, y: pic.rect.maxY)
+      cg.scaleBy(x: 1, y: -1)
+      cg.interpolationQuality = .high
+      cg.draw(pic.image, in: CGRect(origin: .zero, size: pic.rect.size))
+      cg.restoreGState()
+    }
+    cg.setLineCap(.round)
+    cg.setLineJoin(.round)
+    for s in under.shapes {
+      let paths = s.geometry.paths(s.size)
+      let path = CGMutablePath()
+      for line in paths where line.count > 1 {
+        path.move(to: CGPoint(x: CGFloat(line[0].x), y: CGFloat(line[0].y)))
+        for p in line.dropFirst() { path.addLine(to: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))) }
+      }
+      guard path.boundingBox.insetBy(dx: -CGFloat(s.size) * 2, dy: -CGFloat(s.size) * 2).intersects(rect) else { continue }
+      if let fill = s.fill, s.geometry.closed, let outline = paths.first, outline.count > 2 {
+        let f = CGMutablePath()
+        f.addLines(between: outline.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) })
+        f.closeSubpath()
+        cg.addPath(f)
+        cg.setFillColor(UIColor(argb: fill).cgColor)
+        cg.fillPath()
+      }
+      cg.addPath(path)
+      cg.setStrokeColor(UIColor(argb: dark ? s.color : s.color).cgColor)
+      cg.setLineWidth(CGFloat(s.size))
+      if let dash = LineDash.pattern(s.line, width: CGFloat(s.size)) { cg.setLineDash(phase: 0, lengths: dash) } else { cg.setLineDash(phase: 0, lengths: []) }
+      cg.strokePath()
+    }
+  }
+}
+
+/// Android's line styles as Core Graphics dashes (visible lengths in multiples of the line's width; 0 = a round dot).
+enum LineDash {
+  static func pattern(_ name: String, width: CGFloat) -> [CGFloat]? {
+    let p: [CGFloat]
+    switch name {
+    case "DOTTED": p = [0, 1.7]
+    case "LONG_DASH": p = [6, 2.4]
+    case "SHORT_DASH": p = [2.4, 2]
+    case "DOT_DASH": p = [4, 2, 0, 2]
+    case "MIXED_DASH": p = [6, 2, 2.2, 2]
+    default: return nil
+    }
+    // With round caps each part grows by a width, so the gaps take that back.
+    return p.enumerated().map { i, v in i % 2 == 0 ? max(v * width, 0.01) : (v + 1) * width }
+  }
+}
+
+/// The page column under the writing.
+final class PagesView: UIView {
+  override class var layerClass: AnyClass { PagesLayer.self }
+  var pages: PagesLayer { layer as! PagesLayer }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
-    let tiled = layer as! CATiledLayer
-    tiled.levelsOfDetail = 6
-    tiled.levelsOfDetailBias = 4
-    tiled.tileSize = CGSize(width: 512, height: 512)
+    pages.levelsOfDetail = 6
+    pages.levelsOfDetailBias = 4
+    pages.tileSize = CGSize(width: 512, height: 512)
     isOpaque = false
     backgroundColor = .clear
     isUserInteractionEnabled = false
@@ -33,20 +108,7 @@ final class PagesView: UIView {
 
   required init?(coder: NSCoder) { fatalError() }
 
-  var worldSize: CGSize {
-    CGSize(width: CGFloat(layout.width), height: CGFloat(layout.rect(max(count, 1) - 1).bottom))
-  }
-
-  override func draw(_ rect: CGRect) {
-    guard let cg = UIGraphicsGetCurrentContext() else { return }
-    let scale = max(cg.ctm.a / max(contentScaleFactor, 1), 0.01)
-    for i in 0..<max(count, 1) {
-      let r = layout.rect(i)
-      let page = CGRect(x: CGFloat(r.left), y: CGFloat(r.top), width: CGFloat(r.width), height: CGFloat(r.height))
-      guard page.intersects(rect) else { continue }
-      PaperPainter.draw(paper, page: page, in: cg, scale: scale, dark: dark)
-    }
-  }
+  var worldSize: CGSize { pages.worldSize }
 }
 
 /// The notebook's canvas: PencilKit draws the live stroke with Apple Pencil's low latency, and every
@@ -78,9 +140,9 @@ struct NoteCanvas: UIViewRepresentable {
     v.contentInsetAdjustmentBehavior = .never
     v.alwaysBounceVertical = true
     let pages = PagesView(frame: .zero)
-    pages.layout = notebook.pageLayout
-    pages.paper = notebook.paper
-    pages.dark = notebook.dark
+    pages.pages.layout = notebook.pageLayout
+    pages.pages.paper = notebook.paper
+    pages.pages.dark = notebook.dark
     v.insertSubview(pages, at: 0)
     c.canvas = v
     c.pages = pages
@@ -165,12 +227,22 @@ struct NoteCanvas: UIViewRepresentable {
       let rows = (try? parent.db.items(of: parent.notebook.id)) ?? []
       var strokes: [PKStroke] = []
       stored = []
+      var under = UnderItems()
       for row in rows {
+        if let shape = ShapeRow(row) {
+          under.shapes.append(shape)
+          continue
+        }
+        if row.kind == 2, let pic = picture(from: row) {
+          under.pictures.append(pic)
+          continue
+        }
         guard let ink = InkStroke(row: row) else { continue }
         let pk = ink.pkStroke(mask: mask(for: ink))
         strokes.append(pk)
         stored.append((StrokeKey(pk), ink))
       }
+      pages?.pages.under = under
       canvas.drawing = PKDrawing(strokes: strokes)
       loading = false
       updateContent()
@@ -214,7 +286,7 @@ struct NoteCanvas: UIViewRepresentable {
 
     func updateContent() {
       guard let canvas, let pages else { return }
-      pages.count = pageCount
+      pages.pages.count = pageCount
       let world = pages.worldSize
       let z = canvas.zoomScale
       pages.layer.anchorPoint = .zero
@@ -382,4 +454,24 @@ enum CrashNote {
       try? Data(line.utf8).write(to: url)
     }
   }
+}
+
+/// A picture item (kind 2): where it sits and its image, read from the app's images folder at a
+/// size that suits the page (a PDF page or photo is never decoded at full size).
+func picture(from row: ItemRow) -> (rect: CGRect, image: CGImage)? {
+  guard let obj = try? JSONSerialization.jsonObject(with: row.payload) as? [String: Any], let file = obj["file"] as? String,
+    let r = obj["rect"] as? [String: Any]
+  else { return nil }
+  func n(_ k: String) -> CGFloat { CGFloat((r[k] as? NSNumber)?.doubleValue ?? 0) }
+  let rect = CGRect(x: n("left"), y: n("top"), width: n("right") - n("left"), height: n("bottom") - n("top"))
+  guard !file.contains("/"), rect.width > 0, rect.height > 0 else { return nil }
+  let url = AppFiles.folders.images.appendingPathComponent(file)
+  guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+  let maxSide = min(max(rect.width, rect.height) * 2, 2400)
+  let opts: [CFString: Any] = [
+    kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: maxSide,
+    kCGImageSourceCreateThumbnailWithTransform: true,
+  ]
+  guard let image = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
+  return (rect, image)
 }

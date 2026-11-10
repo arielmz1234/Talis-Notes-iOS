@@ -8,7 +8,7 @@ import UIKit
 /// (library previews) and Core Graphics (the notebook's pages) share it.
 enum PaperPainter {
   static let mm: CGFloat = 160 / 25.4
-  static let darkPaper = UIColor(argb: Int32(bitPattern: 0xFF1C_1A23))
+  static var darkPaper: UIColor { UIColor(argb: Int32(bitPattern: 0xFF1C_1A23)) }
 
   struct Tones {
     var paper: UIColor

@@ -68,5 +68,10 @@ final class ScreenshotTests: XCTestCase {
     app.buttons["back"].firstMatch.tap()
     settle()
     shot("5-library-after")
+    if isPad {
+      app.buttons["backups"].firstMatch.tap()
+      settle()
+      shot("6-backups")
+    }
   }
 }
