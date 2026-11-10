@@ -208,8 +208,8 @@ struct MainToolbar: View {
       }
       BarDivider()
       HStack(spacing: 0) {
-        toolButton(.eraser, icon: "eraser", label: L("eraser"))
-        toolButton(.lasso, icon: "lasso", label: L("lasso"))
+        toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
+        toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
       }
       .padding(.trailing, 2)
     }
@@ -228,7 +228,7 @@ struct MainToolbar: View {
   }
 
   /// Eraser and lasso share one highlight that glides between them (blue, as on Android).
-  private func toolButton(_ t: Tool, icon: String, label: String) -> some View {
+  private func toolButton(_ t: Tool, icon: String, label: String, id: String) -> some View {
     let on = tool == t
     return Button {
       if tool == t {
@@ -246,7 +246,7 @@ struct MainToolbar: View {
     }
     .buttonStyle(PressStyle(scale: 0.9))
     .accessibilityLabel(label)
-    .accessibilityIdentifier("tool-\(label)")
+    .accessibilityIdentifier("tool-\(id)")
   }
 }
 

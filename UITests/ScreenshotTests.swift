@@ -77,6 +77,17 @@ final class ScreenshotTests: XCTestCase {
     shot("4b-pen-panel")
     app.buttons["pen-p1"].firstMatch.tap()
     settle()
+    // The lasso: a loop round the strokes picks them up and shows the selection menu.
+    if app.buttons["tool-lasso"].exists {
+      app.buttons["tool-lasso"].firstMatch.tap()
+      settle()
+      let a = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.38))
+      a.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.72)))
+      settle()
+      shot("4d-lasso")
+      app.buttons["pen-p1"].firstMatch.tap()
+      settle()
+    }
     if app.buttons["more"].exists {
       app.buttons["more"].firstMatch.tap()
       settle()
