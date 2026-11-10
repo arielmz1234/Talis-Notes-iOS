@@ -289,8 +289,18 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   private func select(_ strokes: [InkStroke]) {
     lasso.picked = Set(strokes.map(\.id))
-    lasso.bounds = strokes.map { CGRect($0.bounds) }.reduce(nil) { $0.map { r in r.union($1) } ?? $1 }
+    lasso.bounds = unionOf(strokes)
     redrawSelection()
+  }
+
+  /// The bounds of [strokes] together.
+  private func unionOf(_ strokes: [InkStroke]) -> CGRect? {
+    var out: CGRect?
+    for s in strokes {
+      let r = CGRect(s.bounds)
+      out = out.map { $0.union(r) } ?? r
+    }
+    return out
   }
 
   // MARK: Hold to paste
@@ -310,7 +320,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     guard let at = lasso.pasteAt else { return }
     lasso.pasteAt = nil
     let strokes = InkClipboard.strokes
-    guard let b = strokes.map({ CGRect($0.bounds) }).reduce(nil, { $0.map { r in r.union($1) } ?? $1 }) else { return }
+    guard let b = unionOf(strokes) else { return }
     let copies = add(strokes, offset: CGPoint(x: at.x - b.midX, y: at.y - b.midY))
     if parent.tool == .lasso { select(copies) }
   }
