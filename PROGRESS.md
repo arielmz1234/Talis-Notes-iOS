@@ -66,14 +66,34 @@ Not verified yet: anything about real Apple Pencil feel (pressure, latency) — 
 Restoring a real Android backup on iOS is covered by unit tests (ink fixture, schema 7 database),
 not yet by opening one in the app.
 
-Next:
-- Check run 42870297252's screenshots (dark notebook, iPhone viewing and Write).
-- Shapes and pictures from Android show under the writing (drawn by the page layer); typed text
-  and subject-pack designs ("param") don't show yet. Port `ShapeTemplates.kt` later.
-- Our own lasso (move, resize, copy, delete with the selection menu), page overview, top bar ⋯ menu
-  (paper, dark paper, export PDF), quick open.
-- Colour families (Sky, Sage, Peach) in Settings, gliding selection, cloud-puff deletion mist.
-- iCloud (a build setting for the free-signing build without it), then Google Drive.
+- Run 42883014643 (green): the library and notebook bars redone to match the Android app's
+  current screenshots (`C:\dev\Talis-Notes	ools\emulator\shots\lib.png`, `nb.png`, 9 Nov 2026):
+  - one continuous sky behind the sidebar and the main area;
+  - the wordmark with its highlighter swipe;
+  - the 52 pt heading with a count and date line;
+  - plain white search and sort boxes (no cloud), the + as a 48 pt gradient square;
+  - the ruler, the RECENT label, and landscape cards (1.32) with a stitched spine;
+  - in the notebook: back on a three-puff cloud, undo and redo, the name pill with a pencil, the eye.
+  Checked in screenshots: iPad light, dark, portrait, iPhone.
+- Dialog cards (new notebook, backups, settings) lost their cloud bumps to match Android's
+  `DialogCard` (radius 24, shadow 12). Pushed at the end of session 1, not yet seen in a screenshot.
+
+**Owner's rule (10 Nov 2026): the app must look exactly like Android.** Before any design
+decision, read the Android composable and look at its screenshots in
+`C:\dev\Talis-Notes	ools\emulator\shots` (newest first: `ls -t`). Copy crowns (`CloudCrown`), radii,
+sizes and type styles (`TaliType` mirrors Android's Material names) rather than guessing.
+
+Next (in this order):
+- Settings card like Android's `settings.png`: Language row, Colours tiles, Theme and Style side
+  by side, PDFs from other apps, Take the tour, Done at the bottom right; section labels in caps.
+- New-notebook card: compare with Android's `NewNotebookDialog` (`ui/library/Dialogs.kt`).
+- The main toolbar like `nb.png`: pens drawn like Android's `PenGlyph`, a chevron, the quick
+  colours and three sizes, then eraser, lasso, fill, laser, shapes, picture, mic, keyboard (the ones
+  not ported yet should wait rather than show dead buttons). Page and zoom chips at the bottom right.
+- Real page thumbnails on cards (render the first page with its strokes).
+- Our own lasso and selection menu, the ⋯ menu, quick open, Select (picking several notebooks).
+- Shapes and pictures from Android show under the writing; typed text and "param" designs don't yet.
+- iCloud (switched off in the free-signing build), then Google Drive.
 
 Decisions:
 - The bundle id is `com.tali.notes`, the same as Android (Apple's ids are separate).
