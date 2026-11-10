@@ -44,8 +44,9 @@ struct RootView: View {
           notebook: n,
           onBack: {
             // Back on the shelf, the notebook shows its new paper, name and edit time.
-            lib.reload()
             withAnimation(.easeInOut(duration: 0.42)) { open = nil }
+            // After the canvas has saved its last changes as it closes.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { lib.reload() }
           },
           onSwitch: { next in
             lib.noteOpened(next.id)
