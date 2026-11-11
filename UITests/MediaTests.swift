@@ -21,7 +21,7 @@ final class MediaTests: ShotCase {
     shot("m1-pdf")
   }
 
-  private func open(_ app: XCUIApplication, _ title: String) {
+  func open(_ app: XCUIApplication, _ title: String) {
     let card = app.descendants(matching: .any)["notebook-\(title)"].firstMatch
     XCTAssertTrue(card.waitForExistence(timeout: 5), "\(title) is in the library")
     card.tap()
@@ -63,6 +63,39 @@ final class MediaTests: ShotCase {
     app.descendants(matching: .any)["One long page"].firstMatch.tap()
     waitForSize(app)
     shot("e2-export-long")
+  }
+}
+
+extension MediaTests {
+  /// Insert: the menu, a picture in the middle of the view, then PDF pages after the last page.
+  func testInsert() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
+    let app = launch(["-fakePickers"])
+    settle()
+    open(app, "Truss problems")
+    showTool(app, "tool-insert")
+    app.buttons["tool-insert"].firstMatch.tap()
+    settle()
+    shot("i1-insert-menu")
+    app.buttons["insert-picture"].firstMatch.tap()
+    settle()
+    shot("i2-picture")
+    showTool(app, "tool-insert")
+    app.buttons["tool-insert"].firstMatch.tap()
+    settle()
+    app.buttons["insert-pdf"].firstMatch.tap()
+    Thread.sleep(forTimeInterval: 0.4)
+    shot("i3-pdf-adding")
+    settle()
+    settle()
+    shot("i4-pdf-pages")
+    app.buttons["Undo"].firstMatch.tap()
+    settle()
+    app.swipeDown()
+    app.swipeDown()
+    settle()
+    shot("i5-undone")
   }
 }
 

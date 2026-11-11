@@ -91,7 +91,7 @@ struct ExportSource: @unchecked Sendable {
       } else if quality == .best, let sharp = SharpPage.of(row) {
         under.pdfPages.append(sharp)
       } else if let p = PictureRow(row), let image = pictureImage(p, pixelsPerUnit: quality.picturePixelsPerUnit) {
-        under.pictures.append((CGRect(p.rect), image))
+        under.pictures.append(PlacedPicture(row: p, image: image))
       }
     }
     layer.under = under

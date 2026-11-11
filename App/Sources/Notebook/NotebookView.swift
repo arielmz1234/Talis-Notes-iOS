@@ -55,6 +55,8 @@ struct NotebookView: View {
   @State private var bridge = CanvasBridge()
   @State private var showPages = false
   @State private var exporting = false
+  /// Insert's choice, being run (the photo picker, camera or file picker).
+  @State private var inserting: InsertChoice?
   /// Draw with finger: -1 Auto, 0 off, 1 on (app-wide, as on Android).
   @AppStorage("fingerDraws") private var fingerDrawsRaw = -1
   @AppStorage("smartUndo") private var smartUndo = true
@@ -216,6 +218,7 @@ struct NotebookView: View {
       }
     }
     .environment(\.tali, barColors)
+    .modifier(InsertFlow(request: $inserting, bridge: bridge, hint: show))
     .alert(L("rename"), isPresented: $renaming) {
       RenameField(initial: title) { name in
         lib.rename(notebook.id, to: name)
@@ -246,7 +249,7 @@ struct NotebookView: View {
   }
 
   private func mainToolbar(showColors: Bool) -> some View {
-    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shapeKind: shapeKind, onKeyboard: { panel = nil; command = .newText }, showColors: showColors, compactTools: PhoneWriting.onPhone)
+    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shapeKind: shapeKind, onKeyboard: { panel = nil; command = .newText }, onInsert: { panel = nil; inserting = $0 }, showColors: showColors, compactTools: PhoneWriting.onPhone)
   }
 
   private var fingerDraws: Bool? { fingerDrawsRaw < 0 ? nil : fingerDrawsRaw == 1 }

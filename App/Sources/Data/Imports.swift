@@ -27,7 +27,15 @@ extension Library {
 
   /// A PDF from her files, named after the file. Throws with a message she can read.
   @discardableResult
-  func importPDF(_ url: URL) async throws -> NotebookMeta {
+  func importPDF(_ url: URL, progress: (Int, Int) -> Void = { _, _ in }) async throws -> NotebookMeta {
+    let pages = try await renderPDF(url, progress: progress)
+    let title = url.deletingPathExtension().lastPathComponent
+    return build(kind: .pdf, title: title.isEmpty ? "PDF" : title, pages: pages)
+  }
+
+  /// A PDF's pages as pictures in the images folder, the PDF kept beside them so they draw sharp;
+  /// [progress] hears (pages done, pages in all). Throws with a message she can read.
+  func renderPDF(_ url: URL, progress: (Int, Int) -> Void = { _, _ in }) async throws -> [ImportedPage] {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
     guard let doc = PDFDocument(url: url) else { throw ImportError.message(L("that_file_isn_t_a_pdf")) }
@@ -51,11 +59,11 @@ extension Library {
       guard let jpeg = Self.onWhite(picture).jpegData(compressionQuality: 0.88) else { continue }
       try? jpeg.write(to: images.appendingPathComponent(name))
       pages.append(ImportedPage(file: name, width: w, height: h))
+      progress(i + 1, count)
       await Task.yield()
     }
     if pages.isEmpty { throw ImportError.message(L("that_pdf_has_no_pages")) }
-    let title = url.deletingPathExtension().lastPathComponent
-    return build(kind: .pdf, title: title.isEmpty ? "PDF" : title, pages: pages)
+    return pages
   }
 
   /// Pictures picked together: one item, a picture on each page (Android's `Imports.pictures`).
@@ -79,20 +87,23 @@ extension Library {
   private func importPictures(_ sources: [CGImageSource]) async -> NotebookMeta? {
     var pages: [ImportedPage] = []
     for src in sources {
-      let opts: [CFString: Any] = [
-        kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: Self.pdfRenderMaxSide,
-        kCGImageSourceCreateThumbnailWithTransform: true,
-      ]
-      guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary),
-        let jpeg = UIImage(cgImage: cg).jpegData(compressionQuality: 0.9)
-      else { continue }
-      let name = "\(newId()).jpg"
-      try? jpeg.write(to: AppFiles.folders.images.appendingPathComponent(name))
-      pages.append(ImportedPage(file: name, width: CGFloat(cg.width), height: CGFloat(cg.height)))
+      if let p = Self.savePicture(src) { pages.append(p) }
       await Task.yield()
     }
     guard !pages.isEmpty else { return nil }
     return build(kind: .picture, title: pages.count > 1 ? English.nPictures(pages.count) : English.picture, pages: pages)
+  }
+
+  /// A picture kept in the images folder as an upright JPEG, at most 2400 pixels on its long side.
+  static func savePicture(_ src: CGImageSource) -> ImportedPage? {
+    let opts: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: pdfRenderMaxSide,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+    ]
+    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary), let jpeg = UIImage(cgImage: cg).jpegData(compressionQuality: 0.9) else { return nil }
+    let name = "\(newId()).jpg"
+    guard (try? jpeg.write(to: AppFiles.folders.images.appendingPathComponent(name))) != nil else { return nil }
+    return ImportedPage(file: name, width: CGFloat(cg.width), height: CGFloat(cg.height))
   }
 
   /// A transparent PDF page on white, as Android renders it.
@@ -120,24 +131,23 @@ extension Library {
       id: newId(), title: Names.numbered(title, taken: taken), created: now, updated: now, cover: 0xFF7A_4ED6, paper: .BLANK,
       folderId: folder, pages: pages.count, landscape: layout.isLandscape, kind: kind, pageAspect: aspect)
     try? db.insert(meta)
-    var placed: [(rect: CGRect, file: String)] = []
+    var placed: [PictureRow] = []
     for (i, p) in pages.enumerated() {
       let r = layout.rect(i)
       let s = min(CGFloat(r.width) / p.width, CGFloat(r.height) / p.height)
       let w = Float(p.width * s), h = Float(p.height * s)
       let c = r.center
       let rect = Rect(c.x - w / 2, c.y - h / 2, c.x + w / 2, c.y + h / 2)
-      try? db.put(PictureRow(id: newId(), z: Int64(i), file: p.file, rect: rect, pdfPage: true).itemRow, in: meta.id)
-      placed.append((CGRect(rect), p.file))
+      let row = PictureRow(id: newId(), z: Int64(i), file: p.file, rect: rect, pdfPage: true)
+      try? db.put(row.itemRow, in: meta.id)
+      placed.append(row)
     }
     // Its preview: the top of the first page, as the library shows notebooks.
     let layer = PagesLayer()
     layer.layout = layout
     layer.count = pages.count
     layer.paper = .BLANK
-    if let pic = placed.first, let img = UIImage(contentsOfFile: AppFiles.folders.images.appendingPathComponent(pic.file).path)?.cgImage {
-      layer.under.pictures = [(pic.rect, img)]
-    }
+    layer.under.pictures = placed.prefix(1).compactMap(TalisNotes.placed)
     Thumbnail.save(id: meta.id, region: Thumbnail.previewRegion(CGRect(layout.rect(0))), pages: layer, drawing: PKDrawing(), db: db)
     reload()
     return meta

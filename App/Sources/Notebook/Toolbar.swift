@@ -153,6 +153,7 @@ struct MainToolbar: View {
   var shapeKind: ShapeKind = .RECTANGLE
   /// The keyboard: a new text box to type in.
   var onKeyboard: () -> Void = {}
+  var onInsert: (InsertChoice) -> Void = { _ in }
   var showColors = true
   /// On a phone the tools fold into one button (Android's `MainToolbarPhone`).
   var compactTools = false
@@ -259,6 +260,7 @@ struct MainToolbar: View {
       toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
       toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
       toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
+      InsertButton { toolsOpen = false; onInsert($0) }
       Button {
         toolsOpen = false
         onKeyboard()

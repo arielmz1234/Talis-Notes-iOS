@@ -2,11 +2,22 @@ import ImageIO
 import TaliCore
 import UIKit
 
-/// A picture item (kind 2): where it sits and its image, read from the app's images folder at a
-/// size that suits the page (a PDF page or photo is never decoded at full size).
-func picture(from row: ItemRow) -> (rect: CGRect, image: CGImage)? {
-  guard let p = PictureRow(row), let image = pictureImage(p, pixelsPerUnit: 2, cap: 2400) else { return nil }
-  return (CGRect(p.rect), image)
+/// A picture on the page with its image, as the page layer draws it.
+struct PlacedPicture: @unchecked Sendable {
+  var row: PictureRow
+  var image: CGImage
+  var rect: CGRect { CGRect(row.rect) }
+}
+
+/// A picture item (kind 2) with its image, read from the app's images folder at a size that suits
+/// the page (a PDF page or photo is never decoded at full size).
+func picture(from row: ItemRow) -> PlacedPicture? {
+  guard let p = PictureRow(row) else { return nil }
+  return placed(p)
+}
+
+func placed(_ p: PictureRow) -> PlacedPicture? {
+  pictureImage(p, pixelsPerUnit: 2, cap: 2400).map { PlacedPicture(row: p, image: $0) }
 }
 
 /// The part of [p]'s picture that shows (its crop), decoded at about [pixelsPerUnit] pixels per world

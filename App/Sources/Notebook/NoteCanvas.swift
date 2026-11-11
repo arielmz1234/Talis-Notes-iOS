@@ -17,9 +17,9 @@ enum Tool: Equatable {
 /// then shapes, all under the writing for now).
 struct UnderItems: @unchecked Sendable {
   var shapes: [ShapeRow] = []
-  var pictures: [(rect: CGRect, image: CGImage)] = []
+  var pictures: [PlacedPicture] = []
   /// Pages of an imported PDF, drawn from the PDF itself (sharp at any zoom) instead of their pictures.
-  var pdfPages: [(rect: CGRect, page: SharpPage)] = []
+  var pdfPages: [(id: String, rect: CGRect, page: SharpPage)] = []
   /// Typed text boxes (drawn as real text, sharp at any zoom).
   var texts: [TextRow] = []
 }
@@ -819,7 +819,7 @@ final class SharpPage: @unchecked Sendable {
   private init(_ page: PDFPage) { self.page = page }
 
   /// The page a picture item shows, when it's an imported PDF page whose PDF is here.
-  static func of(_ row: ItemRow) -> (rect: CGRect, page: SharpPage)? {
+  static func of(_ row: ItemRow) -> (id: String, rect: CGRect, page: SharpPage)? {
     guard let p = PictureRow(row), p.crop == nil, let (id, index) = p.pdfSource, p.rect.width > 0, p.rect.height > 0 else { return nil }
     lock.lock()
     defer { lock.unlock() }
@@ -832,7 +832,7 @@ final class SharpPage: @unchecked Sendable {
       doc = d
     }
     guard let page = doc.page(at: index) else { return nil }
-    return (CGRect(p.rect), SharpPage(page))
+    return (row.id, CGRect(p.rect), SharpPage(page))
   }
 
   /// Draws the page filling [rect] (world units, y down) on white.
