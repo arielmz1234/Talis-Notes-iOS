@@ -369,6 +369,8 @@ public struct TextRow: Sendable, Equatable {
     t.width = max(width * s, 40)
     t.fontSize = min(max(fontSize * s, 6), 400)
     t.height = height * s
+    // Moved or resized it comes out unlocked, as Android's `TextItem.transformed` does.
+    t.locked = false
     return t
   }
 

@@ -81,7 +81,8 @@ extension ShapeGeometry {
     case let .triangle(_, _, _, turn): turn
     case let .group(_, turn): turn
     case let .curve(points): points.count > 1 ? (points[points.count - 1] - points[0]).angle() : nil
-    case .arc, .sector, .param: nil
+    case let .param(p): p.place.mapAngle(0)
+    case .arc, .sector: nil
     }
   }
 }

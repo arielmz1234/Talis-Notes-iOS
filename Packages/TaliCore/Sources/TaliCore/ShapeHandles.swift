@@ -111,11 +111,13 @@ extension ShapeGeometry {
       return [center + .polar(radius, start), center + .polar(radius, start + sweep), center + .polar(radius, start + sweep / 2)]
     case let .triangle(a, b, c, _): return [a, b, c]
     case let .load(a, b, depth, _): return [a, b, a + (b - a) * 0.5 + Self.across(a, b) * depth]
-    case .group, .param: return []
+    case let .param(p): return p.handles()
+    case .group: return []
     }
   }
 
   public func withHandle(_ index: Int, _ p: Pt) -> ShapeGeometry {
+    let p0 = p
     switch self {
     case let .line(a, b, arrowStart, arrowEnd, ticks):
       // Within 2° of its direction the drag is projected onto it, so the line keeps its exact angle
@@ -205,7 +207,8 @@ extension ShapeGeometry {
       // The arrows keep hanging on the same side as the line turns, and keep their spacing.
       let keepSide: Float = Self.across(na, nb).dot(across) < 0 ? -1 : 1
       return .load(a: na, b: nb, depth: depth * keepSide, count: ShapeKind.loadArrows(na.dist(nb)))
-    case .group, .param: return self
+    case let .param(p): return .param(p.withHandle(index, p0))
+    case .group: return self
     }
   }
 
