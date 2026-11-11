@@ -81,8 +81,9 @@ final class ScreenshotTests: XCTestCase {
     if app.buttons["tool-lasso"].exists {
       app.buttons["tool-lasso"].firstMatch.tap()
       settle()
+      // A slow drag so the loop gets plenty of points (a fast one is just its two ends).
       let a = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.38))
-      a.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.72)))
+      a.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.72)), withVelocity: .slow, thenHoldForDuration: 0.05)
       settle()
       shot("4d-lasso")
       app.buttons["pen-p1"].firstMatch.tap()

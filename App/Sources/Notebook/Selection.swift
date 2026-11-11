@@ -17,6 +17,7 @@ struct LassoState {
   var before: PKDrawing?
   /// Where a hold offered Paste (world units).
   var pasteAt: CGPoint?
+  var lastPicked = 0
   let loopLayer = CAShapeLayer()
   let frameLayer = CAShapeLayer()
 }
@@ -140,6 +141,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     let loop = lasso.loop
     lasso.loop = []
     lasso.loopLayer.path = nil
+    if ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso \(loop.count) points") }
     guard loop.count > 2 else { return }
     var picked = Set<String>()
     var bounds: CGRect?
@@ -155,6 +157,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     lasso.picked = picked
     lasso.bounds = picked.isEmpty ? nil : bounds
     if ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso \(loop.count) points, \(picked.count) picked") }
+    lasso.lastPicked = picked.count
     if !picked.isEmpty { UISelectionFeedbackGenerator().selectionChanged() }
     redrawSelection()
   }
