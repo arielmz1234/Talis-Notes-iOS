@@ -22,7 +22,7 @@ struct NotebookView: View {
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
   @Environment(\.colorScheme) private var scheme
-  @State private var tool: Tool = .pen(PenStore.load().first?.id ?? "p1")
+  @State private var tool: Tool = .pen(PenStore.activePen)
   @State private var pens: [PenSlot] = PenStore.load()
   @State private var panel: PanelKind?
   /// The Shapes tool's shape (Android's `lastShape`).
@@ -127,14 +127,10 @@ struct NotebookView: View {
             mainToolbar(showColors: !PhoneWriting.onPhone)
               .transition(.move(edge: .top).combined(with: .opacity))
           } else {
-            ZStack(alignment: .top) {
-              HStack(spacing: 10) {
-                leftBars
-                Spacer(minLength: 10)
-                rightBars(showName: true)
-              }
-              .frame(height: 60)
+            TopBarLayout {
+              leftBars
               mainToolbar(showColors: true)
+              rightBars(showName: true)
             }
             .transition(.opacity)
           }
@@ -143,7 +139,7 @@ struct NotebookView: View {
             Group {
               switch shown {
               case .pen:
-                if let i = activePenIndex { PenPanel(pen: $pens[i]) }
+                if let i = activePenIndex { PenPanel(pen: $pens[i], onAddPen: addPen, onRemovePen: pens.count > 1 ? { removePen(pens[i].id) } : nil) }
               case .eraser:
                 EraserPanel(precise: $eraserPrecise, size: Binding(get: { Float(eraserSize) }, set: { eraserSize = Double($0) }))
               case .shapes:
@@ -225,6 +221,7 @@ struct NotebookView: View {
       }
     }
     .onChange(of: pens) { _, new in PenStore.save(new) }
+    .onChange(of: tool) { _, new in if case .pen(let id) = new { PenStore.activePen = id } }
     .onChange(of: paper) { _, p in try? lib.db.run("UPDATE notebooks SET paper=? WHERE id=?", [.text(p.rawValue), .text(notebook.id)]) }
     .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
     .statusBarHidden(fullScreen)
@@ -240,6 +237,19 @@ struct NotebookView: View {
       guard !Task.isCancelled else { return }
       withAnimation(.easeOut(duration: 0.2)) { hint = nil }
     }
+  }
+
+  private func addPen() {
+    let id = String(UUID().uuidString.prefix(8))
+    guard let more = PenSlot.adding(id: id, firstColor: Palettes.shared.saved.first, to: pens) else { return }
+    pens = more
+    tool = .pen(id)
+  }
+
+  private func removePen(_ id: String) {
+    guard let fewer = PenSlot.removing(id, from: pens), let first = fewer.first else { return }
+    tool = .pen(first.id)
+    pens = fewer
   }
 
   private var activePenIndex: Int? {
@@ -289,8 +299,10 @@ struct NotebookView: View {
           .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 6)
           .contentShape(Rectangle())
           .onTapGesture { renaming = true }
+          .accessibilityElement(children: .combine)
           .accessibilityAddTraits(.isButton)
           .accessibilityHint(L("rename"))
+          .accessibilityIdentifier("notebook-title")
         }
       }
       FloatingBar(crown: .softEdge) {
@@ -418,14 +430,29 @@ enum ViewOnly {
 
 /// The pens, kept between launches.
 enum PenStore {
-  private static let resetForTests: Void = {
+  private static let reset: Void = {
     if ProcessInfo.processInfo.arguments.contains("-uitest"), ProcessInfo.processInfo.arguments.contains("-reset-pens") {
-      for key in ["pens", "savedColors", "highlighterColors", "eraserAffects", "lassoAffects", "eraserPrecise"] { UserDefaults.standard.removeObject(forKey: key) }
+      for key in ["pens", "activePen", "savedColors", "highlighterColors", "eraserAffects", "lassoAffects", "lassoSelectsImages", "eraserPrecise", "eraserSize"] {
+        UserDefaults.standard.removeObject(forKey: key)
+      }
     }
   }()
 
+  /// A UI test asks for a new install's pens, colours and eraser (once, before any of them is read).
+  static func resetForTests() { _ = reset }
+
+  /// Android's `activePen`: the pen she last wrote with, or the first.
+  static var activePen: String {
+    get {
+      let pens = load()
+      let saved = UserDefaults.standard.string(forKey: "activePen")
+      return pens.first { $0.id == saved }?.id ?? pens.first?.id ?? "p1"
+    }
+    set { UserDefaults.standard.set(newValue, forKey: "activePen") }
+  }
+
   static func load() -> [PenSlot] {
-    _ = resetForTests
+    resetForTests()
     guard let d = UserDefaults.standard.data(forKey: "pens"), let p = try? JSONDecoder().decode([PenSlot].self, from: d), !p.isEmpty else {
       return PenSlot.defaults
     }

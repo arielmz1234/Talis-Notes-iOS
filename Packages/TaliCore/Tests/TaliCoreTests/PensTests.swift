@@ -142,6 +142,20 @@ struct PenSlotTests {
     #expect(PenSlot.migrated(pens).count == 6)
   }
 
+  @Test func aNewPenIsAFinelinerInHerFirstColourUpToEightPens() throws {
+    let five = try #require(PenSlot.adding(id: "n1", firstColor: 0xFFD8_3A3A, to: PenSlot.defaults))
+    #expect(five.count == 5)
+    #expect(five[4] == PenSlot(id: "n1", type: .FINELINER, color: Int32(bitPattern: 0xFFD8_3A3A), size: 2.5))
+    let eight = (0..<4).reduce(PenSlot.defaults) { pens, i in PenSlot.adding(id: "x\(i)", firstColor: nil, to: pens) ?? pens }
+    #expect(eight.count == 8)
+    #expect(PenSlot.adding(id: "ninth", firstColor: nil, to: eight) == nil)
+  }
+
+  @Test func aPenCanBeRemovedButNotTheLastOne() {
+    #expect(PenSlot.removing("p2", from: PenSlot.defaults)?.map(\.id) == ["p1", "p4", "p5"])
+    #expect(PenSlot.removing("p1", from: [PenSlot.defaults[0]]) == nil)
+  }
+
   @Test func everyPenGetsItsOwnId() {
     let pens = PenSlot.migrated([PenSlot(id: "x", type: .FINELINER, color: 0, size: 2), PenSlot(id: "x", type: .FOUNTAIN, color: 0, size: 3)])
     #expect(Set(pens.map(\.id)).count == 2)

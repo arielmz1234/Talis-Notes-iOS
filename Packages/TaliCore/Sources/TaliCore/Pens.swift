@@ -216,6 +216,19 @@ public struct PenSlot: Codable, Hashable, Identifiable, Sendable {
     return p
   }
 
+  /// The pens with a new one at the end (Android's `addPen`): a fineliner in her first saved colour.
+  /// Nil when the toolbar is full.
+  public static func adding(id: String, firstColor: UInt32?, to pens: [PenSlot]) -> [PenSlot]? {
+    guard pens.count < maxPens else { return nil }
+    return pens + [PenSlot(id: id, type: .FINELINER, color: Int32(bitPattern: firstColor ?? defaultColors[0]), size: PenType.FINELINER.defaultSize)]
+  }
+
+  /// The pens without [id] (Android's `removeActivePen`). Nil for the last pen, which stays.
+  public static func removing(_ id: String, from pens: [PenSlot]) -> [PenSlot]? {
+    guard pens.count > 1, pens.contains(where: { $0.id == id }) else { return nil }
+    return pens.filter { $0.id != id }
+  }
+
   /// Draws straight lines from where the pen lands to where it is (the highlighter's default).
   public var straight: Bool { type.isHighlighter && !freehand }
 

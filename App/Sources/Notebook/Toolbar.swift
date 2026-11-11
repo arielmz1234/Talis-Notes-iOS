@@ -9,23 +9,6 @@ import TaliCore
 /// Which panel hangs under the toolbar.
 enum PanelKind { case pen, eraser, shapes }
 
-/// Saved colours (Android's `savedColors` / `highlighterColors`) and how many sit in the toolbar.
-enum Palette {
-  static var saved: [UInt32] {
-    get { (UserDefaults.standard.array(forKey: "savedColors") as? [Int])?.map { UInt32(truncatingIfNeeded: $0) } ?? PenSlot.defaultColors }
-    set { UserDefaults.standard.set(newValue.map { Int($0) }, forKey: "savedColors") }
-  }
-  static var highlighter: [UInt32] {
-    get { (UserDefaults.standard.array(forKey: "highlighterColors") as? [Int])?.map { UInt32(truncatingIfNeeded: $0) } ?? PenSlot.defaultHighlighterColors }
-    set { UserDefaults.standard.set(newValue.map { Int($0) }, forKey: "highlighterColors") }
-  }
-  /// How many colours a pen shows in the toolbar until it has its own number (Android's default 3).
-  static var toolbarColors: Int { UserDefaults.standard.object(forKey: "toolbarColors") as? Int ?? 3 }
-
-  static func colors(for pen: PenSlot) -> [UInt32] { pen.type == .HIGHLIGHTER ? highlighter : saved }
-  static func toolbarCount(for pen: PenSlot) -> Int { pen.toolbarColors ?? toolbarColors }
-}
-
 /// A pen drawn like a real tool standing in a tray (Android's `PenGlyph`): neutral body, a coloured
 /// band, and a tip shaped by its style. 26 × 56 pt, the tip pointing up.
 struct PenGlyph: View {
@@ -169,13 +152,15 @@ struct MainToolbar: View {
       .accessibilityLabel(L("pen_settings"))
       if showColors, let i = activeIndex {
         let pen = pens[i]
-        let count = Palette.toolbarCount(for: pen)
-        if count > 0 {
+        let quick = Array(Palettes.shared.colors(for: pen).prefix(Palettes.shared.toolbarCount(for: pen)))
+        if !quick.isEmpty {
           HStack(spacing: 0) {
-            ForEach(Array(Palette.colors(for: pen).prefix(count)), id: \.self) { col in
+            ForEach(quick, id: \.self) { col in
               ColorDot(color: Color(argb: col), selected: UInt32(bitPattern: pen.color) | 0xFF00_0000 == col | 0xFF00_0000, size: 22) {
                 pens[i].color = Int32(bitPattern: col)
               }
+              .accessibilityLabel(L("colour"))
+              .accessibilityIdentifier(String(format: "toolbar-colour-%06X", col & 0xFF_FFFF))
             }
           }
           .padding(.leading, 2)
@@ -223,6 +208,7 @@ struct MainToolbar: View {
       }
     }
     .onChange(of: tool) { _, _ in if compactTools { withAnimation(.easeOut(duration: 0.14)) { toolsOpen = false } } }
+    .animation(Ease.outStrong(duration: 0.22), value: activeIndex.map { Palettes.shared.toolbarCount(for: pens[$0]) })
   }
 
   /// The tools: eraser, lasso, laser, shapes, then the keyboard (a new text box).
@@ -311,14 +297,8 @@ struct ColorDot: View {
   @Environment(\.tali) private var c
 
   var body: some View {
-    Button(action: action) {
-      Circle().fill(color).overlay(Circle().stroke(Color.black.opacity(0.13), lineWidth: 1))
-        .frame(width: size, height: size)
-        .padding(4)
-        .overlay(Circle().stroke(c.accent, lineWidth: 2).opacity(selected ? 1 : 0))
-        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: selected)
-    }
-    .buttonStyle(.plain)
+    Button(action: action) { ColorDotFace(color: color, selected: selected, size: size) }
+      .buttonStyle(.plain)
   }
 }
 
@@ -381,11 +361,14 @@ struct ToolPanel<Content: View>: View {
   var body: some View {
     ViewThatFits(in: .vertical) {
       column
-      ScrollView { column.padding(.bottom, 20) }
-        .scrollIndicators(.hidden)
-        .overlay(alignment: .bottom) {
-          LinearGradient(colors: [c.cloudBelly.opacity(0), c.cloudBelly], startPoint: .top, endPoint: .bottom).frame(height: 28).allowsHitTesting(false)
-        }
+      ScrollViewReader { proxy in
+        ScrollView { column.padding(.bottom, 20) }
+          .scrollIndicators(.hidden)
+          .environment(\.showInPanel) { id in withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .bottom) } }
+          .overlay(alignment: .bottom) {
+            LinearGradient(colors: [c.cloudBelly.opacity(0), c.cloudBelly], startPoint: .top, endPoint: .bottom).frame(height: 28).allowsHitTesting(false)
+          }
+      }
     }
     // Its own width, or less on a phone so it never runs off the screen.
     .frame(maxWidth: width, alignment: .leading)
@@ -396,12 +379,36 @@ struct ToolPanel<Content: View>: View {
   private var column: some View { VStack(alignment: .leading, spacing: 0) { content } }
 }
 
+extension EnvironmentValues {
+  /// Scrolls a panel that doesn't fit so the part with this id shows.
+  @Entry var showInPanel: (String) -> Void = { _ in }
+}
+
+/// Something added to a panel after it opened (the colour picker) comes into view by itself:
+/// below the fold of a panel that scrolls, it would look as if nothing had happened.
+struct ShownWhenAdded: ViewModifier {
+  var id: String
+  @Environment(\.showInPanel) private var show
+
+  func body(content: Content) -> some View {
+    // After this pass of layout: the panel hasn't grown to hold it yet when it first appears.
+    content.id(id).task {
+      try? await Task.sleep(for: .milliseconds(60))
+      show(id)
+    }
+  }
+}
+
 /// The active pen's settings (Android's `PenPanel`): its type, a sample stroke, its three
 /// thicknesses, the size slider, its colours and how many of them sit in the toolbar.
 struct PenPanel: View {
   @Binding var pen: PenSlot
+  var onAddPen: () -> Void
+  /// Nil for the last pen, which stays.
+  var onRemovePen: (() -> Void)?
   @Environment(\.tali) private var c
   @Namespace private var types
+  @State private var pickingColour = false
 
   var body: some View {
     ToolPanel(width: 392) {
@@ -454,25 +461,36 @@ struct PenPanel: View {
       Spacer().frame(height: 10)
       SectionLabel(text: pen.type == .HIGHLIGHTER ? L("highlighter_colours") : L("colours"))
       Spacer().frame(height: 8)
-      let palette = Palette.colors(for: pen)
-      let inBar = Palette.toolbarCount(for: pen)
-      LazyVGrid(columns: [GridItem(.adaptive(minimum: 38, maximum: 38), spacing: 2)], alignment: .leading, spacing: 2) {
-        ForEach(Array(palette.enumerated()), id: \.element) { i, col in
-          ColorDot(color: Color(argb: col), selected: UInt32(bitPattern: pen.color) | 0xFF00_0000 == col | 0xFF00_0000) {
-            pen.color = Int32(bitPattern: col)
-          }
-          .overlay(alignment: .trailing) {
-            // A thin line after the last toolbar colour sets them apart.
-            if i == inBar - 1 && inBar < palette.count { Rectangle().fill(c.line).frame(width: 1.5, height: 22).offset(x: 1) }
-          }
-        }
-      }
+      ReorderableColors(
+        colors: Palettes.shared.colors(for: pen), selected: UInt32(bitPattern: pen.color), inToolbar: Palettes.shared.toolbarCount(for: pen),
+        onPick: { pen.color = Int32(bitPattern: $0) },
+        onReorder: { order in Palettes.shared.edit(for: pen) { SavedColours.reordered($0, to: order) } },
+        onRemove: { color in Palettes.shared.edit(for: pen) { SavedColours.removing(color, from: $0) } },
+        onAdd: { withAnimation(.easeOut(duration: 0.18)) { pickingColour.toggle() } })
       Spacer().frame(height: 12)
       Text(L("in_the_toolbar_with_this_pen")).font(TaliType.bodyMedium).foregroundStyle(c.ink)
       Text(L("the_colours_before_the_line_hold")).font(TaliType.bodySmall).foregroundStyle(c.inkFaint)
       Spacer().frame(height: 8)
-      Segmented(options: Array(0...6), selected: Binding(get: { Palette.toolbarCount(for: pen) }, set: { pen.toolbarColors = $0 })) {
+      Segmented(options: Array(0...6), selected: Binding(get: { Palettes.shared.toolbarCount(for: pen) }, set: { pen.toolbarColors = $0 })) {
         $0 == 0 ? L("none") : "\($0)"
+      }
+      if pickingColour {
+        Spacer().frame(height: 12)
+        ColourPicker(
+          initial: UInt32(bitPattern: pen.color),
+          onChange: { pen.color = Int32(bitPattern: $0) },
+          onSave: { color in
+            Palettes.shared.edit(for: pen) { SavedColours.saving(color, in: $0) }
+            pen.color = Int32(bitPattern: color)
+            withAnimation(.easeOut(duration: 0.18)) { pickingColour = false }
+          }
+        )
+        .modifier(ShownWhenAdded(id: "colour-picker"))
+      }
+      Spacer().frame(height: 12)
+      HStack(spacing: 10) {
+        Button(L("add_a_pen"), action: onAddPen).buttonStyle(QuietButtonStyle())
+        if let onRemovePen { Button(L("remove_this_pen"), action: onRemovePen).buttonStyle(QuietButtonStyle(warning: true)) }
       }
     }
   }
