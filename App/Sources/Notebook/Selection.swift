@@ -4,7 +4,9 @@ import UIKit
 
 /// What the lasso is doing and what it has picked up.
 struct LassoState {
-  var pan: UIPanGestureRecognizer?
+  /// The lasso's own touches (a watcher like hold-to-shape's: a pan recogniser was allowed to begin
+  /// on PKCanvasView but never began).
+  var pan: StrokeWatcher?
   var hold: UILongPressGestureRecognizer?
   /// The loop being drawn, in world units.
   var loop: [Pt] = []
@@ -18,6 +20,8 @@ struct LassoState {
   /// Where a hold offered Paste (world units).
   var pasteAt: CGPoint?
   var lastPicked = 0
+  /// Where the lasso's touch last was (world units).
+  var lastAt: CGPoint = .zero
   let loopLayer = CAShapeLayer()
   let frameLayer = CAShapeLayer()
 }
@@ -38,9 +42,13 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   static let frameGap: CGFloat = 12
 
   func installSelection(on v: PKCanvasView) {
-    let pan = UIPanGestureRecognizer(target: self, action: #selector(lassoPan(_:)))
-    pan.maximumNumberOfTouches = 1
+    let pan = StrokeWatcher(target: nil, action: nil)
     pan.delegate = self
+    pan.began = { [weak self] t, _ in self?.lassoStep(.began, t) }
+    pan.moved = { [weak self] t, e in
+      for s in e.coalescedTouches(for: t) ?? [t] { self?.lassoStep(.changed, s) }
+    }
+    pan.ended = { [weak self] cancelled in self?.lassoStep(cancelled ? .cancelled : .ended, nil) }
     pan.isEnabled = false
     v.addGestureRecognizer(pan)
     lasso.pan = pan
@@ -71,7 +79,6 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
     if g === lasso.hold { return !InkClipboard.strokes.isEmpty && !parent.viewOnly }
-    if g === lasso.pan, ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso should begin") }
     return true
   }
 
@@ -85,12 +92,16 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   // MARK: Drawing the loop and moving
 
-  @objc func lassoPan(_ g: UIPanGestureRecognizer) {
+  /// One step of the lasso's touch: [t] is nil when it ends (it ends where it last was).
+  func lassoStep(_ phase: UIGestureRecognizer.State, _ t: UITouch?) {
     guard let canvas else { return }
-    let p = world(g)
-    switch g.state {
+    if let t {
+      let q = t.location(in: canvas)
+      lasso.lastAt = CGPoint(x: q.x / canvas.zoomScale, y: q.y / canvas.zoomScale)
+    }
+    let p = lasso.lastAt
+    switch phase {
     case .began:
-      if ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso began") }
       let pad = 8 / canvas.zoomScale
       if let b = lasso.bounds, b.insetBy(dx: -pad, dy: -pad).contains(p) {
         lasso.moving = true
@@ -103,16 +114,16 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       }
     case .changed:
       if lasso.moving, let before = lasso.before {
-        let t = CGAffineTransform(translationX: p.x - lasso.moveStart.x, y: p.y - lasso.moveStart.y)
+        let shift = CGAffineTransform(translationX: p.x - lasso.moveStart.x, y: p.y - lasso.moveStart.y)
         loading = true
         canvas.drawing = PKDrawing(strokes: before.strokes.enumerated().map { i, s in
           guard i < stored.count, lasso.picked.contains(stored[i].stroke.id) else { return s }
           var m = s
-          m.transform = s.transform.concatenating(t)
+          m.transform = s.transform.concatenating(shift)
           return m
         })
         loading = false
-        if let b = lasso.bounds { drawFrame(b.applying(t)) }
+        if let b = lasso.bounds { drawFrame(b.applying(shift)) }
       } else {
         lasso.loop.append(Pt(Float(p.x), Float(p.y)))
         drawLoop()
@@ -130,6 +141,10 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         }
         lasso.before = nil
         redrawSelection()
+      } else if phase == .cancelled {
+        // A second finger came down: it's a pinch or scroll, not a loop.
+        lasso.loop = []
+        lasso.loopLayer.path = nil
       } else {
         finishLoop()
       }

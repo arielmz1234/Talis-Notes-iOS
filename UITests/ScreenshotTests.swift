@@ -102,6 +102,19 @@ final class ScreenshotTests: XCTestCase {
     app.buttons["back"].firstMatch.tap()
     settle()
     shot("5-library-after")
+    // Opened again: strokes and the held shape as stored (ink widths after a reload).
+    let card = app.descendants(matching: .any)["notebook-New notebook"].firstMatch
+    if card.exists {
+      card.tap()
+      settle()
+      if app.buttons["write"].exists {
+        app.buttons["write"].firstMatch.tap()
+        settle()
+      }
+      shot("5b-reopened")
+      app.buttons["back"].firstMatch.tap()
+      settle()
+    }
     if isPad {
       app.buttons["backups"].firstMatch.tap()
       settle()
