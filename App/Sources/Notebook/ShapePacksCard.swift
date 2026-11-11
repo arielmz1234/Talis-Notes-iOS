@@ -11,14 +11,12 @@ struct ShapePacksCard: View {
   var onClose: () -> Void
   @Environment(\.tali) private var c
   @AppStorage(ShapeSettings.Key.starredPacks) private var starredList = ""
-  @State private var shown: String?
+  /// The subject whose shapes show: at first the first one she starred, else the first.
+  @State private var shown = ShapePacks.all.first { ShapeSettings.starred(from: UserDefaults.standard.string(forKey: ShapeSettings.Key.starredPacks) ?? "").contains($0.id) }?.id
 
   private var starred: Set<String> { ShapeSettings.starred(from: starredList) }
 
-  private var pack: ShapePack {
-    let all = ShapePacks.all
-    return all.first { $0.id == shown } ?? all.first { starred.contains($0.id) } ?? all[0]
-  }
+  private var pack: ShapePack { ShapePacks.all.first { $0.id == shown } ?? ShapePacks.all[0] }
 
   var body: some View {
     let narrow = size.width < 600
@@ -33,7 +31,7 @@ struct ShapePacksCard: View {
         }
         .scrollIndicators(.hidden)
         Spacer().frame(height: 12)
-        shapes.frame(maxHeight: max(size.height - 330, 160))
+        FittedScroll(limit: max(size.height - 330, 160)) { shapes }
       } else {
         HStack(alignment: .top, spacing: 18) {
           ScrollView {
@@ -41,7 +39,7 @@ struct ShapePacksCard: View {
           }
           .scrollIndicators(.hidden)
           .frame(width: 250)
-          shapes
+          ScrollView { shapes }.scrollIndicators(.hidden)
         }
         .frame(height: min(CGFloat(ShapePacks.all.count) * 42, max(size.height - 260, 200)))
       }
@@ -57,15 +55,12 @@ struct ShapePacksCard: View {
   }
 
   private var shapes: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 0) {
-        Text(subjectName(pack)).font(TaliType.titleMedium).foregroundStyle(c.ink)
-        Text(starred.contains(pack.id) ? L("in_your_shapes_panel") : L("tap_the_star_to_keep_these")).font(TaliType.bodySmall).foregroundStyle(c.inkFaint)
-        PackTiles(pack: pack, picker: picker)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+    VStack(alignment: .leading, spacing: 0) {
+      Text(subjectName(pack)).font(TaliType.titleMedium).foregroundStyle(c.ink)
+      Text(starred.contains(pack.id) ? L("in_your_shapes_panel") : L("tap_the_star_to_keep_these")).font(TaliType.bodySmall).foregroundStyle(c.inkFaint)
+      PackTiles(pack: pack, picker: picker)
     }
-    .scrollIndicators(.hidden)
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private func subject(_ p: ShapePack, narrow: Bool) -> some View {

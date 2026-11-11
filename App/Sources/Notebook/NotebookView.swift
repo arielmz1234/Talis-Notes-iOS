@@ -160,7 +160,7 @@ struct NotebookView: View {
                 FillPanel()
               }
             }
-            .environment(\.panelRoom, geo.size.height - (narrow ? 266 : 196))
+            .environment(\.panelRoom, geo.size.height - (narrow ? 292 : 196))
             .transition(
               .asymmetric(
                 insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)).combined(with: .offset(y: -6)),

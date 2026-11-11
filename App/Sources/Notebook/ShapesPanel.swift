@@ -353,29 +353,56 @@ extension EnvironmentValues {
 }
 
 /// A tool panel that's never taller than the room under the toolbar: it scrolls when it has more
-/// (Android's `PanelColumn`), with a soft fade at the bottom to say so.
+/// (Android's `PanelColumn`).
 struct ScrollingPanel<Content: View>: View {
   var width: CGFloat
   @ViewBuilder var content: Content
   @Environment(\.panelRoom) private var room
-  @State private var height: CGFloat = 0
 
   var body: some View {
-    let limit = min(max(room, 200), 640)
     ToolPanel(width: width) {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 0) { content }
-          .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
-      }
-      .scrollIndicators(.hidden)
-      .scrollBounceBehavior(.basedOnSize)
-      .frame(height: min(height, limit))
-      .mask {
-        if height > limit {
-          LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.94), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom)
-        } else {
-          Rectangle()
-        }
+      FittedScroll(limit: min(max(room, 200), 640)) { content }
+    }
+  }
+}
+
+/// How many times a panel has peeked to show it scrolls, since the app started.
+@MainActor
+private enum PanelPeeks {
+  static var count = 0
+}
+
+/// Its contents at their own height, or scrolling in [limit] when they're taller, with a soft fade
+/// at the bottom to say there's more. The first couple of times one opens with more below (each
+/// time the app starts) it peeks down a little and settles back, so she knows it scrolls.
+struct FittedScroll<Content: View>: View {
+  var limit: CGFloat
+  @ViewBuilder var content: Content
+  @State private var height: CGFloat = 0
+  @State private var peek: CGFloat = 0
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 0) { content }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        .offset(y: -peek)
+    }
+    .scrollIndicators(.hidden)
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(height: min(height, limit))
+    .task {
+      try? await Task.sleep(for: .milliseconds(320))
+      guard height > limit, PanelPeeks.count < 2 else { return }
+      PanelPeeks.count += 1
+      withAnimation(Ease.outStrong(duration: 0.26)) { peek = min(height - limit, 36) }
+      try? await Task.sleep(for: .milliseconds(260))
+      withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { peek = 0 }
+    }
+    .mask {
+      if height > limit {
+        LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.94), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom)
+      } else {
+        Rectangle()
       }
     }
   }

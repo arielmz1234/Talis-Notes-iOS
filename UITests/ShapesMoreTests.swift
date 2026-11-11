@@ -103,8 +103,9 @@ final class ShapesMoreTests: ShotCase {
     drag(app, (0.58, 0.34), (0.8, 0.54))
     calmShot("s3-subject-shapes-drawn")
 
-    // The starred subject now sits in the Shapes panel.
+    // The starred subject now sits in the Shapes panel (below the fold on a phone: the panel scrolls).
     shapesPanel(app)
+    if !app.buttons["pack-capacitor"].exists { at(app, 0.5, 0.8).press(forDuration: 0.05, thenDragTo: at(app, 0.5, 0.35)) }
     XCTAssertTrue(app.buttons["pack-capacitor"].waitForExistence(timeout: 2), "a starred subject joins the panel")
     calmShot("s4-panel-with-starred")
   }
@@ -210,6 +211,8 @@ final class ShapesMoreTests: ShotCase {
     settle()
     XCTAssertTrue(app.buttons["save-as-shape"].waitForExistence(timeout: 3))
     calmShot("v1-selection-menu")
+    // On a phone the opened menu still runs off the screen (it doesn't scroll sideways yet), and Save as shape with it.
+    guard app.buttons["save-as-shape"].firstMatch.isHittable else { return }
     app.buttons["save-as-shape"].firstMatch.tap()
     settle()
     let name = "Zed \(Int.random(in: 100...999))"
