@@ -285,8 +285,11 @@ struct NoteCanvas: UIViewRepresentable {
     c.applyTool()
     if let cmd = command {
       DispatchQueue.main.async {
-        c.run(cmd)
+        // Once only: the view can be updated again before this runs (two undos came of one tap), so
+        // the command is taken before it's carried out.
+        guard command == cmd else { return }
         command = nil
+        c.run(cmd)
       }
     }
   }
@@ -642,7 +645,9 @@ struct NoteCanvas: UIViewRepresentable {
           var s = stored[i].stroke
           if pk.transform != .identity {
             // Moved or resized with the lasso: store the moved points, and draw it untransformed.
+            let tags = s.tags
             s = InkStroke.from(pk, pen: PenSlot(id: "", type: s.pen, color: s.color, size: s.size), id: s.id, z: s.z)
+            s.tags = tags
             s.size = Float(CGFloat(s.size) * sqrt(abs(pk.transform.a * pk.transform.d - pk.transform.b * pk.transform.c)))
             changed.append(s)
             let fresh = s.pkStroke(mask: mask(for: s))
