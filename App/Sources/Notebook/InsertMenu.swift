@@ -39,6 +39,7 @@ struct InsertButton: View {
 struct InsertFlow: ViewModifier {
   @Binding var request: InsertChoice?
   var bridge: CanvasBridge
+  var crop: CropModel
   var hint: (String) -> Void
   @Environment(Library.self) private var lib
   @State private var photo: PhotosPickerItem?
@@ -55,7 +56,7 @@ struct InsertFlow: ViewModifier {
             hint(L("that_image_couldn_t_be_opened"))
             return
           }
-          bridge.coordinator?.insertPicture(page)
+          crop.offer(bridge.coordinator?.insertPicture(page))
         }
       }
       .fullScreenCover(isPresented: shows(.photo)) {
@@ -66,7 +67,7 @@ struct InsertFlow: ViewModifier {
               hint(L("that_photo_couldn_t_be_opened"))
               continue
             }
-            bridge.coordinator?.insertPicture(page)
+            crop.offer(bridge.coordinator?.insertPicture(page))
           }
         }
       }
@@ -98,7 +99,7 @@ struct InsertFlow: ViewModifier {
         ctx.cgContext.fillEllipse(in: CGRect(x: 420, y: 220, width: 360, height: 360))
       }
       if let data = image.jpegData(compressionQuality: 0.9), let src = CGImageSourceCreateWithData(data as CFData, nil), let page = Library.savePicture(src) {
-        bridge.coordinator?.insertPicture(page)
+        crop.offer(bridge.coordinator?.insertPicture(page))
       }
     case .photo: break
     }
@@ -124,6 +125,7 @@ struct InsertFlow: ViewModifier {
 struct DropOnPage: ViewModifier {
   var enabled: Bool
   var bridge: CanvasBridge
+  var crop: CropModel
   var hint: (String) -> Void
   @Environment(Library.self) private var lib
 
@@ -163,7 +165,7 @@ struct DropOnPage: ViewModifier {
           hint(L("that_picture_couldn_t_be_opened_2"))
           continue
         }
-        c.insertPicture(page, at: at, index: index)
+        crop.offer(c.insertPicture(page, at: at, index: index))
         index += 1
       } else if p.canLoadObject(ofClass: NSString.self), let text = await string(p) {
         c.insertText(text, at: at)

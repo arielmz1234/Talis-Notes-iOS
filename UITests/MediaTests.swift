@@ -264,6 +264,37 @@ extension MediaTests {
   }
 }
 
+extension MediaTests {
+  /// Cropping a picture just added: Crop beside it, the frame's left side and bottom-right corner
+  /// dragged in, Done; then Crop again and Reset brings the whole picture back.
+  func testCropPicture() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
+    let app = launch(["-fakePickers"])
+    settle()
+    open(app, "Week 3 lecture")
+    showTool(app, "tool-insert")
+    app.buttons["tool-insert"].firstMatch.tap()
+    settle()
+    app.buttons["insert-picture"].firstMatch.tap()
+    settle()
+    shot("k1-offer")
+    app.buttons["crop-offer"].firstMatch.tap()
+    settle()
+    shot("k2-cropping")
+    let f = app.descendants(matching: .any)["crop-frame"].firstMatch.frame
+    let origin = app.coordinate(withNormalizedOffset: .zero)
+    func at(_ x: CGFloat, _ y: CGFloat) -> XCUICoordinate { origin.withOffset(CGVector(dx: x, dy: y)) }
+    at(f.minX, f.midY).press(forDuration: 0.1, thenDragTo: at(f.minX + f.width * 0.3, f.midY), withVelocity: .slow, thenHoldForDuration: 0.1)
+    at(f.maxX, f.maxY).press(forDuration: 0.1, thenDragTo: at(f.maxX - f.width * 0.1, f.maxY - f.height * 0.25), withVelocity: .slow, thenHoldForDuration: 0.1)
+    settle()
+    shot("k3-frame")
+    app.buttons["crop-done"].firstMatch.tap()
+    settle()
+    shot("k4-cropped")
+  }
+}
+
 /// English labels the tests tap.
 enum L10n {
   static let exportPDF = "Export PDF"

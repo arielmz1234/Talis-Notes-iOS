@@ -59,6 +59,7 @@ struct NotebookView: View {
   /// Insert's choice, being run (the photo picker, camera or file picker).
   @State private var inserting: InsertChoice?
   @State private var memos = MemoModel()
+  @State private var crop = CropModel()
   /// Opened from another app and not saved yet: just for looking, with Save (Android's draft).
   @State private var draft: Bool
   @State private var savingDraft = false
@@ -94,6 +95,7 @@ struct NotebookView: View {
             page = p
             zoom = z
             memos.cameraMoved()
+            crop.cameraMoved()
           },
           command: $command
         )
@@ -104,9 +106,12 @@ struct NotebookView: View {
         .simultaneousGesture(TapGesture().onEnded {
           if panel != nil { withAnimation(.easeOut(duration: 0.1)) { panel = nil } }
           if memos.openMemo != nil { memos.openMemo = nil }
+          crop.dismissOffer()
         })
-        .modifier(DropOnPage(enabled: !viewing, bridge: bridge, hint: show))
+        .modifier(DropOnPage(enabled: !viewing, bridge: bridge, crop: crop, hint: show))
         .overlay { MemoLayer(memos: memos, hint: show) }
+        .overlay { CropOffer(crop: crop) }
+        .overlay { CropLayer(crop: crop) }
         VStack(spacing: narrow ? 18 : 0) {
           if viewing && draft {
             DraftBar(
@@ -183,6 +188,12 @@ struct NotebookView: View {
         .padding(.horizontal, 16)
         .padding(.top, 20)
         RecorderPanel(memos: memos, hint: show)
+        if crop.edit != nil {
+          VStack {
+            Spacer()
+            CropBar(crop: crop)
+          }
+        }
         if let sel = selection, !hidden, !viewing {
           SelectionMenuLayer(selection: sel, narrow: narrow) { command = $0 }
             .ignoresSafeArea()
@@ -261,9 +272,10 @@ struct NotebookView: View {
       }
     }
     .environment(\.tali, barColors)
-    .modifier(InsertFlow(request: $inserting, bridge: bridge, hint: show))
+    .modifier(InsertFlow(request: $inserting, bridge: bridge, crop: crop, hint: show))
     .onAppear {
       memos.bridge = bridge
+      crop.bridge = bridge
       memos.load(lib.db, notebook: notebook.id)
     }
     .onDisappear { memos.leave() }

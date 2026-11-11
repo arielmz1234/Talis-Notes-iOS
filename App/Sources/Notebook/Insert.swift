@@ -13,15 +13,37 @@ extension NoteCanvas.Coordinator {
   }
 
   /// A picture [index] of a batch, centred on [at] (a point in the canvas) or the middle of the view.
-  func insertPicture(_ page: Library.ImportedPage, at: CGPoint? = nil, index: Int = 0) {
-    guard let canvas else { return }
+  @discardableResult
+  func insertPicture(_ page: Library.ImportedPage, at: CGPoint? = nil, index: Int = 0) -> PictureRow? {
+    guard let canvas else { return nil }
     let z = Float(max(canvas.zoomScale, 0.01))
     let world = at.map { Pt(Float($0.x) / z, Float($0.y) / z) }
     var rect = Placing.picture(
       size: Pt(Float(page.width), Float(page.height)), visible: visibleWorld, at: world, index: index, zoom: z, maxUnitsPerPixel: Float(2 / canvas.traitCollection.displayScale))
     if paged { rect = Placing.ontoPage(rect, pages: layout, count: pageCount) }
-    addPictures([PictureRow(id: newId(), z: nextZ(), file: page.file, rect: rect)], pageCount: pageCount)
+    let row = PictureRow(id: newId(), z: nextZ(), file: page.file, rect: rect)
+    addPictures([row], pageCount: pageCount)
+    return row
   }
+
+  /// A picture changed in place (cropped), as one undo step.
+  func replacePicture(_ old: PictureRow, with new: PictureRow) {
+    guard let pages else { return }
+    func show(_ p: PictureRow) {
+      if let i = pages.pages.under.pictures.firstIndex(where: { $0.row.id == p.id }), let pic = placed(p) { pages.pages.under.pictures[i] = pic }
+      try? parent.db.put(p.itemRow, in: parent.notebook.id)
+      touch()
+      pages.layer.setNeedsDisplay()
+    }
+    show(new)
+    canvas?.undoManager?.registerUndo(withTarget: self) { c in
+      MainActor.assumeIsolated { c.replacePicture(new, with: old) }
+    }
+    reportUndo()
+  }
+
+  /// The picture as it's stored now, by id.
+  func storedPicture(_ id: String) -> PictureRow? { pages?.pages.under.pictures.first { $0.row.id == id }?.row }
 
   /// PDF pages: on a paged notebook a page each, from the last page if it's empty; on an endless
   /// canvas one under the other below the writing, the first shown across the screen.
