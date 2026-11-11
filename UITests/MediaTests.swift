@@ -99,6 +99,53 @@ extension MediaTests {
   }
 }
 
+extension MediaTests {
+  /// Voice memos: record (the simulator's microphone), Done, Add beside the page, open, play, then
+  /// carry it across to the page's other side.
+  func testVoiceMemo() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
+    let app = launch()
+    addUIInterruptionMonitor(withDescription: "microphone") { alert in
+      for label in ["Allow", "OK"] where alert.buttons[label].exists {
+        alert.buttons[label].tap()
+        return true
+      }
+      return false
+    }
+    settle()
+    open(app, "Fluid mechanics")
+    showTool(app, "tool-voice")
+    app.buttons["tool-voice"].firstMatch.tap()
+    let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+    let allow = springboard.buttons["Allow"]
+    if allow.waitForExistence(timeout: 2) { allow.tap() }
+    app.tap()
+    Thread.sleep(forTimeInterval: 2.5)
+    shot("v1-recording")
+    app.buttons["memo-done"].firstMatch.tap()
+    settle()
+    shot("v2-draft")
+    app.buttons["memo-add"].firstMatch.tap()
+    settle()
+    shot("v3-added")
+    let memo = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Open voice memo'")).firstMatch
+    XCTAssertTrue(memo.waitForExistence(timeout: 3), "the memo sits beside the page")
+    memo.tap()
+    settle()
+    shot("v4-open")
+    app.buttons["memo-play"].firstMatch.tap()
+    Thread.sleep(forTimeInterval: 0.8)
+    shot("v5-playing")
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).tap()
+    settle()
+    let at = memo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+    at.press(forDuration: 0.7, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.6)), withVelocity: .slow, thenHoldForDuration: 0.3)
+    settle()
+    shot("v6-moved")
+  }
+}
+
 /// English labels the tests tap.
 enum L10n {
   static let exportPDF = "Export PDF"

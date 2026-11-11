@@ -154,6 +154,9 @@ struct MainToolbar: View {
   /// The keyboard: a new text box to type in.
   var onKeyboard: () -> Void = {}
   var onInsert: (InsertChoice) -> Void = { _ in }
+  /// The notebook's voice memos, for the mic (pressed while recording, it stops).
+  var memos: MemoModel?
+  var onVoice: () -> Void = {}
   var showColors = true
   /// On a phone the tools fold into one button (Android's `MainToolbarPhone`).
   var compactTools = false
@@ -261,6 +264,7 @@ struct MainToolbar: View {
       toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
       toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
       InsertButton { toolsOpen = false; onInsert($0) }
+      if let memos { MicButton(memos: memos) { toolsOpen = false; onVoice() } }
       Button {
         toolsOpen = false
         onKeyboard()

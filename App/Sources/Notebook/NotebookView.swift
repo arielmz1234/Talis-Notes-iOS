@@ -57,6 +57,8 @@ struct NotebookView: View {
   @State private var exporting = false
   /// Insert's choice, being run (the photo picker, camera or file picker).
   @State private var inserting: InsertChoice?
+  @State private var memos = MemoModel()
+  @Environment(\.scenePhase) private var scenePhase
   /// Draw with finger: -1 Auto, 0 off, 1 on (app-wide, as on Android).
   @AppStorage("fingerDraws") private var fingerDrawsRaw = -1
   @AppStorage("smartUndo") private var smartUndo = true
@@ -86,6 +88,7 @@ struct NotebookView: View {
           onView: { p, z in
             page = p
             zoom = z
+            memos.cameraMoved()
           },
           command: $command
         )
@@ -93,7 +96,11 @@ struct NotebookView: View {
         // The keyboard (typing in a text box) doesn't push the page up: the canvas scrolls the box into view.
         .ignoresSafeArea(.keyboard)
         // A tap on the page closes an open panel, as on Android.
-        .simultaneousGesture(TapGesture().onEnded { if panel != nil { withAnimation(.easeOut(duration: 0.1)) { panel = nil } } })
+        .simultaneousGesture(TapGesture().onEnded {
+          if panel != nil { withAnimation(.easeOut(duration: 0.1)) { panel = nil } }
+          if memos.openMemo != nil { memos.openMemo = nil }
+        })
+        .overlay { MemoLayer(memos: memos, hint: show) }
         VStack(spacing: narrow ? 18 : 0) {
           if viewing {
             HStack(spacing: 10) {
@@ -163,6 +170,7 @@ struct NotebookView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 20)
+        RecorderPanel(memos: memos, hint: show)
         if let sel = selection, !hidden, !viewing {
           SelectionMenuLayer(selection: sel, narrow: narrow) { command = $0 }
             .ignoresSafeArea()
@@ -219,6 +227,12 @@ struct NotebookView: View {
     }
     .environment(\.tali, barColors)
     .modifier(InsertFlow(request: $inserting, bridge: bridge, hint: show))
+    .onAppear {
+      memos.bridge = bridge
+      memos.load(lib.db, notebook: notebook.id)
+    }
+    .onDisappear { memos.leave() }
+    .onChange(of: scenePhase) { _, phase in if phase == .background { memos.leave() } }
     .alert(L("rename"), isPresented: $renaming) {
       RenameField(initial: title) { name in
         lib.rename(notebook.id, to: name)
@@ -249,7 +263,7 @@ struct NotebookView: View {
   }
 
   private func mainToolbar(showColors: Bool) -> some View {
-    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shapeKind: shapeKind, onKeyboard: { panel = nil; command = .newText }, onInsert: { panel = nil; inserting = $0 }, showColors: showColors, compactTools: PhoneWriting.onPhone)
+    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shapeKind: shapeKind, onKeyboard: { panel = nil; command = .newText }, onInsert: { panel = nil; inserting = $0 }, memos: memos, onVoice: { panel = nil; memos.mic(hint: show) }, showColors: showColors, compactTools: PhoneWriting.onPhone)
   }
 
   private var fingerDraws: Bool? { fingerDrawsRaw < 0 ? nil : fingerDrawsRaw == 1 }
