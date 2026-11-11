@@ -130,7 +130,7 @@ public enum ShapeRecognizer {
 
   /// A three-cornered closed shape becomes a triangle, whose corners move one at a time.
   public static func asTriangle(_ g: ShapeGeometry?) -> ShapeGeometry? {
-    if case let .poly(p, true, _, _)? = g, p.count == 3 { return .triangle(a: p[0], b: p[1], c: p[2]) }
+    if case let .poly(p, true, _, _, _)? = g, p.count == 3 { return .triangle(a: p[0], b: p[1], c: p[2]) }
     return g
   }
 
