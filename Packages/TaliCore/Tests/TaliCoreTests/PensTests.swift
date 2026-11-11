@@ -41,6 +41,16 @@ struct LineStyleTests {
     #expect(Dashes.cut(barb, size: 2, line: .LONG_DASH) == [barb])
   }
 
+  @Test func aDashedShapeIsCutButItsArrowHeadStaysWhole() {
+    let arrow = ShapeGeometry.line(a: Pt(0, 0), b: Pt(600, 0), arrowStart: false, arrowEnd: true, ticks: false)
+    let solid = ShapeRow(geometry: arrow, pen: "FINELINER", color: 0, size: 2)
+    let dashed = ShapeRow(geometry: arrow, pen: "FINELINER", color: 0, size: 2, line: "LONG_DASH")
+    let head = solid.strokes.filter { Geo.pathLength($0) < 100 }
+    #expect(!head.isEmpty)
+    #expect(dashed.strokes.count > 30)
+    for barb in head { #expect(dashed.strokes.contains(barb)) }
+  }
+
   @Test func aSolidLineIsLeftWhole() {
     #expect(Dashes.cut(line, size: 2, line: .SOLID) == [line])
   }

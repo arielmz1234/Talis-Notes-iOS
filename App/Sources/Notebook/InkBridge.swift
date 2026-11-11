@@ -75,13 +75,18 @@ struct InkStroke {
       l: b.left, t: b.top, r: b.right, b: b.bottom)
   }
 
+  /// The old dashed pen drew short dashes.
+  var line: LineStyle {
+    pen == .DASHED ? .SHORT_DASH : tags.lazy.compactMap(LineStyle.init(rawValue:)).first ?? .SOLID
+  }
+
   var square: Bool { tags.contains("SQUARE") }
 
   var locked: Bool { tags.contains("LOCKED") }
 
-  /// Android stores a square-tipped highlighter's strokes as "HIGHLIGHTER/SQUARE".
+  /// Android's pen column: "PEN/STYLE" for a dotted or dashed stroke, "HIGHLIGHTER/SQUARE" for the square tip.
   static func tags(for pen: PenSlot) -> [String] {
-    pen.square ? ["SQUARE"] : []
+    (pen.lineStyle == .SOLID ? [] : [pen.lineStyle.rawValue]) + (pen.square ? ["SQUARE"] : [])
   }
 
   /// Where it's drawn: its samples grown by half the pen.
@@ -99,7 +104,7 @@ struct InkStroke {
 
   /// The PencilKit stroke that draws it, kept to [mask] (its page) when given.
   func pkStroke(mask: UIBezierPath?) -> PKStroke {
-    if let look = InkLook(pen: pen, square: square) {
+    if let look = InkLook(pen: pen, line: line, square: square) {
       let at = inputs.points.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }
       var shape = look.outline(size: CGFloat(size), points: at)
       if let mask, !mask.bounds.contains(shape.boundingBoxOfPath) { shape = shape.intersection(mask.cgPath) }

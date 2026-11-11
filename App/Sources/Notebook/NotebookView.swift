@@ -157,6 +157,8 @@ struct NotebookView: View {
               .asymmetric(
                 insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)).combined(with: .offset(y: -6)),
                 removal: .opacity.combined(with: .scale(scale: 0.98, anchor: .top))))
+            // Clear of the page and zoom chips, so a tall panel scrolls instead of running under them.
+            .padding(.bottom, 56)
           }
         }
         .padding(.horizontal, 16)

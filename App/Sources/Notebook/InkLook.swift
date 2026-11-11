@@ -8,14 +8,21 @@ import TaliCore
 enum InkLook: Equatable {
   case band
   case chisel
+  /// Android's line brushes: round pieces of one width whatever the pen, so pressure doesn't show.
+  case pieces(LineStyle)
 
   /// Nil when one of PencilKit's own inks draws the stroke.
-  init?(pen: PenType, square: Bool) {
-    guard pen.isHighlighter else { return nil }
-    self = square ? .chisel : .band
+  init?(pen: PenType, line: LineStyle, square: Bool) {
+    if pen.isHighlighter {
+      self = square ? .chisel : .band
+    } else if line != .SOLID {
+      self = .pieces(line)
+    } else {
+      return nil
+    }
   }
 
-  init?(_ pen: PenSlot) { self.init(pen: pen.type, square: pen.square) }
+  init?(_ pen: PenSlot) { self.init(pen: pen.type, line: pen.lineStyle, square: pen.square) }
 
   /// PencilKit draws a monoline point narrower than its size, so the stroke under the mask is this
   /// much wider than the pen to be sure of covering the outline.
@@ -34,6 +41,9 @@ enum InkLook: Equatable {
       return InkLook.centre(points).copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 2)
     case .chisel:
       return InkLook.swept(InkLook.chiselTip(width), along: points)
+    case .pieces(let line):
+      let dashes = line.intervals(width: Float(width)).map { CGFloat($0) }
+      return InkLook.centre(points).copy(dashingWithPhase: 0, lengths: dashes).copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 2)
     }
   }
 

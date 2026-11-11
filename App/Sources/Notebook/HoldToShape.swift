@@ -191,7 +191,7 @@ extension NoteCanvas.Coordinator {
       let geometry = ShapeRecognizer.recognize(hold.points)
     else { return }
     let pen = currentPen
-    let shape = ShapeRow(geometry: geometry, pen: pen.type.rawValue, color: pen.color, size: pen.size)
+    let shape = ShapeRow(geometry: geometry, pen: pen.type.rawValue, color: pen.color, size: pen.size, line: pen.lineStyle.rawValue)
     // PencilKit lets go of the stroke it was drawing (switching its recogniser off and on cancels
     // it); should it hand the stroke in anyway, `sync` drops it.
     hold.dropSince = hold.began.addingTimeInterval(-0.2)
@@ -239,7 +239,7 @@ extension NoteCanvas.Coordinator {
     }
     let z = canvas.zoomScale
     let path = CGMutablePath()
-    for line in shape.geometry.paths(shape.size) where line.count > 1 {
+    for line in shape.strokes {
       path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
     }
     CATransaction.begin()

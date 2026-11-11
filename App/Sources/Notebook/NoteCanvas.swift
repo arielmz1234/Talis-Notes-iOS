@@ -59,14 +59,10 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
     cg.setLineCap(.round)
     cg.setLineJoin(.round)
     for s in under.shapes {
-      let paths = s.geometry.paths(s.size)
       let path = CGMutablePath()
-      for line in paths where line.count > 1 {
-        path.move(to: CGPoint(x: CGFloat(line[0].x), y: CGFloat(line[0].y)))
-        for p in line.dropFirst() { path.addLine(to: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))) }
-      }
+      for line in s.strokes { path.addLines(between: line.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }) }
       guard path.boundingBox.insetBy(dx: -CGFloat(s.size) * 2, dy: -CGFloat(s.size) * 2).intersects(rect) else { continue }
-      if let fill = s.fill, s.geometry.closed, let outline = paths.first, outline.count > 2 {
+      if let fill = s.fill, s.geometry.closed, let outline = s.geometry.paths(s.size).first, outline.count > 2 {
         let f = CGMutablePath()
         f.addLines(between: outline.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) })
         f.closeSubpath()
@@ -77,10 +73,8 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
       cg.addPath(path)
       cg.setStrokeColor(UIColor(argb: s.inkColor).cgColor)
       cg.setLineWidth(CGFloat(s.size))
-      if let dash = LineDash.pattern(s.line, width: CGFloat(s.size)) { cg.setLineDash(phase: 0, lengths: dash) } else { cg.setLineDash(phase: 0, lengths: []) }
       cg.strokePath()
     }
-    cg.setLineDash(phase: 0, lengths: [])
     if !under.texts.isEmpty {
       UIGraphicsPushContext(cg)
       for t in under.texts {
@@ -135,23 +129,6 @@ enum TextLook {
   static func frame(_ t: TextRow) -> CGRect {
     let h = max(textHeight(t), t.fontSize * TextRow.line, t.height)
     return CGRect(x: CGFloat(t.x), y: CGFloat(t.y), width: CGFloat(t.width), height: CGFloat(h))
-  }
-}
-
-/// Android's line styles as Core Graphics dashes (visible lengths in multiples of the line's width; 0 = a round dot).
-enum LineDash {
-  static func pattern(_ name: String, width: CGFloat) -> [CGFloat]? {
-    let p: [CGFloat]
-    switch name {
-    case "DOTTED": p = [0, 1.7]
-    case "LONG_DASH": p = [6, 2.4]
-    case "SHORT_DASH": p = [2.4, 2]
-    case "DOT_DASH": p = [4, 2, 0, 2]
-    case "MIXED_DASH": p = [6, 2, 2.2, 2]
-    default: return nil
-    }
-    // With round caps each part grows by a width, so the gaps take that back.
-    return p.enumerated().map { i, v in i % 2 == 0 ? max(v * width, 0.01) : (v + 1) * width }
   }
 }
 
@@ -296,6 +273,7 @@ struct NoteCanvas: UIViewRepresentable {
 
   static func dismantleUIView(_ v: PKCanvasView, coordinator: Coordinator) {
     coordinator.saveNow()
+    coordinator.history?.removeAllActions()
   }
 
   @MainActor
@@ -309,6 +287,9 @@ struct NoteCanvas: UIViewRepresentable {
     /// The highest z among shapes, so new items go on top of them.
     var shapeZ: Int64 = 0
     var loading = false
+    /// The window's undo manager outlives this screen, so its steps are dropped on leaving: kept,
+    /// Undo stayed lit after reopening with nothing real behind it (Android starts each visit fresh).
+    weak var history: UndoManager?
     private var didFit = false
     private var saveWork: DispatchWorkItem?
 
@@ -465,8 +446,6 @@ struct NoteCanvas: UIViewRepresentable {
         case false?: canvas.drawingPolicy = .pencilOnly
         }
       }
-      // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own loop.
-      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape && ownInk == nil
       lasso.pan?.isEnabled = !parent.viewOnly && parent.tool == .lasso
       shapeTool.watcher?.isEnabled = !parent.viewOnly && parent.tool == .shape
       // Another tool puts down what the lasso picked up (after this update: it changes the screen's state).
@@ -489,6 +468,10 @@ struct NoteCanvas: UIViewRepresentable {
         // Our own lasso, Shapes tool and laser (Android's): the canvas doesn't draw while they're in use.
         canvas.tool = PKInkingTool(.monoline, color: .clear, width: 1)
       }
+      // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso and the ink the
+      // notebook draws itself take the touch instead. After the tool is set: setting it switches
+      // PencilKit's drawing back on (it then drew its own stroke under ours until the pen lifted).
+      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape && ownInk == nil
     }
 
     func run(_ cmd: CanvasCommand) {
@@ -531,6 +514,7 @@ struct NoteCanvas: UIViewRepresentable {
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
         let u = self.canvas?.undoManager
+        self.history = u
         self.parent.onUndoState(u?.canUndo ?? false, u?.canRedo ?? false)
         self.parent.onPageCount(self.pageCount)
       }
@@ -671,9 +655,9 @@ struct NoteCanvas: UIViewRepresentable {
           growPages(for: s)
           rebuilt.append(pk)
           next.append((key, s))
-        } else if isSnappedStroke(pk) || parent.tool == .lasso || parent.tool == .shape || ownInk != nil {
-          // The stroke that became a shape (hold-to-shape), or one PencilKit drew while the lasso or
-          // a tool that draws by itself was on (in clear ink): neither is kept.
+        } else if isSnappedStroke(pk) || parent.tool == .lasso || parent.tool == .shape {
+          // The stroke that became a shape (hold-to-shape), or one PencilKit drew while the lasso was
+          // on (in clear ink): neither is kept.
           needsRebuild = true
         } else {
           // A new stroke from the pen.

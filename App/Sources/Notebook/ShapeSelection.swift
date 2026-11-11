@@ -83,8 +83,7 @@ extension NoteCanvas.Coordinator {
     lasso.shapeLayer.sublayers = textLayers + picked.map { (s: ShapeRow) -> CALayer in
       let l = CAShapeLayer()
       let path = CGMutablePath()
-      let lines = s.geometry.paths(s.size)
-      for line in lines where line.count > 1 {
+      for line in s.strokes {
         path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
       }
       l.path = path
@@ -93,7 +92,6 @@ extension NoteCanvas.Coordinator {
       l.lineCap = .round
       l.lineJoin = .round
       if let fill = s.fill, s.geometry.closed { l.fillColor = UIColor(argb: fill).cgColor } else { l.fillColor = UIColor.clear.cgColor }
-      if let dash = LineDash.pattern(s.line, width: CGFloat(s.size) * z) { l.lineDashPattern = dash.map { NSNumber(value: Double($0)) } }
       return l
     }
     CATransaction.begin()

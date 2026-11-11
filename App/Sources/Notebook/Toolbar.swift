@@ -31,6 +31,7 @@ enum Palette {
 struct PenGlyph: View {
   var type: PenType
   var color: Color
+  var line = LineStyle.SOLID
   @Environment(\.tali) private var c
 
   var body: some View {
@@ -46,6 +47,14 @@ struct PenGlyph: View {
       ctx.fill(Path(roundedRect: bodyRect, cornerRadius: 3 * u), with: .color(bodyFill))
       ctx.stroke(Path(roundedRect: bodyRect, cornerRadius: 3 * u), with: .color(outline), lineWidth: u)
       ctx.fill(Path(CGRect(x: cx - half, y: bodyTop + 9 * u, width: half * 2, height: 4 * u)), with: .color(color))
+      let pattern = type == .DASHED ? LineStyle.SHORT_DASH : line
+      if pattern != .SOLID {
+        let w = 2 * u
+        var down = Path()
+        down.move(to: CGPoint(x: cx, y: bodyTop + 18 * u))
+        down.addLine(to: CGPoint(x: cx, y: size.height))
+        ctx.stroke(down, with: .color(color.opacity(0.75)), style: StrokeStyle(lineWidth: w, lineCap: .round, dash: pattern.dash(width: w)))
+      }
       func cone(_ top: CGFloat, _ topHalf: CGFloat) {
         var p = Path()
         p.move(to: CGPoint(x: cx - half, y: bodyTop))
@@ -132,7 +141,7 @@ struct MainToolbar: View {
       HStack(alignment: .bottom, spacing: 0) {
         ForEach(pens) { pen in
           let on = pen.id == activeId
-          PenGlyph(type: pen.type, color: Color(uiColor: UIColor(argb: pen.color)))
+          PenGlyph(type: pen.type, color: Color(uiColor: UIColor(argb: pen.color)), line: pen.lineStyle)
             .offset(y: on ? 2 : 16)
             .frame(width: 34, height: 56, alignment: .top)
             .contentShape(Rectangle())
@@ -362,17 +371,29 @@ struct QuickSizes: View {
   }
 }
 
-/// A panel that drops below the toolbar (Android's `Panel`): a cloud surface without bumps.
+/// A panel that drops below the toolbar (Android's `Panel` and `PanelColumn`): a cloud surface
+/// without bumps, never taller than the room under the toolbar; what doesn't fit scrolls.
 struct ToolPanel<Content: View>: View {
   var width: CGFloat
   @ViewBuilder var content: Content
+  @Environment(\.tali) private var c
+
   var body: some View {
+    ViewThatFits(in: .vertical) {
+      column
+      ScrollView { column.padding(.bottom, 20) }
+        .scrollIndicators(.hidden)
+        .overlay(alignment: .bottom) {
+          LinearGradient(colors: [c.cloudBelly.opacity(0), c.cloudBelly], startPoint: .top, endPoint: .bottom).frame(height: 28).allowsHitTesting(false)
+        }
+    }
     // Its own width, or less on a phone so it never runs off the screen.
-    VStack(alignment: .leading, spacing: 0) { content }
-      .frame(maxWidth: width, alignment: .leading)
-      .padding(18)
-      .cloudSurface(radius: 22, crown: .none, shadowDepth: 10)
+    .frame(maxWidth: width, alignment: .leading)
+    .padding(18)
+    .cloudSurface(radius: 22, crown: .none, shadowDepth: 10)
   }
+
+  private var column: some View { VStack(alignment: .leading, spacing: 0) { content } }
 }
 
 /// The active pen's settings (Android's `PenPanel`): its type, a sample stroke, its three
@@ -386,7 +407,7 @@ struct PenPanel: View {
     ToolPanel(width: 392) {
       HStack(spacing: 4) {
         ForEach(PenType.offered, id: \.self) { t in
-          PenGlyph(type: t, color: t == pen.type ? Color(uiColor: UIColor(argb: pen.color)) : Color(argb: 0xFF8E_95A2))
+          PenGlyph(type: t, color: t == pen.type ? Color(uiColor: UIColor(argb: pen.color)) : Color(argb: 0xFF8E_95A2), line: t.takesLineStyle ? pen.line : .SOLID)
             .frame(width: 58, height: 66, alignment: .bottom)
             .background {
               if t == pen.type { RoundedRectangle(cornerRadius: 14).fill(c.accentSoft).matchedGeometryEffect(id: "type", in: types) }
@@ -413,6 +434,12 @@ struct PenPanel: View {
         Text(L("size")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).frame(width: 44, alignment: .leading)
         StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: pen.type.minSize...pen.type.maxSize, step: 0.5)
         Text(String(format: "%.1f", pen.size)).font(TaliType.titleSmall).foregroundStyle(c.ink).frame(width: 40).padding(.leading, 8)
+      }
+      if pen.type.takesLineStyle {
+        Spacer().frame(height: 10)
+        SectionLabel(text: L("line"))
+        Spacer().frame(height: 8)
+        LineStylePicker(selected: Binding(get: { pen.lineStyle }, set: { pen.line = $0 }))
       }
       if pen.type.isHighlighter {
         Spacer().frame(height: 12)
