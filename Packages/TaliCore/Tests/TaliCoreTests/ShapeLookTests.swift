@@ -4,7 +4,7 @@ import Testing
 
 /// The Shapes tool's style and choice of shape, and Android's `ShapeFillTest` (a shape's fill and
 /// line survive saving).
-struct ShapeStyleTests {
+struct ShapeLookTests {
   private let circle = ShapeGeometry.ellipse(center: Pt(50, 50), rx: 40, ry: 40, rotation: 0)
   private let black = Int32(bitPattern: 0xFF00_0000)
 
@@ -28,16 +28,16 @@ struct ShapeStyleTests {
   }
 
   @Test func opacitiesGoIntoTheColours() {
-    let style = ShapeStyle(color: Int32(bitPattern: 0xFF1F_5FD1), size: 3, fill: Int32(bitPattern: 0xFFFF_D60A), opacity: 0.5, fillOpacity: 0.2)
+    let style = ShapeLook(color: Int32(bitPattern: 0xFF1F_5FD1), size: 3, fill: Int32(bitPattern: 0xFFFF_D60A), opacity: 0.5, fillOpacity: 0.2)
     #expect(UInt32(bitPattern: style.outlineArgb) == 0x7F1F_5FD1)
     #expect(style.fillArgb.map(UInt32.init(bitPattern:)) == 0x33FF_D60A)
-    #expect(UInt32(bitPattern: ShapeStyle.withOpacity(black, 0)) == 0x1900_0000, "never fainter than 10%")
+    #expect(UInt32(bitPattern: ShapeLook.withOpacity(black, 0)) == 0x1900_0000, "never fainter than 10%")
     #expect(UInt32(bitPattern: FillColour.argb(Int32(bitPattern: 0xFF9D_B8F5), opacity: 0.7)) == 0xB29D_B8F5)
     #expect(UInt32(bitPattern: FillColour.argb(black, opacity: 0)) == 0x2600_0000, "the fill tool never goes under 15%")
   }
 
   @Test func onlyClosedShapesTakeTheFill() {
-    let style = ShapeStyle(color: black, size: 3, line: "DOTTED", fill: Int32(bitPattern: 0xFFFF_D60A))
+    let style = ShapeLook(color: black, size: 3, line: "DOTTED", fill: Int32(bitPattern: 0xFFFF_D60A))
     let box = style.row(ShapeKind.RECTANGLE.inBox(Pt(0, 0), Pt(80, 40)))
     #expect(box.fill.map(UInt32.init(bitPattern:)) == 0x7FFF_D60A)
     #expect(box.pen == "FINELINER")
@@ -46,22 +46,22 @@ struct ShapeStyleTests {
   }
 
   @Test func likeThePenKeepsItsOwnFillAndOpacities() {
-    let own = ShapeStyle(color: black, size: 3, fill: 7, opacity: 0.4, fillOpacity: 0.3)
+    let own = ShapeLook(color: black, size: 3, fill: 7, opacity: 0.4, fillOpacity: 0.3)
     let look = own.following(color: Int32(bitPattern: 0x66FF_D60A), size: 18, line: "LONG_DASH")
     #expect(UInt32(bitPattern: look.color) == 0xFFFF_D60A)
-    #expect(look.size == ShapeStyle.maxSize)
+    #expect(look.size == ShapeLook.maxSize)
     #expect(look.line == "LONG_DASH")
     #expect(look.fill == 7 && look.opacity == 0.4 && look.fillOpacity == 0.3)
   }
 
   @Test func styleKeepsAndroidsJson() throws {
-    let style = ShapeStyle(color: Int32(bitPattern: 0xFF1B_1F2A), size: 2.4, line: "SHORT_DASH", fill: -1, opacity: 0.5, fillOpacity: 0.7)
+    let style = ShapeLook(color: Int32(bitPattern: 0xFF1B_1F2A), size: 2.4, line: "SHORT_DASH", fill: -1, opacity: 0.5, fillOpacity: 0.7)
     let data = try JSONSerialization.data(withJSONObject: style.json)
     let read = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-    #expect(ShapeStyle(json: read) == style)
-    let plain = try #require(ShapeStyle(json: ["color": -14_999_766, "size": 2.4]))
-    #expect(plain == ShapeStyle(color: -14_999_766, size: 2.4))
-    #expect(Set(ShapeStyle(color: 1, size: 2).json.keys) == ["color", "size"], "defaults are left out, as kotlinx does")
+    #expect(ShapeLook(json: read) == style)
+    let plain = try #require(ShapeLook(json: ["color": -14_999_766, "size": 2.4]))
+    #expect(plain == ShapeLook(color: -14_999_766, size: 2.4))
+    #expect(Set(ShapeLook(color: 1, size: 2).json.keys) == ["color", "size"], "defaults are left out, as kotlinx does")
   }
 
   @Test func theChoiceIsKeptAsAndroidKeepsIt() {
@@ -110,5 +110,16 @@ struct ShapeStyleTests {
     #expect(points[2] == Pt(100, 100))
     guard case let .poly(wide, _, _, _) = ShapeSource.kind(.RECTANGLE).drawn(Pt(0, 0), Pt(100, 90)) else { return }
     #expect(wide[2] == Pt(100, 90), "outside 4% it stays as dragged")
+  }
+
+  @Test func aSquareAndACircleShowTheyLockedOn() throws {
+    let square = try #require(ShapeSource.kind(.RECTANGLE).drawn(Pt(0, 0), Pt(100, 98)).squareHint)
+    #expect(square.0 == Pt(0, 0) && square.1 == Pt(100, 100), "corner to corner")
+    #expect(ShapeSource.kind(.RECTANGLE).drawn(Pt(0, 0), Pt(100, 60)).squareHint == nil)
+    #expect(ShapeSource.kind(.DIAMOND).drawn(Pt(0, 0), Pt(100, 100)).squareHint == nil, "only a rectangle")
+    let round = try #require(ShapeSource.kind(.ELLIPSE).drawn(Pt(0, 0), Pt(100, 98)).squareHint)
+    #expect(abs(round.0.dist(round.1) - 100) < 0.01, "a diameter")
+    #expect(abs((round.1 - round.0).x + (round.1 - round.0).y) < 0.01, "at 45 degrees")
+    #expect(ShapeSource.kind(.ELLIPSE).drawn(Pt(0, 0), Pt(100, 60)).squareHint == nil)
   }
 }

@@ -3,10 +3,11 @@ import Foundation
 // Ports of the Android app's `ShapeStyle` (`model/Pen.kt`), the Shapes tool's choice of shape
 // (`lastShape`, `buildShape`) and the fill tool's colour (`AppSettings.fillArgb`). Keep them in step.
 
-/// How the Shapes tool draws, set in its own panel (not borrowed from the pen in use): outline
-/// colour, thickness, line style and [opacity], and a fill colour for closed shapes (nil = none)
-/// with its own [fillOpacity]. Colours are kept opaque; the opacities are applied when drawing.
-public struct ShapeStyle: Sendable, Equatable {
+/// How the Shapes tool draws (Android's `ShapeStyle`; SwiftUI has a `ShapeStyle` of its own), set
+/// in its own panel, not borrowed from the pen in use: outline colour, thickness, line style and
+/// [opacity], and a fill colour for closed shapes (nil = none) with its own [fillOpacity]. Colours
+/// are kept opaque; the opacities are applied when drawing.
+public struct ShapeLook: Sendable, Equatable {
   public var color: Int32
   public var size: Float
   public var line: String
@@ -40,7 +41,7 @@ public struct ShapeStyle: Sendable, Equatable {
   }
 
   /// Drawn like a pen: its colour, size and line, keeping this style's own fill and opacities.
-  public func following(color: Int32, size: Float, line: String) -> ShapeStyle {
+  public func following(color: Int32, size: Float, line: String) -> ShapeLook {
     var out = self
     out.color = Int32(bitPattern: UInt32(bitPattern: color) | 0xFF00_0000)
     out.size = min(max(size, Self.minSize), Self.maxSize)
@@ -139,9 +140,31 @@ public enum ShapeSource: Sendable {
   }
 }
 
+extension ShapeGeometry {
+  /// While a rectangle is exactly square or an ellipse exactly round, the two ends of the dotted
+  /// line shown across it as it's drawn (corner to corner, or a diameter at 45°), so she can see
+  /// it locked on (Android's `drawSquareHint`, `PolyShape.isSquare`, `EllipseShape.round`).
+  public var squareHint: (Pt, Pt)? {
+    switch self {
+    case let .poly(points, true, _, rotation) where points.count == 4:
+      let c = Geo.centroid(points)
+      let local = points.map { ($0 - c).rotated(-rotation) }
+      let w = local.map(\.x).max()! - local.map(\.x).min()!, h = local.map(\.y).max()! - local.map(\.y).min()!
+      guard w >= 1e-3, h >= 1e-3, local.allSatisfy({ abs(abs($0.x) - w / 2) < w * 0.02 && abs(abs($0.y) - h / 2) < h * 0.02 }) else { return nil }
+      let a = points[0].dist(points[1]), b = points[1].dist(points[2])
+      return abs(a - b) < max(a, b) * 0.005 ? (points[0], points[2]) : nil
+    case let .ellipse(center, rx, ry, rotation) where abs(rx - ry) < max(rx, ry) * 0.01 && rx > 4:
+      func point(_ t: Float) -> Pt { center + Pt(rx * cosf(t), ry * sinf(t)).rotated(rotation) }
+      return (point(0.75 * .pi), point(1.75 * .pi))
+    default:
+      return nil
+    }
+  }
+}
+
 /// The fill tool's colour with its opacity, 0.15 to 1 (Android's `AppSettings.fillArgb`).
 public enum FillColour {
   public static let minOpacity: Float = 0.15
 
-  public static func argb(_ color: Int32, opacity: Float) -> Int32 { ShapeStyle.withOpacity(color, opacity, least: minOpacity) }
+  public static func argb(_ color: Int32, opacity: Float) -> Int32 { ShapeLook.withOpacity(color, opacity, least: minOpacity) }
 }
