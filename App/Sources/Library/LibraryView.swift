@@ -509,12 +509,12 @@ struct AddMenu: View {
         .accessibilityIdentifier("add-notebook")
       Button(action: onFile) { Label(L("add_file"), systemImage: "doc.badge.plus") }
         .accessibilityIdentifier("add-file")
-      Button(action: onPhoto) { Label(L("add_photo"), systemImage: "photo.on.rectangle") }
-        .accessibilityIdentifier("add-photo")
       if let onCamera {
         Button(action: onCamera) { Label(L("add_camera"), systemImage: "camera") }
           .accessibilityIdentifier("add-camera")
       }
+      Button(action: onPhoto) { Label(L("add_photo"), systemImage: "photo.on.rectangle") }
+        .accessibilityIdentifier("add-photo")
     } label: {
       Image(systemName: "plus").font(.system(size: 22, weight: .medium)).foregroundStyle(c.onAccent)
         .frame(width: 48, height: 48)
