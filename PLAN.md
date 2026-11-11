@@ -75,9 +75,12 @@ simulators and its own UI test class (`UITests/<Area>Tests.swift` on `ShotCase`;
 - [ ] Library: folder colours, rename and move, folders inside folders with tiles and a path (3),
       the + card (63), mist when things go (8), gliding highlight everywhere (7), first-run tour (61),
       Select several notebooks
-- [ ] Media: voice memos (44, 45), the camera with crop and looks (64, 81), PDFs and pictures from
+- [x] Media: voice memos (44, 45), the camera with crop and looks (64, 81), PDFs and pictures from
       other apps and drag and drop (52), Export PDF's layouts (one long page, the PDF's own pages),
-      the "Adding…" pill, pictures into a notebook, crop pictures (81)
+      the "Adding…" pill, pictures into a notebook, crop pictures (81). Merged 11 Nov; MediaTests pass
+      on iPad. Not on a simulator: live camera, real microphone, a real drag or Open in. Left: crop
+      only right after adding (needs pictures in the lasso), no share extension, writing exports as a
+      picture (PencilKit), memos don't follow page delete/reorder.
 - [ ] Pages and paper: pull to add a page (1, 32), Endless canvas switch and page guides, your own
       paper with opacity (2, 9), line thickness (21), page numbers, hide the toolbars with mist (5)
 - [ ] Shapes, more: the Style tab, snapping (49), fill (16), subject packs and joints (53, 55, 56),
