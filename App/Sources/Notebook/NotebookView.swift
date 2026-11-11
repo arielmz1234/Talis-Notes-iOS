@@ -32,6 +32,8 @@ struct NotebookView: View {
   /// The pen last written with, which the Shapes tool can follow.
   @State private var lastPenId: String?
   @State private var browsingShapes = false
+  /// What's picked up, as the shape being named before it joins My shapes.
+  @State private var savingShape: ShapeGeometry?
   @AppStorage("eraserPrecise") private var eraserPrecise = false
   @AppStorage("eraserSize") private var eraserSize: Double = 20
   @State private var canUndo = false
@@ -168,7 +170,7 @@ struct NotebookView: View {
         .padding(.horizontal, 16)
         .padding(.top, 20)
         if let sel = selection, !hidden, !viewing {
-          SelectionMenuLayer(selection: sel, narrow: narrow) { command = $0 }
+          SelectionMenuLayer(selection: sel, narrow: narrow, onSaveShape: bridge.coordinator?.hasDrawingPicked == true ? { saveShape() } : nil) { command = $0 }
             .ignoresSafeArea()
         }
         if let at = pasteOffer {
@@ -193,6 +195,19 @@ struct NotebookView: View {
         if browsingShapes {
           DialogOverlay(onClose: { withAnimation(.easeOut(duration: 0.16)) { browsingShapes = false } }) {
             ShapePacksCard(picker: shapePicker, size: geo.size) { withAnimation(.easeOut(duration: 0.16)) { browsingShapes = false } }
+          }
+          .transition(.opacity)
+        }
+        if let geometry = savingShape {
+          DialogOverlay(onClose: { withAnimation(.easeOut(duration: 0.16)) { savingShape = nil } }) {
+            SaveShapeCard(geometry: geometry, onClose: { withAnimation(.easeOut(duration: 0.16)) { savingShape = nil } }) { name in
+              let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+              let shape = CustomShape(id: String(UUID().uuidString.lowercased().prefix(8)), name: name.isEmpty ? L("my_shape") : name, geometry: geometry)
+              customShapesJSON = ShapeSettings.json(of: ShapeSettings.shapes(from: customShapesJSON) + [shape])
+              withAnimation(.easeOut(duration: 0.16)) { savingShape = nil }
+              bridge.coordinator?.clearSelection()
+              show(L("saved_to_my_shapes_hold_the"))
+            }
           }
           .transition(.opacity)
         }
@@ -260,6 +275,11 @@ struct NotebookView: View {
 
   private func mainToolbar(showColors: Bool) -> some View {
     MainToolbar(pens: $pens, tool: $tool, panel: $panel, shape: shapeSource, onKeyboard: { panel = nil; command = .newText }, showColors: showColors, compactTools: PhoneWriting.onPhone)
+  }
+
+  private func saveShape() {
+    guard let geometry = bridge.coordinator?.selectionGeometry() else { return }
+    withAnimation(Ease.outStrong(duration: 0.24)) { savingShape = geometry }
   }
 
   private var shapeSource: ShapeSource {

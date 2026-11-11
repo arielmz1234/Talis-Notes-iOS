@@ -233,11 +233,18 @@ private struct MyShapes: View {
     } else {
       ShapeTileGrid {
         ForEach(shapes) { shape in
-          ShapeTile(label: shape.name, on: picker.lit(shape), id: "custom-\(shape.name)", action: { picker.pick(shape) }) { GeometryIcon(geometry: shape.geometry, color: $0) }
-            .contextMenu {
-              Button { renaming = shape } label: { Label(L("rename"), systemImage: "pencil") }
-              Button(role: .destructive) { deleting = shape } label: { Label(L("delete"), systemImage: "trash") }
-            }
+          // A tap draws it; press and hold offers Rename and Delete.
+          Menu {
+            Button { renaming = shape } label: { Label(L("rename"), systemImage: "pencil") }
+            Button(role: .destructive) { deleting = shape } label: { Label(L("delete"), systemImage: "trash") }
+          } label: {
+            ShapeTileLabel(label: shape.name, on: picker.lit(shape)) { GeometryIcon(geometry: shape.geometry, color: $0) }
+          } primaryAction: {
+            picker.pick(shape)
+          }
+          .buttonStyle(PressStyle(scale: 0.95))
+          .accessibilityLabel(shape.name)
+          .accessibilityIdentifier("custom-\(shape.name)")
         }
       }
       Spacer().frame(height: 6)
@@ -284,24 +291,33 @@ struct ShapeTile<Icon: View>: View {
   var id: String
   var action: () -> Void
   @ViewBuilder var icon: (Color) -> Icon
+
+  var body: some View {
+    Button(action: action) { ShapeTileLabel(label: label, on: on, icon: icon) }
+      .buttonStyle(PressStyle(scale: 0.95))
+      .accessibilityLabel(label)
+      .accessibilityAddTraits(on ? .isSelected : [])
+      .accessibilityIdentifier(id)
+  }
+}
+
+/// How a shape's tile looks: a card of its own, washed soft blue while it's the one drawn.
+struct ShapeTileLabel<Icon: View>: View {
+  var label: String
+  var on: Bool
+  @ViewBuilder var icon: (Color) -> Icon
   @Environment(\.tali) private var c
 
   var body: some View {
-    Button(action: action) {
-      VStack(spacing: 4) {
-        icon(on ? c.blue : c.ink)
-        Text(label).font(TaliType.labelSmall).foregroundStyle(on ? c.blue : c.inkMuted).lineLimit(1).padding(.horizontal, 2)
-      }
-      .padding(.vertical, 8)
-      .frame(maxWidth: .infinity)
-      .background(RoundedRectangle(cornerRadius: 14).fill(on ? c.blueSoft : c.background))
-      .contentShape(RoundedRectangle(cornerRadius: 14))
-      .animation(.easeOut(duration: 0.22), value: on)
+    VStack(spacing: 4) {
+      icon(on ? c.blue : c.ink)
+      Text(label).font(TaliType.labelSmall).foregroundStyle(on ? c.blue : c.inkMuted).lineLimit(1).padding(.horizontal, 2)
     }
-    .buttonStyle(PressStyle(scale: 0.95))
-    .accessibilityLabel(label)
-    .accessibilityAddTraits(on ? .isSelected : [])
-    .accessibilityIdentifier(id)
+    .padding(.vertical, 8)
+    .frame(maxWidth: .infinity)
+    .background(RoundedRectangle(cornerRadius: 14).fill(on ? c.blueSoft : c.background))
+    .contentShape(RoundedRectangle(cornerRadius: 14))
+    .animation(.easeOut(duration: 0.22), value: on)
   }
 }
 

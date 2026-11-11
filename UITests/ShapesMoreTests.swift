@@ -195,4 +195,53 @@ final class ShapesMoreTests: ShotCase {
     at(app, 0.85, 0.55).tap()
     calmShot("f4-recoloured-and-removed")
   }
+
+  func testSaveShape() {
+    let app = openNewNotebook()
+    // A Z in three strokes, picked up by a lasso drawn across it.
+    drag(app, (0.30, 0.40), (0.50, 0.40))
+    drag(app, (0.50, 0.40), (0.30, 0.60))
+    drag(app, (0.30, 0.60), (0.50, 0.60))
+    tool(app, "tool-lasso")
+    at(app, 0.27, 0.33).press(forDuration: 0.1, thenDragTo: at(app, 0.53, 0.67), withVelocity: .slow, thenHoldForDuration: 0.05)
+    settle()
+    XCTAssertTrue(app.buttons["More options"].firstMatch.waitForExistence(timeout: 3), "the selection menu")
+    app.buttons["More options"].firstMatch.tap()
+    settle()
+    XCTAssertTrue(app.buttons["save-as-shape"].waitForExistence(timeout: 3))
+    calmShot("v1-selection-menu")
+    app.buttons["save-as-shape"].firstMatch.tap()
+    settle()
+    let name = "Zed \(Int.random(in: 100...999))"
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3), "the name field has the keyboard")
+    app.typeText(name)
+    calmShot("v2-save-card")
+    app.buttons["save-shape"].firstMatch.tap()
+    Thread.sleep(forTimeInterval: 0.8)
+    shot("v3-saved")
+
+    shapesPanel(app)
+    tab(app, style: false)
+    let tile = app.buttons["custom-\(name)"].firstMatch
+    XCTAssertTrue(tile.waitForExistence(timeout: 3), "the saved shape is under My shapes")
+    calmShot("v4-my-shapes")
+    tile.tap()
+    settle()
+    drag(app, (0.60, 0.38), (0.84, 0.62))
+    calmShot("v5-saved-shape-drawn")
+
+    // Press and hold a saved shape to delete it (the simulator keeps settings between runs).
+    shapesPanel(app)
+    app.buttons["custom-\(name)"].firstMatch.press(forDuration: 1.2)
+    settle()
+    XCTAssertTrue(app.buttons["Delete"].firstMatch.waitForExistence(timeout: 3), "rename and delete")
+    shot("v6-saved-shape-menu")
+    app.buttons["Delete"].firstMatch.tap()
+    settle()
+    let confirm = app.buttons.matching(identifier: "Delete")
+    XCTAssertGreaterThan(confirm.count, 0, "deleting asks first")
+    confirm.element(boundBy: confirm.count - 1).tap()
+    settle()
+    XCTAssertFalse(app.buttons["custom-\(name)"].exists, "the deleted shape leaves My shapes")
+  }
 }
