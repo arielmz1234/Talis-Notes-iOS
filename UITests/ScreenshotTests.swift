@@ -120,7 +120,11 @@ final class ScreenshotTests: XCTestCase {
     if app.buttons["tool-keyboard"].exists {
       app.buttons["tool-keyboard"].firstMatch.tap()
       settle()
-      app.typeText("Sum of moments = 0\nReaction R = 12 kN")
+      let box = app.textViews["text-editor"].firstMatch
+      if box.waitForExistence(timeout: 3) {
+        box.tap()
+        box.typeText("Sum of moments = 0\nReaction R = 12 kN")
+      }
       shot("4g-typing")
       if app.buttons["tool-lasso"].exists { app.buttons["tool-lasso"].firstMatch.tap() }
       settle()

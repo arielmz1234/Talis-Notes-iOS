@@ -104,6 +104,10 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     v.attributedText = NSAttributedString(string: t.text, attributes: editorAttributes(t))
     v.becomeFirstResponder()
     canvas.scrollRectToVisible(v.frame.insetBy(dx: 0, dy: -80), animated: true)
+    // Once it's on screen: a text view added and focused in the same moment can miss the keyboard.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak v] in
+      if let v, v.superview != nil, !v.isFirstResponder { v.becomeFirstResponder() }
+    }
   }
 
   private func editorAttributes(_ t: TextRow) -> [NSAttributedString.Key: Any] {
