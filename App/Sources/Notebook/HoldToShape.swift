@@ -216,7 +216,7 @@ extension NoteCanvas.Coordinator {
       if !hold.following && pen.dist(hold.liveAnchor) * z < 10 { return }
       hold.following = true
       let c: Pt
-      if case let .ellipse(center, _, _, _) = base.geometry {
+      if case let .ellipse(center, _, _, _, _) = base.geometry {
         c = center
       } else {
         c = base.geometry.bounds(0)?.center ?? hold.liveAnchor

@@ -52,18 +52,38 @@ public enum Arrow {
 
 /// A shape's geometry as the Android app stores it (JSON with a "type" key, `model/Shapes.kt`).
 /// This port draws every kind; designs from the subject packs ("param") are kept but not drawn yet.
+/// The basic shapes that keep their form when their dots are dragged (Android's `PolyForm`).
+public enum PolyForm: String, Sendable, Equatable { case DIAMOND, PARALLELOGRAM, TRAPEZOID, REGULAR }
+
+/// A subject-pack design (Android's `ParamShape`): template id, its place on the page, frame size, settings.
+public struct ParamShape: Sendable, Equatable {
+  public var template: String
+  public var place: Affine
+  public var w: Float
+  public var h: Float
+  public var v: [Float]
+  public init(template: String, place: Affine, w: Float, h: Float, v: [Float] = []) {
+    self.template = template
+    self.place = place
+    self.w = w
+    self.h = h
+    self.v = v
+  }
+}
+
 public indirect enum ShapeGeometry: Sendable, Equatable {
   case line(a: Pt, b: Pt, arrowStart: Bool, arrowEnd: Bool, ticks: Bool)
-  case poly(points: [Pt], closed: Bool, smooth: Bool = false, rotation: Float = 0)
-  case ellipse(center: Pt, rx: Float, ry: Float, rotation: Float)
+  case poly(points: [Pt], closed: Bool, smooth: Bool = false, rotation: Float = 0, form: PolyForm? = nil)
+  case ellipse(center: Pt, rx: Float, ry: Float, rotation: Float, stretchable: Bool = false)
   case arc(center: Pt, radius: Float, start: Float, sweep: Float, arrowEnd: Bool)
   case curve(points: [Pt])
   case sector(center: Pt, radius: Float, start: Float, sweep: Float)
-  case triangle(a: Pt, b: Pt, c: Pt)
+  case triangle(a: Pt, b: Pt, c: Pt, turn: Float = 0)
   case load(a: Pt, b: Pt, depth: Float, count: Int)
-  case group([ShapeGeometry])
-  /// A subject-pack design (its template isn't ported yet).
-  case param
+  case group(_ parts: [ShapeGeometry], turn: Float = 0)
+  /// A subject-pack design (its template isn't ported yet, so it isn't drawn), kept whole so it
+  /// goes back to Android unchanged.
+  case param(ParamShape)
 
   /// Polylines to ink, each one continuous stroke. [penSize] sizes arrowheads.
   public func paths(_ penSize: Float) -> [[Pt]] {
@@ -80,10 +100,10 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
         }
       }
       return out
-    case let .poly(points, closed, smooth, _):
+    case let .poly(points, closed, smooth, _, _):
       guard let first = points.first else { return [] }
       return [closed ? points + [first] : (smooth ? Geo.smooth(points) : points)]
-    case let .ellipse(center, rx, ry, rotation):
+    case let .ellipse(center, rx, ry, rotation, _):
       let n = min(max(Int(max(rx, ry) / 3), 48), 180)
       return [(0...n).map { i in
         let t = tau * Float(i) / Float(n)
@@ -103,7 +123,7 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
       let n = min(max(Int(abs(sweep) * radius / 3), 12), 200)
       let arc = (0...n).map { center + Pt.polar(radius, start + sweep * Float($0) / Float(n)) }
       return min(max(abs(sweep) / tau, 0), 1) >= 0.999 ? [arc] : [[center] + arc + [center]]
-    case let .triangle(a, b, c):
+    case let .triangle(a, b, c, _):
       return [[a, b, c, a]]
     case let .load(a, b, depth, count):
       let d = (b - a).normalized()
@@ -116,7 +136,7 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
         out += Arrow.head(p, t, penSize)
       }
       return out
-    case let .group(parts):
+    case let .group(parts, _):
       return parts.flatMap { $0.paths(penSize) }
     case .param:
       return []
@@ -127,7 +147,7 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
   public var closed: Bool {
     switch self {
     case .ellipse, .sector, .triangle: true
-    case .poly(_, let closed, _, _): closed
+    case .poly(_, let closed, _, _, _): closed
     default: false
     }
   }
@@ -149,10 +169,13 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
     case "line":
       guard let a = pt("a"), let bb = pt("b") else { return nil }
       return .line(a: a, b: bb, arrowStart: b("arrowStart"), arrowEnd: b("arrowEnd"), ticks: b("ticks"))
-    case "poly": return .poly(points: pts("points"), closed: b("closed"), smooth: b("smooth"), rotation: f("rotation"))
+    case "poly":
+      return .poly(
+        points: pts("points"), closed: b("closed"), smooth: b("smooth"), rotation: f("rotation"),
+        form: (o["form"] as? String).flatMap(PolyForm.init(rawValue:)))
     case "ellipse":
       guard let c = pt("center") else { return nil }
-      return .ellipse(center: c, rx: f("rx"), ry: f("ry"), rotation: f("rotation"))
+      return .ellipse(center: c, rx: f("rx"), ry: f("ry"), rotation: f("rotation"), stretchable: b("stretchable"))
     case "arc":
       guard let c = pt("center") else { return nil }
       return .arc(center: c, radius: f("radius"), start: f("start"), sweep: f("sweep"), arrowEnd: b("arrowEnd"))
@@ -162,12 +185,17 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
       return .sector(center: c, radius: f("radius"), start: f("start"), sweep: f("sweep"))
     case "triangle":
       guard let a = pt("a"), let bb = pt("b"), let c = pt("c") else { return nil }
-      return .triangle(a: a, b: bb, c: c)
+      return .triangle(a: a, b: bb, c: c, turn: f("turn"))
     case "load":
       guard let a = pt("a"), let bb = pt("b") else { return nil }
       return .load(a: a, b: bb, depth: f("depth"), count: Int(f("count", 2)))
-    case "group": return .group(((o["parts"] as? [Any]) ?? []).compactMap(decode))
-    case "param": return .param
+    case "group": return .group(((o["parts"] as? [Any]) ?? []).compactMap(decode), turn: f("turn"))
+    case "param":
+      let pl = o["place"] as? [String: Any] ?? [:]
+      func m(_ k: String, _ d: Float) -> Float { pl[k] == nil ? d : num(pl[k]) }
+      let place = Affine(a: m("a", 1), b: m("b", 0), c: m("c", 0), d: m("d", 1), tx: m("tx", 0), ty: m("ty", 0))
+      let v = ((o["v"] as? [Any]) ?? []).map { num($0) }
+      return .param(ParamShape(template: (o["template"] as? String) ?? "", place: place, w: f("w"), h: f("h"), v: v))
     default: return nil
     }
   }
@@ -222,13 +250,15 @@ extension ShapeGeometry {
       if arrowStart { o["arrowStart"] = true }
       if arrowEnd { o["arrowEnd"] = true }
       if ticks { o["ticks"] = true }
-    case let .poly(points, closed, smooth, rotation):
+    case let .poly(points, closed, smooth, rotation, form):
       o = ["type": "poly", "points": points.map(pt), "closed": closed]
       if rotation != 0 { o["rotation"] = num(rotation) }
       if smooth { o["smooth"] = true }
-    case let .ellipse(center, rx, ry, rotation):
+      if let form { o["form"] = form.rawValue }
+    case let .ellipse(center, rx, ry, rotation, stretchable):
       o = ["type": "ellipse", "center": pt(center), "rx": num(rx), "ry": num(ry)]
       if rotation != 0 { o["rotation"] = num(rotation) }
+      if stretchable { o["stretchable"] = true }
     case let .arc(center, radius, start, sweep, arrowEnd):
       o = ["type": "arc", "center": pt(center), "radius": num(radius), "start": num(start), "sweep": num(sweep)]
       if arrowEnd { o["arrowEnd"] = true }
@@ -236,14 +266,25 @@ extension ShapeGeometry {
       o = ["type": "curve", "points": points.map(pt)]
     case let .sector(center, radius, start, sweep):
       o = ["type": "sector", "center": pt(center), "radius": num(radius), "start": num(start), "sweep": num(sweep)]
-    case let .triangle(a, b, c):
+    case let .triangle(a, b, c, turn):
       o = ["type": "triangle", "a": pt(a), "b": pt(b), "c": pt(c)]
+      if turn != 0 { o["turn"] = num(turn) }
     case let .load(a, b, depth, count):
       o = ["type": "load", "a": pt(a), "b": pt(b), "depth": num(depth), "count": count]
-    case let .group(parts):
+    case let .group(parts, turn):
       o = ["type": "group", "parts": parts.map(\.json)]
-    case .param:
-      o = ["type": "param"]
+      if turn != 0 { o["turn"] = num(turn) }
+    case let .param(q):
+      var place: [String: Any] = [:]
+      let m = q.place
+      if m.a != 1 { place["a"] = num(m.a) }
+      if m.b != 0 { place["b"] = num(m.b) }
+      if m.c != 0 { place["c"] = num(m.c) }
+      if m.d != 1 { place["d"] = num(m.d) }
+      if m.tx != 0 { place["tx"] = num(m.tx) }
+      if m.ty != 0 { place["ty"] = num(m.ty) }
+      o = ["type": "param", "template": q.template, "place": place, "w": num(q.w), "h": num(q.h)]
+      if !q.v.isEmpty { o["v"] = q.v.map { num($0) } }
     }
     return o
   }
@@ -262,20 +303,25 @@ extension ShapeGeometry {
     let s = m.scaleFactor
     switch self {
     case let .line(a, b, s1, e1, t): return .line(a: m.apply(a), b: m.apply(b), arrowStart: s1, arrowEnd: e1, ticks: t)
-    case let .poly(points, closed, smooth, rotation):
-      return .poly(points: points.map(m.apply), closed: closed, smooth: smooth, rotation: m.mapAngle(rotation))
-    case let .ellipse(center, rx, ry, rotation):
-      let ax = Pt(m.a, m.b).length(), ay = Pt(m.c, m.d).length()
-      return .ellipse(center: m.apply(center), rx: rx * ax, ry: ry * ay, rotation: m.mapAngle(rotation))
+    case let .poly(points, closed, smooth, rotation, form):
+      return .poly(points: points.map(m.apply), closed: closed, smooth: smooth, rotation: m.mapAngle(rotation), form: form)
+    case let .ellipse(center, rx, ry, rotation, stretchable):
+      // Uniform scale, moving, turning and mirroring keep an ellipse an ellipse; that's all selections do.
+      return .ellipse(center: m.apply(center), rx: rx * s, ry: ry * s, rotation: m.mapAngle(rotation), stretchable: stretchable)
     case let .arc(center, radius, start, sweep, arrowEnd):
       return .arc(center: m.apply(center), radius: radius * s, start: m.mapAngle(start), sweep: m.mirrors ? -sweep : sweep, arrowEnd: arrowEnd)
     case let .curve(points): return .curve(points: points.map(m.apply))
     case let .sector(center, radius, start, sweep):
       return .sector(center: m.apply(center), radius: radius * s, start: m.mapAngle(start), sweep: m.mirrors ? -sweep : sweep)
-    case let .triangle(a, b, c): return .triangle(a: m.apply(a), b: m.apply(b), c: m.apply(c))
-    case let .load(a, b, depth, count): return .load(a: m.apply(a), b: m.apply(b), depth: depth * s, count: count)
-    case let .group(parts): return .group(parts.map { $0.transformed(m) })
-    case .param: return .param
+    case let .triangle(a, b, c, turn): return .triangle(a: m.apply(a), b: m.apply(b), c: m.apply(c), turn: m.mapAngle(turn))
+    // A mirror flips which side the arrows hang (their side is measured from a to b, which a mirror reverses).
+    case let .load(a, b, depth, count): return .load(a: m.apply(a), b: m.apply(b), depth: depth * s * (m.mirrors ? -1 : 1), count: count)
+    case let .group(parts, turn): return .group(parts.map { $0.transformed(m) }, turn: m.mapAngle(turn))
+    // Affine.then applies the left-hand transform first: the shape's own place, then [m].
+    case let .param(q):
+      var out = q
+      out.place = q.place.then(m)
+      return .param(out)
     }
   }
 }

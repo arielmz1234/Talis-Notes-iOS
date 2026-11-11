@@ -77,7 +77,7 @@ public enum ShapeKind: String, CaseIterable, Sendable {
         rx = max(rx, ry)
         ry = rx
       }
-      return .ellipse(center: c, rx: rx, ry: ry, rotation: 0)
+      return .ellipse(center: c, rx: rx, ry: ry, rotation: 0, stretchable: true)
     case .ARC: return .arc(center: c, radius: side / 2, start: .pi, sweep: .pi, arrowEnd: false)
     case .CURVE: return ShapeKind.curveBetween(Pt(l, b - h * 0.15), Pt(r, t + h * 0.15))
     case .PART_CIRCLE:
@@ -94,12 +94,12 @@ public enum ShapeKind: String, CaseIterable, Sendable {
         return .poly(points: [Pt(x0, y0), Pt(x1, y0), Pt(x1, y1), Pt(x0, y1)], closed: true)
       }
       return .poly(points: [Pt(l, t), Pt(r, t), Pt(r, b), Pt(l, b)], closed: true)
-    case .DIAMOND: return .poly(points: [Pt(c.x, t), Pt(r, c.y), Pt(c.x, b), Pt(l, c.y)], closed: true)
-    case .PARALLELOGRAM: return .poly(points: [Pt(l + w * 0.25, t), Pt(r, t), Pt(r - w * 0.25, b), Pt(l, b)], closed: true)
-    case .TRAPEZOID: return .poly(points: [Pt(l + w * 0.22, t), Pt(r - w * 0.22, t), Pt(r, b), Pt(l, b)], closed: true)
-    case .PENTAGON: return ShapeMaker.regularPolygon(c, side / 2, 5)
-    case .HEXAGON: return ShapeMaker.regularPolygon(c, side / 2, 6)
-    case .STAR: return ShapeMaker.star(c, side / 2)
+    case .DIAMOND: return .poly(points: [Pt(c.x, t), Pt(r, c.y), Pt(c.x, b), Pt(l, c.y)], closed: true, form: .DIAMOND)
+    case .PARALLELOGRAM: return .poly(points: [Pt(l + w * 0.25, t), Pt(r, t), Pt(r - w * 0.25, b), Pt(l, b)], closed: true, form: .PARALLELOGRAM)
+    case .TRAPEZOID: return .poly(points: [Pt(l + w * 0.22, t), Pt(r - w * 0.22, t), Pt(r, b), Pt(l, b)], closed: true, form: .TRAPEZOID)
+    case .PENTAGON: return ShapeMaker.regularPolygon(c, side / 2, 5).withForm(.REGULAR)
+    case .HEXAGON: return ShapeMaker.regularPolygon(c, side / 2, 6).withForm(.REGULAR)
+    case .STAR: return ShapeMaker.star(c, side / 2).withForm(.REGULAR)
     case .PIN_SUPPORT: return ShapeKind.pinSupport(c, side)
     case .ROLLER_SUPPORT: return ShapeKind.rollerSupport(c, side)
     case .FIXED_SUPPORT: return ShapeKind.fixedSupport(Pt(c.x, c.y - side / 2), Pt(c.x, c.y + side / 2))
