@@ -66,7 +66,7 @@ extension NoteCanvas.Coordinator {
       cg.scaleBy(x: ptPerUnit, y: ptPerUnit)
       cg.translateBy(x: -r.minX, y: -r.minY)
       cg.clip(to: r)
-      pages.pages.draw(in: cg)
+      pages.pages.paint(in: cg, scale: ptPerUnit, print: true)
       cg.restoreGState()
       drawing.image(from: r, scale: ptPerUnit * quality.sharpness).draw(in: CGRect(origin: .zero, size: size))
     }

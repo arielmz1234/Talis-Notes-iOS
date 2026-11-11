@@ -47,7 +47,7 @@ final class PagesTests: ShotCase {
 
   func testPullForANewPage() {
     continueAfterFailure = true
-    XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait
+    XCUIDevice.shared.orientation = .portrait
     // Fingers scroll, as with Draw with finger off.
     let app = launch(["-fingerDraws", "0"])
     settle()
@@ -86,6 +86,33 @@ final class PagesTests: ShotCase {
     settle()
     shot("t4-shown")
     XCTAssertTrue(app.buttons["more"].exists, "the bars are back")
+  }
+
+  func testEndlessCanvas() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait
+    // Fingers scroll and zoom.
+    let app = launch(["-fingerDraws", "0"])
+    settle()
+    open(app, "Fluid mechanics")
+    more(app)
+    tapLabel(app, "Endless canvas")
+    shot("e1-endless-menu")
+    closePopover(app)
+    shot("e2-endless")
+    XCTAssertFalse(pageCountShown(app, 1), "no page chip on an endless canvas")
+    more(app)
+    tapLabel(app, "A4 page guides")
+    closePopover(app)
+    app.pinch(withScale: 0.35, velocity: -1)
+    settle()
+    shot("e3-guides-zoomed-out")
+    more(app)
+    tapLabel(app, "A4 page guides")
+    tapLabel(app, "Endless canvas")
+    closePopover(app)
+    shot("e4-pages-again")
+    XCTAssertTrue(pageCountShown(app, 1), "back to one A4 page")
   }
 
   func testPapers() {

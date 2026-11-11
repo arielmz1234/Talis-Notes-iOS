@@ -33,18 +33,29 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
   /// A picture paper's image, once loaded.
   nonisolated(unsafe) var picture: CGImage?
   nonisolated(unsafe) var under = UnderItems()
+  /// An endless canvas's size so far (paper all over it); nil for pages.
+  nonisolated(unsafe) var endless: CGSize?
 
   override class func fadeDuration() -> CFTimeInterval { 0.08 }
 
-  var worldSize: CGSize { CGSize(width: CGFloat(layout.width), height: CGFloat(layout.rect(max(count, 1) - 1).bottom)) }
+  var worldSize: CGSize { endless ?? CGSize(width: CGFloat(layout.width), height: CGFloat(layout.rect(max(count, 1) - 1).bottom)) }
 
-  override func draw(in cg: CGContext) {
+  override func draw(in cg: CGContext) { paint(in: cg) }
+
+  /// Draws what's under [cg]'s clip at [scale] points (or pixels) per world unit; on a tile that's
+  /// read from its transform. [print] draws the paper as printed paper (the PDF).
+  func paint(in cg: CGContext, scale given: CGFloat? = nil, print: Bool = false) {
     let rect = cg.boundingBoxOfClipPath
-    let scale = max(cg.ctm.a / max(contentsScale, 1), 0.01)
-    for i in 0..<max(count, 1) {
-      let page = CGRect(layout.rect(i))
-      guard page.intersects(rect) else { continue }
-      PaperPainter.draw(paper, area: page, in: cg, scale: scale, picture: picture)
+    let scale = given ?? max(cg.ctm.a / max(contentsScale, 1), 0.01)
+    if let endless {
+      let area = rect.intersection(CGRect(origin: .zero, size: endless))
+      if !area.isNull { PaperPainter.draw(paper, area: area, endless: true, in: cg, scale: scale, print: print, picture: picture) }
+    } else {
+      for i in 0..<max(count, 1) {
+        let page = CGRect(layout.rect(i))
+        guard page.intersects(rect) else { continue }
+        PaperPainter.draw(paper, area: page, in: cg, scale: scale, print: print, picture: picture)
+      }
     }
     for p in under.pdfPages where p.rect.intersects(rect) { p.page.draw(in: p.rect, cg) }
     for pic in under.pictures where pic.rect.intersects(rect) {
@@ -288,8 +299,10 @@ struct NoteCanvas: UIViewRepresentable {
     c.applyTool()
     if let cmd = command {
       DispatchQueue.main.async {
-        c.run(cmd)
+        // Another update before this ran scheduled it again: run it once.
+        guard command == cmd else { return }
         command = nil
+        c.run(cmd)
       }
     }
   }
@@ -428,6 +441,7 @@ struct NoteCanvas: UIViewRepresentable {
         canvas.overrideUserInterfaceStyle = s.dark ? .dark : .light
         updateChrome()
       }
+      if old?.pageGuides != s.pageGuides { updateChrome() }
       if old?.between != s.between, old != nil {
         // Strokes are hidden past their page or the page column: their masks change.
         saveNow()
@@ -507,12 +521,17 @@ struct NoteCanvas: UIViewRepresentable {
       case .mirrorSelection(let h): mirrorSelection(horizontal: h)
       case .arrangeSelection(let f): arrangeSelection(toFront: f)
       case .deletePage(let i): deletePage(i)
+      case .setEndless(let on): setEndless(on)
       case .goToPage(let i):
         let target = min(max(i, 0), pageCount - 1)
         let r = layout.rect(target)
         let y = CGFloat(r.top) * canvas.zoomScale - canvas.contentInset.top
         canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: y), animated: true)
       case .fitZoom:
+        if !paged {
+          fitEverything()
+          break
+        }
         guard let pages else { break }
         let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
         canvas.setZoomScale(fit, animated: true)
@@ -536,6 +555,7 @@ struct NoteCanvas: UIViewRepresentable {
     func updateContent() {
       guard let canvas, let pages else { return }
       pages.pages.count = pageCount
+      pages.pages.endless = paged ? nil : endlessSize()
       let world = pages.worldSize
       let z = canvas.zoomScale
       pages.layer.anchorPoint = .zero
@@ -575,7 +595,7 @@ struct NoteCanvas: UIViewRepresentable {
       guard let canvas, let pages else { return }
       // It opens where she left off (Android keeps the view per notebook); the first time, the page's width.
       let saved = parent.notebook.viewport.flatMap { v -> Viewport? in v.zoom > 0.05 ? v : nil }
-      let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
+      let fit = min((canvas.bounds.width - 48) / (paged ? pages.worldSize.width : CGFloat(layout.width)), 1.2)
       let zoom = saved.map { min(max(CGFloat($0.zoom), canvas.minimumZoomScale), canvas.maximumZoomScale) } ?? fit
       // Animated: PKCanvasView ignored the plain zoom change here (the zoom chip's animated one works).
       canvas.setZoomScale(zoom, animated: true)
@@ -618,6 +638,7 @@ struct NoteCanvas: UIViewRepresentable {
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateContent() }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+      growEndless()
       updateChrome()
       reportView()
       reportSelection()
@@ -790,6 +811,8 @@ enum CanvasCommand: Equatable {
   case recolourSelection(UInt32), thickenSelection(Float), mirrorSelection(Bool), arrangeSelection(Bool)
   case deletePage(Int)
   case goToPage(Int)
+  /// One endless page, or back to A4 pages.
+  case setEndless(Bool)
 }
 
 /// The eraser as she set it in its panel.

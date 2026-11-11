@@ -11,6 +11,8 @@ struct CanvasSettings: Equatable {
   var smartUndo: Bool
   /// Write between pages: strokes may cross the gap instead of staying on their own page.
   var between: Bool
+  /// Faint A4 page edges on an endless canvas.
+  var pageGuides = false
 }
 
 /// The ⋯ menu (Android's `MoreMenu`), kept compact: the actions as tiles, the paper choices, then
@@ -22,7 +24,10 @@ struct MoreMenu<Papers: View>: View {
   @Binding var fingerDraws: Bool?
   @Binding var smartUndo: Bool
   @Binding var between: Bool
+  @Binding var pageGuides: Bool
   @Binding var fullScreen: Bool
+  /// Endless canvas on (true) or back to A4 pages.
+  var onEndless: (Bool) -> Void = { _ in }
   var onPages: () -> Void = {}
   var onExport: () -> Void = {}
   var onFit: () -> Void
@@ -41,6 +46,7 @@ struct MoreMenu<Papers: View>: View {
       papers.padding(.horizontal, 2)
       HStack(spacing: 6) {
         chip("moon", L("dark_paper"), on: dark) { dark.toggle() }
+        chip("infinity", L("endless_canvas"), on: !paged) { onEndless(paged) }
       }
       .padding(.top, 8)
       Divider().overlay(c.line).padding(.top, 8).padding(.bottom, 4)
@@ -48,7 +54,11 @@ struct MoreMenu<Papers: View>: View {
         fingerDraws = fingerDraws == nil ? true : (fingerDraws! ? false : nil)
       }
       row("arrow.uturn.backward", L("tap_2_fingers_to_undo_3"), checked: smartUndo) { smartUndo.toggle() }
-      if paged { row("arrow.up.and.down.text.horizontal", L("write_between_pages"), checked: between) { between.toggle() } }
+      if paged {
+        row("arrow.up.and.down.text.horizontal", L("write_between_pages"), checked: between) { between.toggle() }
+      } else {
+        row("doc", L("a4_page_guides"), checked: pageGuides) { pageGuides.toggle() }
+      }
       row("arrow.up.left.and.arrow.down.right.rectangle", L("full_screen"), checked: fullScreen) { fullScreen.toggle() }
       row("eye", L("view_only"), checked: false, action: onViewOnly)
     }

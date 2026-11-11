@@ -19,6 +19,7 @@ struct NotebookView: View {
     _paper = State(initialValue: notebook.paper)
     _customPaper = State(initialValue: notebook.customPaper)
     _dark = State(initialValue: notebook.dark)
+    _endless = State(initialValue: notebook.pages == nil)
   }
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
@@ -53,6 +54,8 @@ struct NotebookView: View {
   @State private var customPaper: String?
   @State private var paperCard: PaperCard?
   @State private var dark: Bool
+  /// One endless page instead of A4 pages, switched from the ⋯ menu.
+  @State private var endless: Bool
   @State private var moreOpen = false
   /// What the lasso picked up (window coordinates), a held spot offering Paste, and a hint line.
   @State private var selection: CGRect?
@@ -72,11 +75,13 @@ struct NotebookView: View {
     GeometryReader { geo in
       let narrow = geo.size.width < 900
       ZStack(alignment: .top) {
-        Color(uiColor: dark ? UIColor(argb: Int32(bitPattern: 0xFF0E_0C13)) : UIColor(c.desk)).ignoresSafeArea()
+        // An endless canvas is paper all the way to the screen's edges; pages lie on the desk.
+        Color(uiColor: endless ? paperSpec.paperColor : dark ? UIColor(argb: Int32(bitPattern: 0xFF0E_0C13)) : UIColor(c.desk)).ignoresSafeArea()
         NoteCanvas(
-          notebook: notebook, db: lib.db, tool: tool, pens: pens, viewOnly: viewing,
+          notebook: canvasNotebook, db: lib.db, tool: tool, pens: pens, viewOnly: viewing,
           topClearance: narrow ? 164 : 104,
-          settings: CanvasSettings(paper: paperSpec, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between),
+          settings: CanvasSettings(
+            paper: paperSpec, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between, pageGuides: PaperSettings.shared.pageGuides),
           bridge: bridge,
           eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize)),
           shapeKind: shapeKind,
@@ -216,7 +221,7 @@ struct NotebookView: View {
         }
         if exporting {
           DialogOverlay(onClose: { withAnimation(.easeOut(duration: 0.16)) { exporting = false } }) {
-            ExportCard(bridge: bridge, paged: notebook.pages != nil) { withAnimation(.easeOut(duration: 0.16)) { exporting = false } }
+            ExportCard(bridge: bridge, paged: !endless) { withAnimation(.easeOut(duration: 0.16)) { exporting = false } }
           }
           .transition(.opacity)
         }
@@ -233,7 +238,7 @@ struct NotebookView: View {
             Spacer()
             HStack(spacing: 8) {
               Spacer()
-              if notebook.pages != nil {
+              if !endless {
                 PageChip(page: page, count: pageCount, onGo: { command = .goToPage($0) }) {
                   withAnimation(Ease.outStrong(duration: 0.24)) { showPages = true }
                 }
@@ -259,6 +264,13 @@ struct NotebookView: View {
     .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
     .statusBarHidden(fullScreen)
     .persistentSystemOverlays(fullScreen ? .hidden : .automatic)
+  }
+
+  /// The notebook as the canvas should lay it out: A4 pages or one endless page.
+  private var canvasNotebook: NotebookMeta {
+    var n = notebook
+    n.pages = endless ? nil : max(notebook.pages ?? 1, 1)
+    return n
   }
 
   private var paperSpec: PaperSpec {
@@ -379,7 +391,7 @@ struct NotebookView: View {
           .accessibilityIdentifier("more")
           .popover(isPresented: $moreOpen, arrowEdge: .top) {
             MoreMenu(
-              paged: notebook.pages != nil,
+              paged: !endless,
               papers: {
                 PaperPicker(
                   choice: paperChoice, customs: PaperSettings.shared.customPapers, dark: dark || barColors.isDark,
@@ -391,7 +403,13 @@ struct NotebookView: View {
               },
               dark: $dark,
               fingerDraws: Binding(get: { fingerDraws }, set: { fingerDrawsRaw = $0 == nil ? -1 : ($0! ? 1 : 0) }),
-              smartUndo: $smartUndo, between: $between, fullScreen: $fullScreen,
+              smartUndo: $smartUndo, between: $between,
+              pageGuides: Binding(get: { PaperSettings.shared.pageGuides }, set: { PaperSettings.shared.pageGuides = $0 }), fullScreen: $fullScreen,
+              onEndless: { on in
+                endless = on
+                command = .setEndless(on)
+                show(on ? L("endless_canvas_write_anywhere") : L("a4_pages"))
+              },
               onPages: {
                 moreOpen = false
                 withAnimation(Ease.outStrong(duration: 0.24)) { showPages = true }

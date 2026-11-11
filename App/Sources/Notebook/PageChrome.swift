@@ -159,6 +159,23 @@ extension NoteCanvas.Coordinator {
     if abs(canvas.zoomScale - pageChrome.zoomAtDown) > pageChrome.zoomAtDown * 0.04 { pageChrome.pull.cancel() }
   }
 
+  /// The portrait A4 grid's edges on screen, where an endless canvas's PDF pages break.
+  private func guideLines(z: CGFloat, o: CGPoint, size: CGSize) -> [(CGPoint, CGPoint)] {
+    let w = CGFloat(A4.width), h = CGFloat(A4.height)
+    var lines: [(CGPoint, CGPoint)] = []
+    var x = (o.x / z / w).rounded(.down) * w
+    while x * z - o.x <= size.width {
+      lines.append((CGPoint(x: x * z - o.x, y: 0), CGPoint(x: x * z - o.x, y: size.height)))
+      x += w
+    }
+    var y = (o.y / z / h).rounded(.down) * h
+    while y * z - o.y <= size.height {
+      lines.append((CGPoint(x: 0, y: y * z - o.y), CGPoint(x: size.width, y: y * z - o.y)))
+      y += h
+    }
+    return lines
+  }
+
   /// Puts the chrome over the screen and lays out what shows there now.
   func updateChrome() {
     guard let canvas, let chrome = pageChrome.view else { return }
@@ -169,8 +186,10 @@ extension NoteCanvas.Coordinator {
     guard paged else {
       chrome.showNumbers([], darkPaper: false)
       chrome.showSign(nil, lastBottom: 0, dark: false)
+      chrome.showGuides(parent.settings.pageGuides ? guideLines(z: z, o: o, size: canvas.bounds.size) : [])
       return
     }
+    chrome.showGuides([])
     let top = Float(o.y / z), bottom = Float((o.y + canvas.bounds.height) / z)
     let first = max(layout.indexAt(top), 0), last = min(layout.indexAt(bottom), pageCount - 1)
     var shown: [(CGRect, String)] = []

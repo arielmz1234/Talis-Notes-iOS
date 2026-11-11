@@ -14,6 +14,13 @@ struct PaperSpec: Equatable, Sendable {
 
   /// A picture paper's image, at a size that suits a page.
   var picture: CGImage? { custom?.image.flatMap { PaperPicture.image($0) } }
+
+  /// The page's own colour, under the lines.
+  var paperColor: UIColor {
+    if dark { return PaperPainter.darkPaper }
+    if let custom { return custom.image == nil ? UIColor(argb: custom.paperColor) : .white }
+    return PaperPainter.color(PaperTones.of(dark: false, look: look).paper)
+  }
 }
 
 /// Draws the papers the way Android's `canvas/PaperRenderer.kt` does: patterns in world units, lines
