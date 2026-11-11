@@ -145,4 +145,54 @@ final class ShapesMoreTests: ShotCase {
     settle()
     tab(app, style: false)
   }
+
+  func testFill() {
+    let app = openNewNotebook()
+    // A box drawn by hand (its lines cross at the corners), with writing inside it.
+    drag(app, (0.16, 0.42), (0.40, 0.42))
+    drag(app, (0.38, 0.40), (0.38, 0.62))
+    drag(app, (0.40, 0.60), (0.16, 0.60))
+    drag(app, (0.18, 0.62), (0.18, 0.40))
+    drag(app, (0.24, 0.53), (0.32, 0.49))
+    // A triangle, and a rectangle with a line drawn across it.
+    shapesPanel(app)
+    tab(app, style: false)
+    app.buttons["shape-TRIANGLE"].firstMatch.tap()
+    settle()
+    drag(app, (0.78, 0.40), (0.92, 0.60))
+    shapesPanel(app)
+    app.buttons["shape-RECTANGLE"].firstMatch.tap()
+    settle()
+    drag(app, (0.50, 0.38), (0.70, 0.62))
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
+    drag(app, (0.47, 0.50), (0.73, 0.50))
+
+    tool(app, "tool-fill")
+    tool(app, "tool-fill")
+    XCTAssertTrue(app.buttons["no-fill"].waitForExistence(timeout: 2), "the fill panel")
+    app.buttons["fill-colour-4"].firstMatch.tap()
+    calmShot("f1-fill-panel")
+    tool(app, "tool-fill")
+
+    at(app, 0.30, 0.47).tap()
+    Thread.sleep(forTimeInterval: 2)
+    at(app, 0.85, 0.55).tap()
+    at(app, 0.60, 0.44).tap()
+    calmShot("f2-filled")
+
+    // Another colour over the drawn box replaces its fill; None takes the triangle's away.
+    tool(app, "tool-fill")
+    app.buttons["fill-colour-5"].firstMatch.tap()
+    tool(app, "tool-fill")
+    at(app, 0.30, 0.47).tap()
+    Thread.sleep(forTimeInterval: 2)
+    tool(app, "tool-fill")
+    app.buttons["no-fill"].firstMatch.tap()
+    settle()
+    calmShot("f3-none")
+    tool(app, "tool-fill")
+    at(app, 0.85, 0.55).tap()
+    calmShot("f4-recoloured-and-removed")
+  }
 }

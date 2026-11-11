@@ -154,6 +154,8 @@ struct NotebookView: View {
                 ShapesPanel(picker: shapePicker, pen: shapePen, compact: geo.size.width < 660) {
                   withAnimation(Ease.outStrong(duration: 0.24)) { browsingShapes = true }
                 }
+              case .fill:
+                FillPanel()
               }
             }
             .environment(\.panelRoom, geo.size.height - (narrow ? 266 : 196))

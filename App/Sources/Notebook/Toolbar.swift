@@ -6,7 +6,7 @@ import TaliCore
 // the pen's settings, her first few colours, her three thicknesses, then the tools.
 
 /// Which panel hangs under the toolbar.
-enum PanelKind { case pen, eraser, shapes }
+enum PanelKind { case pen, eraser, shapes, fill }
 
 /// Saved colours (Android's `savedColors` / `highlighterColors`) and how many sit in the toolbar.
 enum Palette {
@@ -222,6 +222,8 @@ struct MainToolbar: View {
           Group {
             if tool == .shape {
               ShapeChoiceIcon(source: shape, color: c.blue, size: 24)
+            } else if tool == .fill {
+              FillIcon(color: c.blue)
             } else {
               Image(systemName: currentToolIcon).font(.system(size: 19)).foregroundStyle(isPen ? c.ink : c.blue)
             }
@@ -253,11 +255,12 @@ struct MainToolbar: View {
     .onChange(of: tool) { _, _ in if compactTools { withAnimation(.easeOut(duration: 0.14)) { toolsOpen = false } } }
   }
 
-  /// The tools: eraser, lasso, shapes, then the keyboard (a new text box).
+  /// The tools: eraser, lasso, fill, shapes, then the keyboard (a new text box).
   private var tools: some View {
     HStack(spacing: 0) {
       toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
       toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
+      toolButton(.fill, icon: "", label: L("fill"), id: "fill")
       toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
       Button {
         toolsOpen = false
@@ -277,7 +280,7 @@ struct MainToolbar: View {
     switch tool {
     case .eraser: "eraser"
     case .lasso: "lasso"
-    case .shape: "square.on.circle"
+    case .shape, .fill: "square.on.circle"
     case .pen: "square.grid.2x2"
     }
   }
@@ -298,6 +301,7 @@ struct MainToolbar: View {
       if tool == t {
         if t == .eraser { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .eraser ? nil : .eraser } }
         if t == .shape { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .shapes ? nil : .shapes } }
+        if t == .fill { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .fill ? nil : .fill } }
       } else {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { tool = t }
         // The Shapes tool opens its panel straight away, to choose what to draw.
@@ -308,6 +312,8 @@ struct MainToolbar: View {
         // While on, the Shapes tool shows the shape it draws.
         if t == .shape && on {
           ShapeChoiceIcon(source: shape, color: c.blue, size: 24)
+        } else if t == .fill {
+          FillIcon(color: on ? c.blue : c.ink)
         } else {
           Image(systemName: icon).font(.system(size: 19)).foregroundStyle(on ? c.blue : c.ink)
         }
