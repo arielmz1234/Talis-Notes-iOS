@@ -12,6 +12,10 @@ struct LassoState {
   var loop: [Pt] = []
   /// The ids of the strokes picked up, and their bounds (world units).
   var picked: Set<String> = []
+  /// The shapes picked up (ids), shown while moving in [shapeLayer] and stored again on letting go.
+  var pickedShapes: Set<String> = []
+  var shapesBefore: [ShapeRow]?
+  let shapeLayer = CALayer()
   var bounds: CGRect?
   /// Moving what's picked up: where the drag began and the drawing before it.
   var moving = false
@@ -30,6 +34,8 @@ struct LassoState {
 @MainActor
 enum InkClipboard {
   static var strokes: [InkStroke] = []
+  static var shapes: [ShapeRow] = []
+  static var isEmpty: Bool { strokes.isEmpty && shapes.isEmpty }
 }
 
 /// The lasso and the selection menu (Android's `NoteCanvasView` lasso, `finishLasso`, the selection
@@ -67,18 +73,21 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       layer.zPosition = 10
       v.layer.addSublayer(layer)
     }
+    lasso.shapeLayer.zPosition = 9
+    v.layer.addSublayer(lasso.shapeLayer)
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
     // The hold runs alongside everything; the lasso alongside PencilKit's own recognisers (scrolling
     // waits for it to fail instead).
-    if g === lasso.hold || g === hold.watcher { return true }
+    // The hold and every touch watcher (hold-to-shape, the shape eraser) run alongside everything.
+    if g === lasso.hold || (g is StrokeWatcher && g !== lasso.pan) { return true }
     if g === lasso.pan { return other !== canvas?.panGestureRecognizer }
     return false
   }
 
   func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-    if g === lasso.hold { return !InkClipboard.strokes.isEmpty && !parent.viewOnly }
+    if g === lasso.hold { return !InkClipboard.isEmpty && !parent.viewOnly }
     return true
   }
 
@@ -107,6 +116,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         lasso.moving = true
         lasso.moveStart = p
         lasso.before = canvas.drawing
+        liftShapes()
         parent.onSelection(nil)
       } else {
         clearSelection()
@@ -124,6 +134,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         })
         loading = false
         if let b = lasso.bounds { drawFrame(b.applying(shift)) }
+        carryShapes(shift)
       } else {
         lasso.loop.append(Pt(Float(p.x), Float(p.y)))
         drawLoop()
@@ -132,13 +143,19 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       if lasso.moving {
         lasso.moving = false
         let dx = p.x - lasso.moveStart.x, dy = p.y - lasso.moveStart.y
+        let shapesBefore = lasso.shapesBefore ?? shapes
         if let before = lasso.before, abs(dx) + abs(dy) > 0.5 {
-          let moved = canvas.drawing
-          record(before)
-          sync(moved)
+          let movedDrawing = canvas.drawing
+          record(before, shapes: shapesBefore)
+          sync(movedDrawing)
+          let by = Affine.translate(Float(dx), Float(dy))
+          setShapes(shapesBefore.map { lasso.pickedShapes.contains($0.id) ? moved($0, by: by) : $0 })
           lasso.bounds = lasso.bounds?.offsetBy(dx: dx, dy: dy)
           reportUndo()
+        } else {
+          setShapes(shapesBefore)
         }
+        dropShapes()
         lasso.before = nil
         redrawSelection()
       } else if phase == .cancelled {
@@ -171,16 +188,28 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         bounds = bounds.map { $0.union(b) } ?? b
       }
     }
+    var pickedShapes = Set<String>()
+    let loopBox = Rect.around(loop)
+    for sh in shapes where !sh.locked {
+      guard let r = sh.geometry.bounds(sh.size), loopBox.map({ $0.intersects(r) }) ?? false else { continue }
+      if sh.geometry.paths(sh.size).contains(where: { $0.count > 1 && Lasso.touchesPath($0, loop) }) {
+        pickedShapes.insert(sh.id)
+        let b = CGRect(r)
+        bounds = bounds.map { $0.union(b) } ?? b
+      }
+    }
     lasso.picked = picked
-    lasso.bounds = picked.isEmpty ? nil : bounds
-    if ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso \(loop.count) points, \(picked.count) picked") }
-    lasso.lastPicked = picked.count
-    if !picked.isEmpty { UISelectionFeedbackGenerator().selectionChanged() }
+    lasso.pickedShapes = pickedShapes
+    lasso.bounds = picked.isEmpty && pickedShapes.isEmpty ? nil : bounds
+    if ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso \(loop.count) points, \(picked.count + pickedShapes.count) picked") }
+    lasso.lastPicked = picked.count + pickedShapes.count
+    if lasso.bounds != nil { UISelectionFeedbackGenerator().selectionChanged() }
     redrawSelection()
   }
 
   func clearSelection() {
     lasso.picked = []
+    lasso.pickedShapes = []
     lasso.bounds = nil
     lasso.loop = []
     lasso.loopLayer.path = nil
@@ -229,14 +258,17 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   private var pickedStrokes: [InkStroke] { stored.map(\.stroke).filter { lasso.picked.contains($0.id) } }
 
   /// Makes this change one undo step: going back restores [before].
-  private func record(_ before: PKDrawing) {
+  /// Shapes are part of the step too: [beforeShapes] (by default the shapes as they are now) come back with it.
+  private func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil) {
+    let shapesThen = beforeShapes ?? shapes
     canvas?.undoManager?.registerUndo(withTarget: self) { coord in
       MainActor.assumeIsolated {
         guard let canvas = coord.canvas else { return }
         let now = canvas.drawing
         coord.clearSelection()
-        coord.record(now)
+        coord.record(now, shapes: coord.shapes)
         canvas.drawing = before
+        coord.setShapes(shapesThen)
         coord.reportUndo()
       }
     }
@@ -244,29 +276,33 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   func copySelection() {
     InkClipboard.strokes = pickedStrokes
+    InkClipboard.shapes = pickedShapeRows
     parent.onHint(L("copied_hold_anywhere_to_paste_it"))
   }
 
   func cutSelection() {
     InkClipboard.strokes = pickedStrokes
+    InkClipboard.shapes = pickedShapeRows
     deleteSelection()
     parent.onHint(L("cut_hold_anywhere_to_paste_it_2"))
   }
 
   func deleteSelection() {
-    guard let canvas, !lasso.picked.isEmpty else { return }
+    guard let canvas, lasso.bounds != nil else { return }
     let before = canvas.drawing
     let keep = before.strokes.enumerated().filter { i, _ in i >= stored.count || !lasso.picked.contains(stored[i].stroke.id) }.map(\.element)
+    let gone = lasso.pickedShapes
     clearSelection()
     record(before)
     canvas.drawing = PKDrawing(strokes: keep)
+    setShapes(shapes.filter { !gone.contains($0.id) })
     reportUndo()
   }
 
   /// Copies a little down and to the right, and picks the copies up instead (Android: 24 units).
   func duplicateSelection() {
-    let copies = add(pickedStrokes, offset: CGPoint(x: Self.duplicateOffset, y: Self.duplicateOffset))
-    select(copies)
+    let copies = add(pickedStrokes, shapes: pickedShapeRows, offset: CGPoint(x: Self.duplicateOffset, y: Self.duplicateOffset))
+    select(copies.strokes, shapes: copies.shapes)
   }
 
   /// A rectangle round what's picked up, drawn with the pen in use, and joining the selection.
@@ -286,14 +322,15 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       }
     }
     let box = InkStroke(id: newId(), z: 0, pen: pen.type, color: pen.inkColor, size: pen.size, inputs: InkInputs(points: pts, tool: .stylus))
+    let keepShapes = pickedShapeRows
     let added = add([box], offset: .zero)
-    select(pickedStrokes + added)
+    select(pickedStrokes + added.strokes, shapes: keepShapes)
   }
 
-  /// Adds copies of [strokes] moved by [offset] with new ids, as one undo step; returns them.
+  /// Adds copies of [strokes] and [newShapes] moved by [offset] with new ids, as one undo step; returns them.
   @discardableResult
-  private func add(_ strokes: [InkStroke], offset: CGPoint) -> [InkStroke] {
-    guard let canvas, !strokes.isEmpty else { return [] }
+  private func add(_ strokes: [InkStroke], shapes newShapes: [ShapeRow] = [], offset: CGPoint) -> (strokes: [InkStroke], shapes: [ShapeRow]) {
+    guard let canvas, !strokes.isEmpty || !newShapes.isEmpty else { return ([], []) }
     let before = canvas.drawing
     var copies: [InkStroke] = []
     var fresh: [PKStroke] = []
@@ -307,14 +344,28 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       fresh.append(pk)
     }
     record(before)
-    canvas.drawing = PKDrawing(strokes: before.strokes + fresh)
+    if !fresh.isEmpty { canvas.drawing = PKDrawing(strokes: before.strokes + fresh) }
+    var shapeCopies: [ShapeRow] = []
+    var z = max(stored.map(\.stroke.z).max() ?? 0, shapeZ)
+    for sh in newShapes {
+      var c = moved(sh, by: .translate(Float(offset.x), Float(offset.y)))
+      c.id = newId()
+      z += 1
+      c.z = z
+      shapeCopies.append(c)
+    }
+    if !shapeCopies.isEmpty {
+      shapeZ = z
+      setShapes(shapes + shapeCopies)
+    }
     reportUndo()
-    return copies
+    return (copies, shapeCopies)
   }
 
-  private func select(_ strokes: [InkStroke]) {
+  private func select(_ strokes: [InkStroke], shapes picked: [ShapeRow] = []) {
     lasso.picked = Set(strokes.map(\.id))
-    lasso.bounds = unionOf(strokes)
+    lasso.pickedShapes = Set(picked.map(\.id))
+    lasso.bounds = joined(unionOf(strokes), unionOf(picked))
     redrawSelection()
   }
 
@@ -331,7 +382,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   // MARK: Hold to paste
 
   @objc func pasteHold(_ g: UILongPressGestureRecognizer) {
-    guard g.state == .began, let canvas, !InkClipboard.strokes.isEmpty else { return }
+    guard g.state == .began, let canvas, !InkClipboard.isEmpty else { return }
     let p = world(g)
     lasso.pasteAt = p
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -344,10 +395,10 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     parent.onPasteOffer(nil)
     guard let at = lasso.pasteAt else { return }
     lasso.pasteAt = nil
-    let strokes = InkClipboard.strokes
-    guard let b = unionOf(strokes) else { return }
-    let copies = add(strokes, offset: CGPoint(x: at.x - b.midX, y: at.y - b.midY))
-    if parent.tool == .lasso { select(copies) }
+    let strokes = InkClipboard.strokes, clipShapes = InkClipboard.shapes
+    guard let b = joined(unionOf(strokes), unionOf(clipShapes)) else { return }
+    let copies = add(strokes, shapes: clipShapes, offset: CGPoint(x: at.x - b.midX, y: at.y - b.midY))
+    if parent.tool == .lasso { select(copies.strokes, shapes: copies.shapes) }
   }
 }
 
@@ -355,8 +406,8 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
 extension NoteCanvas.Coordinator {
   /// Replaces what's picked up with [change] applied to each stroke (same ids), as one undo step.
-  private func restyle(_ change: (inout InkStroke) -> Void) {
-    guard let canvas, !lasso.picked.isEmpty else { return }
+  private func restyle(_ change: (inout InkStroke) -> Void, shapes shapeChange: (inout ShapeRow) -> Void = { _ in }) {
+    guard let canvas, lasso.bounds != nil else { return }
     let before = canvas.drawing
     var strokes: [PKStroke] = []
     var changedAll: [InkStroke] = []
@@ -373,37 +424,50 @@ extension NoteCanvas.Coordinator {
       changedAll.append(s)
     }
     record(before)
-    canvas.drawing = PKDrawing(strokes: strokes)
-    reportUndo()
-    lasso.bounds = changedAll.reduce(nil as CGRect?) { acc, s in
-      let r = CGRect(s.bounds)
-      return acc.map { $0.union(r) } ?? r
+    if !changedAll.isEmpty { canvas.drawing = PKDrawing(strokes: strokes) }
+    var changedShapes: [ShapeRow] = []
+    var next: [ShapeRow] = []
+    for sh in shapes {
+      var c = sh
+      if lasso.pickedShapes.contains(sh.id) {
+        shapeChange(&c)
+        changedShapes.append(c)
+      }
+      next.append(c)
     }
+    setShapes(next)
+    reportUndo()
+    lasso.bounds = joined(unionOf(changedAll), unionOf(changedShapes))
     redrawSelection()
   }
 
   func recolourSelection(_ argb: UInt32) {
-    restyle { s in
+    restyle({ s in
       let c = argb | 0xFF00_0000
       s.color = Int32(bitPattern: s.pen == .HIGHLIGHTER ? (c & 0x00FF_FFFF) | (PenSlot.highlighterAlpha << 24) : c)
-    }
+    }, shapes: { sh in
+      // A shape keeps its own opacity (Android: recolouring keeps it).
+      sh.color = Int32(bitPattern: (UInt32(bitPattern: sh.color) & 0xFF00_0000) | (argb & 0x00FF_FFFF))
+    })
   }
 
   func thickenSelection(_ size: Float) {
-    restyle { s in s.size = size }
+    restyle({ s in s.size = size }, shapes: { sh in sh.size = size })
   }
 
   /// Mirrors what's picked up around its own middle (writing flips, as on Android).
   func mirrorSelection(horizontal: Bool) {
     guard let b = lasso.bounds else { return }
     let cx = Float(b.midX), cy = Float(b.midY)
-    restyle { s in
+    let flip = Affine.scaleAround(Pt(cx, cy), horizontal ? -1 : 1, horizontal ? 1 : -1)
+    let mirror: (ShapeRow, Affine) -> ShapeRow = { self.moved($0, by: $1) }
+    restyle({ s in
       s.inputs.points = s.inputs.points.map { p in
         var q = p
         if horizontal { q.x = 2 * cx - p.x } else { q.y = 2 * cy - p.y }
         return q
       }
-    }
+    }, shapes: { sh in sh = mirror(sh, flip) })
   }
 
   /// Brings what's picked up in front of everything else, or sends it behind (Android's Arrange).

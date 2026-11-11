@@ -159,6 +159,7 @@ struct NoteCanvas: UIViewRepresentable {
     c.applied = settings
     c.installSelection(on: v)
     c.installHoldToShape(on: v)
+    c.installShapeEraser(on: v)
     bridge?.coordinator = c
     v.minimumZoomScale = 0.3
     v.maximumZoomScale = 6
@@ -290,6 +291,8 @@ struct NoteCanvas: UIViewRepresentable {
     var lasso = LassoState()
     /// Hold-to-shape (see HoldToShape.swift).
     var hold = HoldState()
+    /// The eraser on shapes (see ShapeSelection.swift).
+    var shapeEraser = ShapeEraser()
 
     /// The settings the canvas was last given, to change only what changed.
     var applied: CanvasSettings?

@@ -180,9 +180,10 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
 }
 
 /// A shape item row (kind 1) read for drawing: its geometry, pen, colour, size, fill and line style.
-public struct ShapeRow: Sendable {
-  /// The item's id ("" until it's stored).
+public struct ShapeRow: Sendable, Equatable {
+  /// The item's id ("" until it's stored) and its place in the drawing order.
   public var id: String = ""
+  public var z: Int64 = 0
   public var geometry: ShapeGeometry
   public var pen: String
   public var color: Int32
@@ -196,6 +197,7 @@ public struct ShapeRow: Sendable {
       let g = ShapeGeometry.decode(obj)
     else { return nil }
     id = row.id
+    z = row.z
     geometry = g
     pen = row.pen ?? "FINELINER"
     color = row.color
@@ -301,4 +303,9 @@ extension ShapeRow {
     let b = geometry.bounds(size) ?? Rect(0, 0, 0, 0)
     return ItemRow(id: id, z: z, kind: 1, pen: pen, color: color, size: size, payload: data, l: b.left, t: b.top, r: b.right, b: b.bottom)
   }
+}
+
+extension ShapeRow {
+  /// Its item row, with its own id and z.
+  public var itemRow: ItemRow { row(id: id, z: z) }
 }

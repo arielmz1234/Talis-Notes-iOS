@@ -267,8 +267,10 @@ extension NoteCanvas.Coordinator {
     reportUndo()
   }
 
-  private func putShape(_ s: ShapeRow, z: Int64) {
+  private func putShape(_ shape: ShapeRow, z: Int64) {
     guard let pages else { return }
+    var s = shape
+    s.z = z
     pages.pages.under.shapes.append(s)
     do { try parent.db.put(s.row(id: s.id, z: z), in: parent.notebook.id) } catch { CrashNote.log("saving a shape: \(error)") }
     if let b = s.geometry.bounds(s.size) {
