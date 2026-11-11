@@ -34,6 +34,41 @@ final class PagesTests: ShotCase {
     settle()
   }
 
+  /// A slow one-finger drag on the page, held at its end for [hold] seconds before letting go.
+  private func drag(_ app: XCUIApplication, from: CGFloat, to: CGFloat, hold: TimeInterval) {
+    let a = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: from))
+    let b = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: to))
+    a.press(forDuration: 0.05, thenDragTo: b, withVelocity: 260, thenHoldForDuration: hold)
+  }
+
+  private func pageCountShown(_ app: XCUIApplication, _ n: Int) -> Bool {
+    app.descendants(matching: .any).matching(NSPredicate(format: "label ENDSWITH %@", "/ \(n)")).firstMatch.exists
+  }
+
+  func testPullForANewPage() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait
+    // Fingers scroll, as with Draw with finger off.
+    let app = launch(["-fingerDraws", "0"])
+    settle()
+    open(app, "Exam revision")
+    for _ in 0..<4 { app.swipeUp(velocity: .fast) }
+    settle()
+    settle()
+    shot("q1-end-of-last-page")
+    XCTAssertTrue(pageCountShown(app, 1), "starts with one page")
+    // A short pull shows "Drag for a new page"; let go early and it springs back.
+    drag(app, from: 0.7, to: 0.55, hold: 2.5)
+    settle()
+    shot("q2-sprang-back")
+    XCTAssertTrue(pageCountShown(app, 1), "letting go early adds nothing")
+    // Far enough it says "Release to add a page"; letting go adds one.
+    drag(app, from: 0.88, to: 0.3, hold: 2.5)
+    settle()
+    shot("q3-page-added")
+    XCTAssertTrue(pageCountShown(app, 2), "a page was added")
+  }
+
   func testPapers() {
     continueAfterFailure = true
     XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait

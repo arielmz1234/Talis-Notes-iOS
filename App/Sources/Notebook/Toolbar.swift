@@ -530,12 +530,21 @@ struct PageChip: View {
   var page: Int
   var count: Int
   var onGo: (Int) -> Void
+  /// Tapping the number opens the pages overview.
+  var onOverview: (() -> Void)?
   @Environment(\.tali) private var c
 
   var body: some View {
     HStack(spacing: 0) {
       arrow("chevron.up", L("previous_page"), enabled: page > 0) { onGo(page - 1) }
-      Text(L("n_n_3", page + 1, count)).font(TaliType.labelMedium).foregroundStyle(c.inkMuted).padding(.horizontal, 6).padding(.vertical, 6)
+      Button {
+        onOverview?()
+      } label: {
+        Text(L("n_n_3", page + 1, count)).font(TaliType.labelMedium).foregroundStyle(c.inkMuted).padding(.horizontal, 6).padding(.vertical, 6)
+      }
+      .buttonStyle(.plain)
+      .disabled(onOverview == nil)
+      .accessibilityHint(L("all_pages"))
       arrow("chevron.down", L("next_page"), enabled: page < count - 1) { onGo(page + 1) }
     }
     .padding(.horizontal, 2)

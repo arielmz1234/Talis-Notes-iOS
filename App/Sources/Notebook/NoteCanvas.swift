@@ -275,6 +275,7 @@ struct NoteCanvas: UIViewRepresentable {
     v.insertSubview(pages, at: 0)
     c.canvas = v
     c.pages = pages
+    c.installPageChrome(on: v, above: pages)
     v.onResize = { [weak c] in c?.updateContent() }
     c.load()
     return v
@@ -403,6 +404,8 @@ struct NoteCanvas: UIViewRepresentable {
     var hold = HoldState()
     /// The eraser on shapes (see ShapeSelection.swift).
     var shapeEraser = ShapeEraser()
+    /// Page numbers and the pull past the last page (see PageChrome.swift).
+    var pageChrome = PageChromeState()
     /// The Shapes tool (see ShapeTool.swift), and the pen last used (shapes take its look).
     var shapeTool = ShapeToolState()
     /// Typing in a text box (see TextBoxes.swift).
@@ -423,6 +426,7 @@ struct NoteCanvas: UIViewRepresentable {
         pages.pages.picture = s.paper.picture
         pages.layer.setNeedsDisplay()
         canvas.overrideUserInterfaceStyle = s.dark ? .dark : .light
+        updateChrome()
       }
       if old?.between != s.between, old != nil {
         // Strokes are hidden past their page or the page column: their masks change.
@@ -450,13 +454,11 @@ struct NoteCanvas: UIViewRepresentable {
         DispatchQueue.main.async { self.finishText() }
       }
       lastTool = parent.tool
-      // Draw with finger: Auto follows iOS's own Apple Pencil setting.
-      if !ProcessInfo.processInfo.arguments.contains("-uitest") {
-        switch parent.settings.fingerDraws {
-        case nil: canvas.drawingPolicy = .default
-        case true?: canvas.drawingPolicy = .anyInput
-        case false?: canvas.drawingPolicy = .pencilOnly
-        }
+      // Draw with finger: Auto follows iOS's own Apple Pencil setting (fingers write in UI tests, which have no pencil).
+      switch parent.settings.fingerDraws {
+      case nil: canvas.drawingPolicy = ProcessInfo.processInfo.arguments.contains("-uitest") ? .anyInput : .default
+      case true?: canvas.drawingPolicy = .anyInput
+      case false?: canvas.drawingPolicy = .pencilOnly
       }
       // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own loop.
       canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape
@@ -541,7 +543,8 @@ struct NoteCanvas: UIViewRepresentable {
       pages.transform = CGAffineTransform(scaleX: z, y: z)
       pages.layer.position = .zero
       pages.setNeedsDisplay()
-      canvas.contentSize = CGSize(width: world.width * z, height: (world.height + 300) * z)
+      canvas.contentSize = CGSize(width: world.width * z, height: world.height * z)
+      updateChrome()
       // Until she zooms by hand, the page keeps fitting the canvas as its size settles (the screen
       // slides in, the device turns): set once early, the fit was lost.
       if didFit, !zoomedByHand, canvas.bounds.size != fittedSize, canvas.bounds.width > 0 {
@@ -591,10 +594,12 @@ struct NoteCanvas: UIViewRepresentable {
       guard let canvas, let pages else { return }
       let w = pages.worldSize.width * canvas.zoomScale
       let side = max((canvas.bounds.width - w) / 2, 16)
-      canvas.contentInset = UIEdgeInsets(top: parent.topClearance, left: side, bottom: 40, right: side)
+      // A little room is always left under the last page (Android's `REST_DP`); pulling opens more.
+      canvas.contentInset = UIEdgeInsets(top: parent.topClearance, left: side, bottom: CGFloat(PagePull.rest), right: side)
     }
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
+      zoomEndsPull()
       updateContent()
       layoutTextEditor()
       redrawSelection()
@@ -613,6 +618,7 @@ struct NoteCanvas: UIViewRepresentable {
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateContent() }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+      updateChrome()
       reportView()
       reportSelection()
     }

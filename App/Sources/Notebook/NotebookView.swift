@@ -228,7 +228,9 @@ struct NotebookView: View {
             HStack(spacing: 8) {
               Spacer()
               if notebook.pages != nil {
-                PageChip(page: page, count: pageCount) { command = .goToPage($0) }
+                PageChip(page: page, count: pageCount, onGo: { command = .goToPage($0) }) {
+                  withAnimation(Ease.outStrong(duration: 0.24)) { showPages = true }
+                }
               }
               ZoomChip(zoom: zoom) { command = .fitZoom }
             }
