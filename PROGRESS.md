@@ -277,3 +277,16 @@ Next:
   unless she has pinched (`fitWidth`, `zoomedByHand`). Live ink now measures ~2.2 pt for a 2.4 pen
   (was 4.5). Reloaded points of 2.4 still render ~1.2 pt: suspected PencilKit's `secondaryScale`
   left unset by the old point initialiser; now set to 1 (not yet seen).
+- Reloaded ink matches live ink exactly (run 43039738075, `ipad-he` profiles identical): rebuilt
+  points copy live points' size per pen size and `secondaryScale` (`InkWidth.pointStyle`, learned
+  from each live stroke of an ink without pressure; monoline defaults 1.17 and 0.36).
+- Added, not yet seen: Photo and Camera in the + menu (PhotosPicker up to 30; the system camera via
+  `CameraPicker`, shown only where there's a camera; `NSCameraUsageDescription` in project.yml,
+  English only for now, to be localised with an InfoPlist string catalog); opening where she left
+  off (saved viewport restored, else the page's width, with the animated zoom PKCanvasView honours);
+  typed text (`Notebook/TextBoxes.swift`, `TextRow` in TaliCore with a payload test): keyboard
+  button, Android's placement, finger tap on a box to type in it, tool change or tap elsewhere
+  finishes, undo, Android's text boxes drawn by the page layer.
+- Not yet for text: lasso and eraser on text boxes, A−/A+ and the side dots, Android's two-step tap
+  (pick up, then type).
+- Remember to keep `RUNNING` fresh in long sessions (a stale time lets the next scheduled session in).

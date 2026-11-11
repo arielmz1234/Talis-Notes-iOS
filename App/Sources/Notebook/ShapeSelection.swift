@@ -60,10 +60,27 @@ extension NoteCanvas.Coordinator {
   /// Takes the picked shapes off the page and into the overlay, ready to be carried.
   func liftShapes() {
     lasso.shapesBefore = shapes
+    lasso.textsBefore = texts
     let picked = pickedShapeRows
-    guard !picked.isEmpty, let canvas, let pages else { return }
+    let pickedTexts = texts.filter { lasso.pickedTexts.contains($0.id) }
+    guard !picked.isEmpty || !pickedTexts.isEmpty, let canvas, let pages else { return }
     let z = canvas.zoomScale
-    lasso.shapeLayer.sublayers = picked.map { s in
+    // Text boxes ride along as pictures of themselves at this zoom.
+    let textLayers: [CALayer] = pickedTexts.map { t in
+      let f = TextLook.frame(t)
+      let l = CALayer()
+      l.frame = CGRect(x: f.minX * z, y: f.minY * z, width: f.width * z, height: f.height * z)
+      l.contentsScale = canvas.traitCollection.displayScale
+      let format = UIGraphicsImageRendererFormat()
+      format.scale = canvas.traitCollection.displayScale
+      l.contents = UIGraphicsImageRenderer(size: l.frame.size, format: format).image { ctx in
+        ctx.cgContext.scaleBy(x: z, y: z)
+        TextLook.attributed(t).draw(with: CGRect(x: 0, y: 0, width: f.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil)
+      }.cgImage
+      return l
+    }
+    pages.pages.under.texts = texts.filter { !lasso.pickedTexts.contains($0.id) }
+    lasso.shapeLayer.sublayers = textLayers + picked.map { (s: ShapeRow) -> CALayer in
       let l = CAShapeLayer()
       let path = CGMutablePath()
       let lines = s.geometry.paths(s.size)
@@ -90,6 +107,7 @@ extension NoteCanvas.Coordinator {
   /// The carried shapes follow the drag ([shift] in world units).
   func carryShapes(_ shift: CGAffineTransform) {
     guard let canvas, lasso.shapeLayer.sublayers?.isEmpty == false else { return }
+    // (Shapes and text boxes alike.)
     let z = canvas.zoomScale
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -100,6 +118,7 @@ extension NoteCanvas.Coordinator {
   /// The overlay goes once the shapes are back on the page.
   func dropShapes() {
     lasso.shapesBefore = nil
+    lasso.textsBefore = nil
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     lasso.shapeLayer.sublayers = nil
@@ -113,6 +132,7 @@ extension NoteCanvas.Coordinator {
 struct ShapeEraser {
   var watcher: StrokeWatcher?
   var before: [ShapeRow]?
+  var textsBefore: [TextRow]?
 }
 
 extension NoteCanvas.Coordinator {
@@ -147,6 +167,13 @@ extension NoteCanvas.Coordinator {
     let q = t.location(in: canvas)
     let p = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
     let reach = parent.eraser.size / 2
+    // Text boxes go when the eraser passes over them, like a shape (Android's eraser takes them whole).
+    let textHits = texts.filter { !$0.locked && TextLook.frame($0).insetBy(dx: -CGFloat(reach), dy: -CGFloat(reach)).contains(CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))) }
+    if !textHits.isEmpty {
+      if shapeEraser.textsBefore == nil { shapeEraser.textsBefore = texts }
+      let goneTexts = Set(textHits.map(\.id))
+      setTexts(texts.filter { !goneTexts.contains($0.id) })
+    }
     let hit = shapes.filter { s in
       guard !s.locked, let b = s.geometry.bounds(s.size), b.outset(reach).contains(p) else { return false }
       let r = reach + s.size / 2
@@ -160,6 +187,10 @@ extension NoteCanvas.Coordinator {
   }
 
   private func eraseEnded() {
+    if let tb = shapeEraser.textsBefore {
+      shapeEraser.textsBefore = nil
+      if tb != texts { registerTextsChange(from: tb, to: texts) }
+    }
     guard let before = shapeEraser.before else { return }
     shapeEraser.before = nil
     let after = shapes

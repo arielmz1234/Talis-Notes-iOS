@@ -15,6 +15,9 @@ struct LassoState {
   /// The shapes picked up (ids), shown while moving in [shapeLayer] and stored again on letting go.
   var pickedShapes: Set<String> = []
   var shapesBefore: [ShapeRow]?
+  /// Text boxes picked up, the same way.
+  var pickedTexts: Set<String> = []
+  var textsBefore: [TextRow]?
   let shapeLayer = CALayer()
   var bounds: CGRect?
   /// Moving what's picked up: where the drag began and the drawing before it.
@@ -144,16 +147,25 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         lasso.moving = false
         let dx = p.x - lasso.moveStart.x, dy = p.y - lasso.moveStart.y
         let shapesBefore = lasso.shapesBefore ?? shapes
+        let textsBefore = lasso.textsBefore ?? texts
         if let before = lasso.before, abs(dx) + abs(dy) > 0.5 {
           let movedDrawing = canvas.drawing
-          record(before, shapes: shapesBefore)
+          record(before, shapes: shapesBefore, texts: textsBefore)
           sync(movedDrawing)
           let by = Affine.translate(Float(dx), Float(dy))
           setShapes(shapesBefore.map { lasso.pickedShapes.contains($0.id) ? moved($0, by: by) : $0 })
+          setTexts(textsBefore.map { t in
+            guard lasso.pickedTexts.contains(t.id) else { return t }
+            var c = t
+            c.x += Float(dx)
+            c.y += Float(dy)
+            return c
+          })
           lasso.bounds = lasso.bounds?.offsetBy(dx: dx, dy: dy)
           reportUndo()
         } else {
           setShapes(shapesBefore)
+          setTexts(textsBefore)
         }
         dropShapes()
         lasso.before = nil
@@ -198,9 +210,19 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         bounds = bounds.map { $0.union(b) } ?? b
       }
     }
+    var pickedTexts = Set<String>()
+    for t in texts where !t.locked {
+      let f = TextLook.frame(t)
+      let r = Rect(Float(f.minX), Float(f.minY), Float(f.maxX), Float(f.maxY))
+      if Lasso.touchesRect(r, loop) {
+        pickedTexts.insert(t.id)
+        bounds = bounds.map { $0.union(f) } ?? f
+      }
+    }
     lasso.picked = picked
     lasso.pickedShapes = pickedShapes
-    lasso.bounds = picked.isEmpty && pickedShapes.isEmpty ? nil : bounds
+    lasso.pickedTexts = pickedTexts
+    lasso.bounds = picked.isEmpty && pickedShapes.isEmpty && pickedTexts.isEmpty ? nil : bounds
     if ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso \(loop.count) points, \(picked.count + pickedShapes.count) picked") }
     lasso.lastPicked = picked.count + pickedShapes.count
     if lasso.bounds != nil { UISelectionFeedbackGenerator().selectionChanged() }
@@ -210,6 +232,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   func clearSelection() {
     lasso.picked = []
     lasso.pickedShapes = []
+    lasso.pickedTexts = []
     lasso.bounds = nil
     lasso.loop = []
     lasso.loopLayer.path = nil
@@ -259,16 +282,18 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   /// Makes this change one undo step: going back restores [before].
   /// Shapes are part of the step too: [beforeShapes] (by default the shapes as they are now) come back with it.
-  private func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil) {
+  private func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil, texts beforeTexts: [TextRow]? = nil) {
     let shapesThen = beforeShapes ?? shapes
+    let textsThen = beforeTexts ?? texts
     canvas?.undoManager?.registerUndo(withTarget: self) { coord in
       MainActor.assumeIsolated {
         guard let canvas = coord.canvas else { return }
         let now = canvas.drawing
         coord.clearSelection()
-        coord.record(now, shapes: coord.shapes)
+        coord.record(now, shapes: coord.shapes, texts: coord.texts)
         canvas.drawing = before
         coord.setShapes(shapesThen)
+        coord.setTexts(textsThen)
         coord.reportUndo()
       }
     }
@@ -292,10 +317,12 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     let before = canvas.drawing
     let keep = before.strokes.enumerated().filter { i, _ in i >= stored.count || !lasso.picked.contains(stored[i].stroke.id) }.map(\.element)
     let gone = lasso.pickedShapes
+    let goneTexts = lasso.pickedTexts
     clearSelection()
     record(before)
     canvas.drawing = PKDrawing(strokes: keep)
     setShapes(shapes.filter { !gone.contains($0.id) })
+    setTexts(texts.filter { !goneTexts.contains($0.id) })
     reportUndo()
   }
 
