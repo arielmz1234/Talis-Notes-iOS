@@ -193,6 +193,7 @@ struct SkyClouds: View {
 struct Sparkle: View {
   var size: CGFloat = 10
   var opacity: Double = 1
+  var color: Color = .white
 
   var body: some View {
     Canvas { ctx, s in
@@ -203,7 +204,7 @@ struct Sparkle: View {
       p.addQuadCurve(to: CGPoint(x: w / 2, y: h), control: CGPoint(x: w * 0.56, y: h * 0.56))
       p.addQuadCurve(to: CGPoint(x: 0, y: h / 2), control: CGPoint(x: w * 0.44, y: h * 0.56))
       p.addQuadCurve(to: CGPoint(x: w / 2, y: 0), control: CGPoint(x: w * 0.44, y: h * 0.44))
-      ctx.fill(p, with: .color(.white.opacity(opacity)))
+      ctx.fill(p, with: .color(color.opacity(opacity)))
     }
     .frame(width: size, height: size)
   }
