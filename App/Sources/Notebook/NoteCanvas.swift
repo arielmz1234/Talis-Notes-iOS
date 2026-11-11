@@ -444,23 +444,33 @@ struct NoteCanvas: UIViewRepresentable {
       if !didFit, canvas.bounds.width > 0 {
         didFit = true
         // The page's whole width on screen (a slide-shaped PDF page is far wider than A4), once the
-        // canvas has its size: set during its first layout, the zoom didn't take.
-        DispatchQueue.main.async { [weak self] in
-          guard let self, let canvas = self.canvas, let pages = self.pages else { return }
-          let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
-          canvas.setZoomScale(fit, animated: false)
-          if ProcessInfo.processInfo.arguments.contains("-uitest"), abs(canvas.zoomScale - fit) > 0.01 {
-            let note = "fit \(String(format: "%.2f", fit)) got \(String(format: "%.2f", canvas.zoomScale)) w \(Int(canvas.bounds.width)) world \(Int(pages.worldSize.width)) min \(canvas.minimumZoomScale) zoomView \(canvas.delegate?.viewForZooming?(in: canvas) != nil)"
-            self.parent.onHint(note)
-          }
-          self.updateContent()
-          // Start at the top of the first page, below the toolbars.
-          canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
-          self.reportView()
+        // canvas has its size. Something in the canvas's first moments set the zoom back to 100%, so
+        // it's fitted again a moment later unless she has zoomed meanwhile.
+        DispatchQueue.main.async { [weak self] in self?.fitWidth() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+          guard let self, !self.zoomedByHand else { return }
+          self.fitWidth()
         }
         return
       }
       centre()
+    }
+
+    /// She pinched: the first fit doesn't come back over it.
+    var zoomedByHand = false
+
+    func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+      if scrollView.isTracking || scrollView.isZoomBouncing || scrollView.pinchGestureRecognizer?.state == .began { zoomedByHand = true }
+    }
+
+    /// The first page's whole width on screen, from the top of the first page.
+    private func fitWidth() {
+      guard let canvas, let pages else { return }
+      let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
+      canvas.setZoomScale(fit, animated: false)
+      updateContent()
+      canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
+      reportView()
     }
 
     private func centre() {
