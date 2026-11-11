@@ -138,6 +138,15 @@ final class ScreenshotTests: XCTestCase {
       app.buttons["back"].firstMatch.tap()
       settle()
     }
+    // The seeded PDF: its slide-shaped pages, opened just for looking (Write to write on it).
+    let pdf = app.descendants(matching: .any)["notebook-Lecture slides"].firstMatch
+    if pdf.exists {
+      pdf.tap()
+      settle()
+      shot("5c-pdf")
+      app.buttons["back"].firstMatch.tap()
+      settle()
+    }
     if isPad {
       app.buttons["backups"].firstMatch.tap()
       settle()

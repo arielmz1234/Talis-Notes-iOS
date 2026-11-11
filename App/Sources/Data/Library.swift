@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 import TaliCore
 
 /// What the library shows on the left: every notebook, starred ones, Recently deleted, or a folder.
@@ -223,5 +224,23 @@ final class Library {
       if i == 0 { starred.insert(n.id) }
     }
     shelf = .all
+    // A PDF of two slides, imported as she would from her files (shows the PDF item and its badge).
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("Lecture slides.pdf")
+    let slide = CGRect(x: 0, y: 0, width: 960, height: 540)
+    let data = UIGraphicsPDFRenderer(bounds: slide).pdfData { ctx in
+      for i in 1...2 {
+        ctx.beginPage()
+        UIColor(red: 0.93, green: 0.95, blue: 1, alpha: 1).setFill()
+        ctx.fill(CGRect(x: 0, y: 0, width: 960, height: 120))
+        ("Moment of inertia, part \(i)" as NSString).draw(
+          at: CGPoint(x: 48, y: 40), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 40), .foregroundColor: UIColor.darkGray])
+        UIColor.systemBlue.setStroke()
+        let beam = UIBezierPath(rect: CGRect(x: 120, y: 260, width: 720, height: 60))
+        beam.lineWidth = 4
+        beam.stroke()
+      }
+    }
+    try? data.write(to: url)
+    Task { try? await self.importPDF(url) }
   }
 }
