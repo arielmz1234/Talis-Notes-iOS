@@ -355,12 +355,21 @@ Done:
   lining up with them, with the dashed guides and the small cross; a tick when it locks. Letting go
   saves it, one undo step, still picked up. UI test: `4f2-shape-dots` and `4f3-dot-dragged`.
 
+- Moving what the lasso picked up snaps (`startMoveSnap`, `snappedMove`): shapes and text boxes by
+  their own features, handwriting alone by the middle of its box; targets are shapes and text boxes
+  on screen.
+- The Shapes tool snaps: the start onto or lined up with other shapes, the end/corner onto them, a
+  line's end keeping its tidy angle (`ShapeTool.swift`, Android's `Mode.SHAPE_CREATE`).
+- The resize chip (`SelectionChips.swift`): white round chip with the diagonal arrow, 14 pt off the
+  frame's bottom-right; dragging scales ink, shapes and text boxes about the top-left corner
+  (`Snap.scale` lines it up), one undo step. Hidden while moving or dragging a dot.
+
 Verified: run 43095374946 compiled the core and all TaliCore tests passed (the new shape tests
-included) before it was replaced. The snapping run: see below.
+included) before it was replaced. Everything after it goes through run 43096074844: see below.
 
 Not done (next):
-- Snapping while moving a selection and while drawing with the Shapes tool / hold-to-shape (the
-  core is there: `Snap.move`, `Snap.point`, `alongLine`, `startGuides`).
-- The resize chip, move chip and rotate handle on the selection frame; Android's "a shape stays
-  picked up after it's drawn" (soft selection) — on iOS a selection only exists under the lasso tool.
+- Hold-to-shape's snapping (its line end onto edges, as `lineEndAt`).
+- The move chip and the rotate handle; Android's "a shape stays picked up after it's drawn" (soft
+  selection) — on iOS a selection only exists under the lasso tool.
+- Picture snapping (pictures aren't items of their own on iOS yet).
 - Subject shapes (`param`) still aren't drawn (templates not ported), so they can't be picked up.

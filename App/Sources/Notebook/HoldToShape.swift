@@ -78,6 +78,8 @@ struct HoldState {
   var base: ShapeRow?
   var liveAnchor: Pt = .zero
   var following = false
+  /// The snapped line's start landed on another shape.
+  var startStuck = false
   var screenLength: CGFloat = 0
   var last: CGPoint = .zero
   /// PencilKit strokes begun after this are the one that became a shape: dropped if they arrive.
@@ -164,6 +166,10 @@ extension NoteCanvas.Coordinator {
 
   private func holdEnded(_ cancelled: Bool) {
     stopHoldTimer()
+    if lasso.snap != nil && hold.live != nil {
+      lasso.snap = nil
+      showSnap([])
+    }
     if let shape = hold.live {
       hold.live = nil
       hold.base = nil
@@ -188,8 +194,18 @@ extension NoteCanvas.Coordinator {
   /// The pen rested mid-stroke: turn the stroke into a clean shape, if it clearly is one.
   private func snapToShape() {
     guard let canvas, hold.live == nil, hold.points.count > 1, hold.screenLength >= Self.holdMinLength,
-      let geometry = ShapeRecognizer.recognize(hold.points)
+      var geometry = ShapeRecognizer.recognize(hold.points)
     else { return }
+    // A line drawn from another shape starts exactly on it (Android's `snapToShape`).
+    let z = Float(canvas.zoomScale)
+    lasso.snapTargets = snapTargets(skipping: Set<String>())
+    lasso.snap = SnapSession(contact: Self.snapPt / z, align: Self.alignPt / z)
+    hold.startStuck = false
+    if case let .line(a, b, s, false, t) = geometry,
+      let on = Snap.point(a, lasso.snapTargets, SnapSession(contact: Self.snapPt / z, align: Self.alignPt / z)) {
+      geometry = .line(a: on, b: b, arrowStart: s, arrowEnd: false, ticks: t)
+      hold.startStuck = true
+    }
     let pen = currentPen
     let shape = ShapeRow(geometry: geometry, pen: pen.type.rawValue, color: pen.color, size: pen.size)
     // PencilKit lets go of the stroke it was drawing (switching its recogniser off and on cancels
@@ -209,8 +225,25 @@ extension NoteCanvas.Coordinator {
   private func followLive(_ p: CGPoint) {
     guard let canvas, let base = hold.base else { return }
     let pen = Pt(Float(p.x), Float(p.y))
-    if case let .line(a, _, _, false, _) = base.geometry {
-      hold.live?.geometry = ShapeRecognizer.snappedLine(a, pen)
+    if case let .line(a0, _, _, false, _) = base.geometry, let snap = lasso.snap {
+      // Its end locks onto another shape's corner or edge, else it snaps to the usual angles; on
+      // its tidy angle, the end slides along to line up with other shapes (Android's `updateLiveShape`).
+      let a = (hold.live?.geometry).flatMap { g -> Pt? in if case let .line(la, _, _, _, _) = g { return la }; return nil } ?? a0
+      let z = Float(canvas.zoomScale)
+      snap.begin(contact: Self.snapPt / z, align: Self.alignPt / z)
+      let (end, on) = lineEndAt(a, pen, lasso.snapTargets, snap)
+      let stuck = on ? end : nil
+      var lined: (Pt, [SnapGuide])?
+      if stuck == nil {
+        let r = Snap.alongAngle(a, end, lasso.snapTargets, snap)
+        if !r.1.isEmpty { lined = r }
+      }
+      if let b = stuck ?? lined?.0 {
+        hold.live?.geometry = .line(a: a, b: b, arrowStart: false, arrowEnd: false, ticks: false)
+      } else {
+        hold.live?.geometry = ShapeRecognizer.snappedLine(a, pen)
+      }
+      showSnap((hold.startStuck ? [SnapGuide.touch(a)] : []) + (stuck.map { [SnapGuide.touch($0)] } ?? []) + (lined?.1 ?? []))
     } else {
       let z = Float(canvas.zoomScale)
       if !hold.following && pen.dist(hold.liveAnchor) * z < 10 { return }
