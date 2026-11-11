@@ -11,6 +11,8 @@ enum Tool: Equatable {
   case eraser
   case lasso
   case shape
+  /// Points at things with a glowing trail that fades away; nothing is kept.
+  case laser
 }
 
 /// What the page layer draws besides paper: shapes and pictures from the notebook (pictures first,
@@ -259,6 +261,7 @@ struct NoteCanvas: UIViewRepresentable {
     c.installShapeEraser(on: v)
     c.installShapeTool(on: v)
     c.installTextBoxes(on: v)
+    c.installOwnInk(on: v)
     bridge?.coordinator = c
     v.minimumZoomScale = 0.2
     v.maximumZoomScale = 6
@@ -405,6 +408,8 @@ struct NoteCanvas: UIViewRepresentable {
     var shapeTool = ShapeToolState()
     /// Typing in a text box (see TextBoxes.swift).
     var textEdit = TextEditState()
+    /// The laser and the ink the notebook draws itself (see OwnInk.swift).
+    var own = OwnInkState()
     var lastTool: Tool?
     var lastPenId: String?
 
@@ -457,7 +462,7 @@ struct NoteCanvas: UIViewRepresentable {
         }
       }
       // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own loop.
-      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape
+      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape && ownInk == nil
       lasso.pan?.isEnabled = !parent.viewOnly && parent.tool == .lasso
       shapeTool.watcher?.isEnabled = !parent.viewOnly && parent.tool == .shape
       // Another tool puts down what the lasso picked up (after this update: it changes the screen's state).
@@ -476,8 +481,8 @@ struct NoteCanvas: UIViewRepresentable {
         } else {
           canvas.tool = PKEraserTool(.vector, width: CGFloat(parent.eraser.size))
         }
-      case .lasso, .shape:
-        // Our own lasso and Shapes tool (Android's): the canvas doesn't draw while they're in use.
+      case .lasso, .shape, .laser:
+        // Our own lasso, Shapes tool and laser (Android's): the canvas doesn't draw while they're in use.
         canvas.tool = PKInkingTool(.monoline, color: .clear, width: 1)
       }
     }
@@ -662,9 +667,9 @@ struct NoteCanvas: UIViewRepresentable {
           growPages(for: s)
           rebuilt.append(pk)
           next.append((key, s))
-        } else if isSnappedStroke(pk) || parent.tool == .lasso || parent.tool == .shape {
-          // The stroke that became a shape (hold-to-shape), or one PencilKit drew while the lasso was
-          // on (in clear ink): neither is kept.
+        } else if isSnappedStroke(pk) || parent.tool == .lasso || parent.tool == .shape || ownInk != nil {
+          // The stroke that became a shape (hold-to-shape), or one PencilKit drew while the lasso or
+          // a tool that draws by itself was on (in clear ink): neither is kept.
           needsRebuild = true
         } else {
           // A new stroke from the pen.

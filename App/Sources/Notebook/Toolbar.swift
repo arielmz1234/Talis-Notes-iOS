@@ -215,11 +215,12 @@ struct MainToolbar: View {
     .onChange(of: tool) { _, _ in if compactTools { withAnimation(.easeOut(duration: 0.14)) { toolsOpen = false } } }
   }
 
-  /// The tools: eraser, lasso, shapes, then the keyboard (a new text box).
+  /// The tools: eraser, lasso, laser, shapes, then the keyboard (a new text box).
   private var tools: some View {
     HStack(spacing: 0) {
       toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
       toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
+      toolButton(.laser, icon: "laser.burst", label: L("laser"), id: "laser")
       toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
       Button {
         toolsOpen = false
@@ -239,6 +240,7 @@ struct MainToolbar: View {
     switch tool {
     case .eraser: "eraser"
     case .lasso: "lasso"
+    case .laser: "laser.burst"
     case .shape: "square.on.circle"
     case .pen: "square.grid.2x2"
     }
