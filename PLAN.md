@@ -60,3 +60,28 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 - [ ] Shapes Style tab, shape dots and resize/rotate chips, snapping, fill, subject packs
 ### 7. iPhone layout throughout (view-only by default, Write button)
 ### 8. App Store readiness (icon done from `tools/icon-source.png`; privacy manifest, screenshots, store text)
+
+## Parity with Android (goal set 11 Nov 2026: everything except backups, iCloud and Drive)
+
+Worked in areas that touch different files, each by one agent in its own worktree with its own
+simulators and its own UI test class (`UITests/<Area>Tests.swift` on `ShotCase`;
+`ONLY=<Class> sh scripts/local-shots.sh …` runs one). Android item numbers are from its CLAUDE.md.
+
+- [ ] Shape editing: dots, resize/turn chips, move chip, triangle corners, part circle and arc ends,
+      circle radius dot, soft selection (items 13, 14, 17, 18, 23, 24, 58, 85)
+- [ ] Pens and ink: line styles (19), quick colours and toolbar colours per pen (20, 30, 37),
+      highlighter straight lines and square tip (25), laser (26), eraser filters and a precise
+      eraser of our own, Apple Pencil double-tap and squeeze (Android's side button)
+- [ ] Library: folder colours, rename and move, folders inside folders with tiles and a path (3),
+      the + card (63), mist when things go (8), gliding highlight everywhere (7), first-run tour (61),
+      Select several notebooks
+- [ ] Media: voice memos (44, 45), the camera with crop and looks (64, 81), PDFs and pictures from
+      other apps and drag and drop (52), Export PDF's layouts (one long page, the PDF's own pages),
+      the "Adding…" pill, pictures into a notebook, crop pictures (81)
+- [ ] Pages and paper: pull to add a page (1, 32), Endless canvas switch and page guides, your own
+      paper with opacity (2, 9), line thickness (21), page numbers, hide the toolbars with mist (5)
+- [ ] Shapes, more: the Style tab, snapping (49), fill (16), subject packs and joints (53, 55, 56),
+      my shapes ($P matcher), one rectangle tool with the square snap (38)
+- [ ] Selecting, more: lock and Unlock all (27), free form (36), screenshot lasso, the folding menu
+      and paste beside the selection (42), typed text picked up, resized, recoloured (46)
+- [ ] Phone layout pass over all of the above (67, 73)

@@ -1,50 +1,8 @@
 import XCTest
 
-/// Opens the app with sample notebooks and saves screenshots for review. CI runs this once per
-/// device and setting (light/dark, Hebrew), passing SHOT_DIR and SHOT_TAG through the environment.
+/// The tour CI has always taken: library, a new notebook, writing, the tools, reopening, a PDF.
 @MainActor
-final class ScreenshotTests: XCTestCase {
-
-  private var tag: String { ProcessInfo.processInfo.environment["SHOT_TAG"] ?? "local" }
-
-  private func launch(_ extra: [String] = []) -> XCUIApplication {
-    let app = XCUIApplication()
-    var args = ["-uitest", "-seed"]
-    let env = ProcessInfo.processInfo.environment
-    if env["SHOT_DARK"] == "1" { args.append("-dark") } else { args.append("-light") }
-    if let lang = env["SHOT_LANG"], !lang.isEmpty {
-      args += ["-AppleLanguages", "(\(lang))", "-AppleLocale", lang]
-    }
-    app.launchArguments = args + extra
-    app.launch()
-    return app
-  }
-
-  private func shot(_ name: String) {
-    // The screenshot's image carries its orientation; draw it upright so landscape shots aren't sideways.
-    let image = XCUIScreen.main.screenshot().image
-    let upright = UIGraphicsImageRenderer(size: image.size, format: { let f = UIGraphicsImageRendererFormat(); f.scale = image.scale; return f }())
-      .image { _ in image.draw(in: CGRect(origin: .zero, size: image.size)) }
-    let png = upright.pngData() ?? XCUIScreen.main.screenshot().pngRepresentation
-    let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
-    attachment.name = "\(tag)-\(name)"
-    attachment.lifetime = .keepAlways
-    add(attachment)
-    if let dir = ProcessInfo.processInfo.environment["SHOT_DIR"], !dir.isEmpty {
-      try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-      try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(tag)-\(name).png"))
-    }
-  }
-
-  private func settle() { Thread.sleep(forTimeInterval: 1.2) }
-
-  /// On a phone the tools are folded behind one button: open it when the tool isn't showing.
-  private func showTool(_ app: XCUIApplication, _ id: String) {
-    if !app.buttons[id].exists, app.buttons["tools-button"].exists {
-      app.buttons["tools-button"].firstMatch.tap()
-      settle()
-    }
-  }
+final class ScreenshotTests: ShotCase {
 
   func testLibraryAndNotebook() {
     continueAfterFailure = true

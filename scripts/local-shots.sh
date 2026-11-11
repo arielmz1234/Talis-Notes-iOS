@@ -1,7 +1,8 @@
 #!/bin/sh
 # Screenshots on a local simulator, as CI takes them:
 #   scripts/local-shots.sh "iPad Pro 13" ipad-light 0 ""      # name prefix, tag, dark (0/1), language
-# Builds first unless NO_BUILD=1. Shots land in shots/<tag>-*.png, the log in build/<tag>.log.
+# Builds first unless NO_BUILD=1. ONLY=<TestClass> runs just that class (default: every test).
+# Shots land in shots/<tag>-*.png, the log in build/<tag>.log.
 set -e
 cd "$(dirname "$0")/.."
 name="${1:-iPad Pro 13}"; tag="${2:-ipad-light}"; dark="${3:-0}"; lang="${4:-}"
@@ -22,7 +23,8 @@ rm -f shots/"$tag"-*.png
 rm -rf build/"$tag".xcresult
 TEST_RUNNER_SHOT_DIR="$PWD/shots" TEST_RUNNER_SHOT_TAG="$tag" TEST_RUNNER_SHOT_DARK="$dark" TEST_RUNNER_SHOT_LANG="$lang" \
   xcodebuild test-without-building -project TalisNotes.xcodeproj -scheme TalisNotes \
-  -destination "id=$dev" -derivedDataPath build/dd -resultBundlePath "build/$tag.xcresult" > "build/$tag.log" 2>&1 &
+  -destination "id=$dev" -derivedDataPath build/dd -resultBundlePath "build/$tag.xcresult" \
+  ${ONLY:+-only-testing:TalisNotesUITests/$ONLY} > "build/$tag.log" 2>&1 &
 run=$!
 # On Xcode 27 xcodebuild can sit forever after the last test: stop it once the summary is out.
 until ! kill -0 $run 2>/dev/null || grep -qE "Test Suite 'All tests' (passed|failed)" "build/$tag.log"; do sleep 2; done
