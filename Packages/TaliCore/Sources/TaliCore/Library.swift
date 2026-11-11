@@ -214,3 +214,67 @@ public enum Greeting: String, Sendable {
     }
   }
 }
+
+/// Folders inside folders (Android's `folderTree`, `descendants` and `folderPath`).
+public enum FolderTree {
+  /// Folders in tree order, each followed by its own folders, with how deep each one sits. A folder
+  /// whose parent is gone sits at the top level.
+  public static func ordered(_ folders: [Folder]) -> [(folder: Folder, depth: Int)] {
+    let ids = Set(folders.map(\.id))
+    var children: [String?: [Folder]] = [:]
+    for f in folders { children[f.parentId.flatMap { ids.contains($0) ? $0 : nil }, default: []].append(f) }
+    var out: [(folder: Folder, depth: Int)] = []
+    var seen = Set<String>()
+    func walk(_ parent: String?, _ depth: Int) {
+      for f in children[parent] ?? [] where seen.insert(f.id).inserted {
+        out.append((f, depth))
+        walk(f.id, depth + 1)
+      }
+    }
+    walk(nil, 0)
+    return out
+  }
+
+  /// Ids of every folder inside [id], at any depth.
+  public static func descendants(of id: String, in folders: [Folder]) -> Set<String> {
+    var out = Set<String>()
+    var frontier: Set<String> = [id]
+    while !frontier.isEmpty {
+      frontier = Set(folders.filter { f in f.parentId.map(frontier.contains) == true && out.insert(f.id).inserted }.map(\.id))
+    }
+    return out
+  }
+
+  /// The folders from the top level down to [id], [id] included.
+  public static func path(to id: String?, in folders: [Folder]) -> [Folder] {
+    var out: [Folder] = []
+    var cur = folders.first { $0.id == id }
+    while let f = cur, !out.contains(where: { $0.id == f.id }) {
+      out.insert(f, at: 0)
+      cur = folders.first { $0.id == f.parentId }
+    }
+    return out
+  }
+
+  /// A folder can't go inside itself or one of its own folders.
+  public static func canMove(_ id: String, into parent: String?, in folders: [Folder]) -> Bool {
+    guard let parent else { return true }
+    return parent != id && !descendants(of: id, in: folders).contains(parent)
+  }
+}
+
+extension Names {
+  /// Numbers names that clash with an older one in the same place (Android's `separateNames`):
+  /// [items] oldest first, each with the place it sits in; the older keeps the plain name. Returns
+  /// only the ones renamed, in order.
+  public static func apart(_ items: [(id: String, name: String, place: String?)]) -> [(id: String, name: String)] {
+    var seen: [String?: [String]] = [:]
+    var out: [(id: String, name: String)] = []
+    for item in items {
+      let name = numbered(item.name, taken: seen[item.place] ?? [])
+      if name != item.name { out.append((item.id, name)) }
+      seen[item.place, default: []].append(name)
+    }
+    return out
+  }
+}
