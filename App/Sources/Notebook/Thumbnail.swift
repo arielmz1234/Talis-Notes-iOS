@@ -36,7 +36,7 @@ enum Thumbnail {
       cg.scaleBy(x: scale, y: scale)
       cg.translateBy(x: -region.minX, y: -region.minY)
       cg.clip(to: region)
-      pages.draw(in: cg)
+      pages.paint(in: cg, scale: scale)
       cg.restoreGState()
       // The writing, drawn by PencilKit itself so it matches the page exactly.
       drawing.image(from: region, scale: scale).draw(in: CGRect(origin: .zero, size: size))

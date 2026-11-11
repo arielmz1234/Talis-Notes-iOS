@@ -3,26 +3,31 @@ import TaliCore
 
 /// The notebook's settings that the ⋯ menu changes (Android's per-notebook and app-wide ones).
 struct CanvasSettings: Equatable {
-  var paper: PaperStyle
-  var dark: Bool
+  var paper: PaperSpec
+  var dark: Bool { paper.dark }
   /// Draw with finger: nil = Auto (iOS's own Apple Pencil setting), true = on, false = off.
   var fingerDraws: Bool?
   /// Tap 2 fingers to undo, 3 to redo.
   var smartUndo: Bool
   /// Write between pages: strokes may cross the gap instead of staying on their own page.
   var between: Bool
+  /// Faint A4 page edges on an endless canvas.
+  var pageGuides = false
 }
 
 /// The ⋯ menu (Android's `MoreMenu`), kept compact: the actions as tiles, the paper choices, then
 /// one-line switches. Only what's ported shows; the rest joins as it's ported.
-struct MoreMenu: View {
+struct MoreMenu<Papers: View>: View {
   var paged: Bool
-  @Binding var paper: PaperStyle
+  @ViewBuilder var papers: Papers
   @Binding var dark: Bool
   @Binding var fingerDraws: Bool?
   @Binding var smartUndo: Bool
   @Binding var between: Bool
+  @Binding var pageGuides: Bool
   @Binding var fullScreen: Bool
+  /// Endless canvas on (true) or back to A4 pages.
+  var onEndless: (Bool) -> Void = { _ in }
   var onPages: () -> Void = {}
   var onExport: () -> Void = {}
   var onFit: () -> Void
@@ -38,26 +43,10 @@ struct MoreMenu: View {
       }
       Text(L("paper").uppercased()).font(TaliType.labelSmall).tracking(0.66).foregroundStyle(c.inkFaint)
         .padding(.leading, 6).padding(.top, 10).padding(.bottom, 6)
-      ScrollView(.horizontal) {
-        HStack(spacing: 8) {
-          ForEach(PaperStyle.allCases, id: \.self) { p in
-            Button {
-              withAnimation(.easeOut(duration: 0.15)) { paper = p }
-            } label: {
-              VStack(spacing: 4) {
-                PaperPreview(style: p, dark: dark, zoom: 2.4).frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 10))
-                  .overlay(RoundedRectangle(cornerRadius: 10).stroke(p == paper ? c.accent : c.line, lineWidth: p == paper ? 2.5 : 1))
-                Text(paperName(p)).font(TaliType.labelMedium).foregroundStyle(p == paper ? c.accent : c.inkMuted).lineLimit(1)
-              }
-            }
-            .buttonStyle(.plain)
-          }
-        }
-        .padding(.horizontal, 2).padding(.vertical, 3)
-      }
-      .scrollIndicators(.hidden)
+      papers.padding(.horizontal, 2)
       HStack(spacing: 6) {
         chip("moon", L("dark_paper"), on: dark) { dark.toggle() }
+        chip("infinity", L("endless_canvas"), on: !paged) { onEndless(paged) }
       }
       .padding(.top, 8)
       Divider().overlay(c.line).padding(.top, 8).padding(.bottom, 4)
@@ -65,7 +54,11 @@ struct MoreMenu: View {
         fingerDraws = fingerDraws == nil ? true : (fingerDraws! ? false : nil)
       }
       row("arrow.uturn.backward", L("tap_2_fingers_to_undo_3"), checked: smartUndo) { smartUndo.toggle() }
-      if paged { row("arrow.up.and.down.text.horizontal", L("write_between_pages"), checked: between) { between.toggle() } }
+      if paged {
+        row("arrow.up.and.down.text.horizontal", L("write_between_pages"), checked: between) { between.toggle() }
+      } else {
+        row("doc", L("a4_page_guides"), checked: pageGuides) { pageGuides.toggle() }
+      }
       row("arrow.up.left.and.arrow.down.right.rectangle", L("full_screen"), checked: fullScreen) { fullScreen.toggle() }
       row("eye", L("view_only"), checked: false, action: onViewOnly)
     }
@@ -97,6 +90,7 @@ struct MoreMenu: View {
       .padding(.horizontal, 10).frame(minHeight: 38)
       .background(RoundedRectangle(cornerRadius: 12).fill(on ? c.accentSoft : .clear))
       .overlay(RoundedRectangle(cornerRadius: 12).stroke(on ? .clear : c.line, lineWidth: 1))
+      .contentShape(RoundedRectangle(cornerRadius: 12))
       .animation(.easeOut(duration: 0.2), value: on)
     }
     .buttonStyle(.plain)

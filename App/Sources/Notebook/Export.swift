@@ -61,8 +61,7 @@ struct ExportSource: @unchecked Sendable {
   var layout: Pages
   /// Set for a paged notebook.
   var pageCount: Int?
-  var paper: PaperStyle
-  var dark: Bool
+  var paper: PaperSpec
 
   /// Whether imported slides sit on it (they can come back as their own pages).
   var hasPdfPages: Bool { rows.contains { PictureRow($0)?.pdfPage == true } }
@@ -78,7 +77,7 @@ struct ExportSource: @unchecked Sendable {
     layer.layout = self.layout
     layer.count = pageCount ?? 1
     layer.paper = paper
-    layer.dark = dark
+    layer.picture = paper.picture
     // A paged notebook's own pages carry their paper; anything else is painted as one sheet.
     let ownPages = pageCount != nil && layout == .a4Pages
     layer.drawsPaper = ownPages
@@ -104,11 +103,12 @@ struct ExportSource: @unchecked Sendable {
       UIGraphicsBeginPDFPageWithInfo(CGRect(origin: .zero, size: size), nil)
       guard let cg = UIGraphicsGetCurrentContext() else { continue }
       cg.saveGState()
-      cg.scaleBy(x: size.width / world.width, y: size.height / world.height)
+      let scale = size.width / world.width
+      cg.scaleBy(x: scale, y: size.height / world.height)
       cg.translateBy(x: -world.minX, y: -world.minY)
       cg.clip(to: world)
-      if !ownPages { PaperPainter.draw(paper, page: world, in: cg, scale: size.width / world.width, dark: dark) }
-      layer.draw(in: cg)
+      if !ownPages { PaperPainter.draw(paper, area: world, endless: pageCount == nil, in: cg, scale: scale, print: true, picture: layer.picture) }
+      layer.paint(in: cg, scale: scale, print: true)
       cg.restoreGState()
       drawing.image(from: world, scale: size.width / world.width * quality.sharpness).draw(in: CGRect(origin: .zero, size: size))
     }
@@ -122,7 +122,7 @@ extension NoteCanvas.Coordinator {
     guard let canvas else { return nil }
     return ExportSource(
       rows: (try? parent.db.items(of: parent.notebook.id)) ?? [], drawing: canvas.drawing, layout: layout, pageCount: paged ? pageCount : nil,
-      paper: parent.settings.paper, dark: parent.settings.dark)
+      paper: parent.settings.paper)
   }
 }
 

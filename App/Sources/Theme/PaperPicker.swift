@@ -1,32 +1,80 @@
 import SwiftUI
 import TaliCore
 
+/// A notebook's paper: a built-in style or one of hers (stored as "custom:<id>").
+enum PaperChoice: Hashable {
+  case style(PaperStyle)
+  case custom(String)
+
+  var key: String {
+    switch self {
+    case .style(let s): s.rawValue
+    case .custom(let id): id
+    }
+  }
+}
+
 /// The papers to choose from (Android's `PaperPicker`): as many tiles as fit on one row (up to
-/// [perRow]) with More at the end; More unfolds the rest underneath. Blank, Lines and Grid come
-/// first; the paper in use takes the first place when it isn't on the first row. The chosen tile
-/// sits on a soft wash that glides between them.
+/// [perRow]) with More at the end; More unfolds the rest, her own papers and Your own underneath.
+/// Blank, Lines and Grid come first; the paper in use takes the first place when it isn't on the
+/// first row (changed only while folded, so a paper picked from the open list doesn't jump up under
+/// her finger). The paper in use wears a small pencil: tapping it again opens its card. Hers are
+/// removed by holding them.
 struct PaperPicker: View {
-  @Binding var style: PaperStyle
+  @Binding var choice: PaperChoice
+  var customs: [CustomPaper] = []
   var tileWidth: CGFloat = 62
   var perRow = 4
   var dark = false
+  var onAdd: (() -> Void)?
+  var onRemove: ((CustomPaper) -> Void)?
+  var onEditCurrent: (() -> Void)?
   @Environment(\.tali) private var c
   @State private var expanded = false
   @State private var width: CGFloat = 0
+  @State private var shownCurrent: PaperChoice?
+  @State private var removing: CustomPaper?
   @Namespace private var glide
 
   static let folded: [PaperStyle] = [.BLANK, .LINES, .GRID]
 
+  init(
+    choice: Binding<PaperChoice>, customs: [CustomPaper] = [], tileWidth: CGFloat = 62, perRow: Int = 4, dark: Bool = false, onAdd: (() -> Void)? = nil,
+    onRemove: ((CustomPaper) -> Void)? = nil, onEditCurrent: (() -> Void)? = nil
+  ) {
+    _choice = choice
+    self.customs = customs
+    self.tileWidth = tileWidth
+    self.perRow = perRow
+    self.dark = dark
+    self.onAdd = onAdd
+    self.onRemove = onRemove
+    self.onEditCurrent = onEditCurrent
+  }
+
+  /// Built-in papers only (the new-notebook card).
+  init(style: Binding<PaperStyle>, tileWidth: CGFloat = 62, perRow: Int = 4, dark: Bool = false) {
+    self.init(
+      choice: Binding(get: { .style(style.wrappedValue) }, set: { if case .style(let s) = $0 { style.wrappedValue = s } }), tileWidth: tileWidth,
+      perRow: perRow, dark: dark)
+  }
+
   private var fit: Int {
-    // Until it has measured its width it shows few tiles, so it never pushes its card wider than the screen.
-    guard width > 0 else { return 3 }
+    guard width > 0 else { return max(2, perRow) }
     return min(max(Int((width + 4) / (tileWidth + 4)), 2), max(2, perRow))
   }
 
+  private var all: [PaperChoice] {
+    PaperPicker.folded.map(PaperChoice.style) + PaperStyle.allCases.filter { !PaperPicker.folded.contains($0) }.map(PaperChoice.style)
+      + customs.map { .custom($0.id) }
+  }
+
   var body: some View {
-    let usual = Array((PaperPicker.folded + PaperStyle.allCases.filter { !PaperPicker.folded.contains($0) }).prefix(fit - 1))
-    let first = usual.contains(style) ? usual : Array(([style] + usual).prefix(fit - 1))
-    let rest = PaperStyle.allCases.filter { !first.contains($0) }
+    let usual = Array(all.prefix(fit - 1))
+    let current = expanded ? (shownCurrent ?? choice) : choice
+    let known = all.contains(current)
+    let first = usual.contains(current) || !known ? usual : Array(([current] + usual).prefix(fit - 1))
+    let rest = all.filter { !first.contains($0) }
     VStack(alignment: .leading, spacing: 4) {
       HStack(spacing: 4) {
         ForEach(first, id: \.self) { tile($0) }
@@ -35,36 +83,82 @@ struct PaperPicker: View {
       if expanded {
         LazyVGrid(columns: Array(repeating: GridItem(.fixed(tileWidth), spacing: 4), count: fit), alignment: .leading, spacing: 4) {
           ForEach(Array(rest.enumerated()), id: \.element) { i, p in
-            tile(p).transition(.opacity.combined(with: .offset(y: -8)).animation(Ease.outStrong(duration: 0.22).delay(Double(min(i / fit, 3)) * 0.04)))
+            tile(p).transition(appearing(i))
           }
+          if let onAdd { ownTile(onAdd).transition(appearing(rest.count)) }
         }
         .transition(.opacity)
       }
     }
-    .slidingHighlight(glide, selected: style, fill: .color(c.accentSoft), corner: 10)
+    .slidingHighlight(glide, selected: choice, fill: .color(c.accentSoft), corner: 10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(GeometryReader { g in Color.clear.onAppear { width = g.size.width }.onChange(of: g.size.width) { _, w in width = w } })
+    .onChange(of: expanded) { _, open in shownCurrent = open ? choice : nil }
+    .confirmationDialog(
+      removing.map { L("remove_n", $0.name) } ?? "", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible
+    ) {
+      Button(L("remove"), role: .destructive) {
+        if let p = removing { onRemove?(p) }
+        removing = nil
+      }
+    } message: {
+      Text(L("it_disappears_from_the_paper_choices"))
+    }
   }
 
-  private func tile(_ p: PaperStyle) -> some View {
-    let on = p == style
-    return Button {
-      withAnimation(.easeOut(duration: 0.2)) { style = p }
-    } label: {
-      VStack(spacing: 4) {
-        PaperPreview(style: p, dark: dark, zoom: 2.6)
-          .frame(width: tileWidth * 0.62, height: tileWidth * 0.62 / 1.22)
-          .clipShape(RoundedRectangle(cornerRadius: 8))
-          .overlay(RoundedRectangle(cornerRadius: 8).stroke(on ? c.accent : c.line.opacity(0.6), lineWidth: on ? 1.5 : 1))
-        Text(paperName(p)).font(TaliFont.body(10, .semibold)).foregroundStyle(on ? c.accent : c.inkMuted).lineLimit(1).padding(.horizontal, 2)
-      }
-      .padding(.vertical, 6)
-      .frame(width: tileWidth)
-      .slidingOption(p, in: glide)
-      .contentShape(Rectangle())
+  /// Rows drift down into place and fade in, one after another.
+  private func appearing(_ i: Int) -> AnyTransition {
+    .opacity.combined(with: .offset(y: -8)).animation(Ease.outStrong(duration: 0.22).delay(Double(min(i / fit, 3)) * 0.04))
+  }
+
+  private func name(_ p: PaperChoice) -> String {
+    switch p {
+    case .style(let s): paperName(s)
+    case .custom(let id): customs.first { $0.id == id }?.name ?? ""
     }
-    .buttonStyle(.plain)
-    .accessibilityLabel(paperName(p))
+  }
+
+  @ViewBuilder private func swatch(_ p: PaperChoice) -> some View {
+    switch p {
+    case .style(let s):
+      PaperSwatch(style: s, dark: dark, look: PaperSettings.shared.looks[s.rawValue], weight: CGFloat(PaperSettings.shared.weight(s, custom: nil)))
+    case .custom(let id):
+      if let cp = customs.first(where: { $0.id == id }) { CustomPaperSwatch(paper: cp, dark: dark) }
+    }
+  }
+
+  private var swatchSize: CGSize { CGSize(width: tileWidth * 0.62, height: tileWidth * 0.62 / 1.22) }
+
+  private func tile(_ p: PaperChoice) -> some View {
+    let on = p == choice
+    let mine = customs.first { if case .custom(let id) = p { $0.id == id } else { false } }
+    return VStack(spacing: 4) {
+      swatch(p)
+        .frame(width: swatchSize.width, height: swatchSize.height)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(on ? c.accent : .clear, lineWidth: 1.5))
+        .overlay(alignment: .topTrailing) {
+          if on, onEditCurrent != nil {
+            Circle().fill(c.accent).frame(width: 16, height: 16)
+              .overlay(Image(systemName: "pencil").font(.system(size: 8, weight: .bold)).foregroundStyle(.white))
+              .offset(x: 5, y: -5)
+              .transition(.scale(scale: 0.6).combined(with: .opacity))
+          }
+        }
+      Text(name(p)).font(TaliFont.body(10, .semibold)).foregroundStyle(on ? c.accent : c.inkMuted).lineLimit(1).padding(.horizontal, 2)
+    }
+    .padding(.vertical, 6)
+    .frame(width: tileWidth)
+    .slidingOption(p, in: glide)
+    .contentShape(RoundedRectangle(cornerRadius: 10))
+    .onTapGesture {
+      if on, let onEditCurrent { onEditCurrent() } else { withAnimation(.easeOut(duration: 0.2)) { choice = p } }
+    }
+    .onLongPressGesture {
+      if let mine, onRemove != nil { removing = mine }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(name(p))
+    .accessibilityIdentifier("paper-\(p.key)")
     .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
   }
 
@@ -74,7 +168,7 @@ struct PaperPicker: View {
     } label: {
       VStack(spacing: 4) {
         RoundedRectangle(cornerRadius: 8).fill(c.sunken)
-          .frame(width: tileWidth * 0.62, height: tileWidth * 0.62 / 1.22)
+          .frame(width: swatchSize.width, height: swatchSize.height)
           .overlay(Image(systemName: "chevron.down").font(.system(size: 15, weight: .semibold)).foregroundStyle(c.inkMuted).rotationEffect(.degrees(expanded ? 180 : 0)))
         Text(expanded ? L("fewer") : L("more")).font(TaliFont.body(10, .semibold)).foregroundStyle(c.inkMuted).lineLimit(1)
       }
@@ -83,6 +177,23 @@ struct PaperPicker: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .accessibilityIdentifier("paper-more")
+  }
+
+  private func ownTile(_ action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      VStack(spacing: 4) {
+        RoundedRectangle(cornerRadius: 8).stroke(c.line, lineWidth: 1)
+          .frame(width: swatchSize.width, height: swatchSize.height)
+          .overlay(Image(systemName: "plus").font(.system(size: 16, weight: .medium)).foregroundStyle(c.accent))
+        Text(L("your_own")).font(TaliFont.body(10, .semibold)).foregroundStyle(c.inkMuted).lineLimit(1)
+      }
+      .padding(.vertical, 6)
+      .frame(width: tileWidth)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("paper-own")
   }
 }
 
@@ -102,5 +213,16 @@ struct ToggleRow: View {
     }
     .tint(c.accent)
     .padding(.vertical, 6).padding(.horizontal, 4)
+  }
+}
+
+/// How heavy a paper's lines are, as five named choices (Android's `LineWeightChoice`).
+struct LineWeightChoice: View {
+  @Binding var weight: Float
+  var body: some View {
+    let names = [L("thin"), L("normal"), L("bold"), L("bolder"), L("heavy")]
+    Segmented(
+      options: PaperWeight.choices, selected: Binding(get: { PaperWeight.nearest(weight) }, set: { weight = $0 }),
+      label: { names[PaperWeight.choices.firstIndex(of: $0) ?? 1] })
   }
 }

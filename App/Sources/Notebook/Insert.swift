@@ -74,12 +74,12 @@ extension NoteCanvas.Coordinator {
       CGPoint(x: (CGFloat(first.center.x) * zoom - canvas.bounds.width / 2), y: CGFloat(first.top) * zoom - parent.topClearance), animated: true)
   }
 
-  /// Everything on the page, as one box (for placing what comes next).
+  /// Everything on the canvas as one box: the writing, and the shapes, pictures and text under it.
   var contentBounds: Rect? {
     var boxes = stored.compactMap { $0.stroke.inputs.bounds }
     if let under = pages?.pages.under {
       boxes += under.shapes.compactMap { $0.geometry.bounds($0.size) }
-      boxes += under.texts.map { Rect($0.x, $0.y, $0.x + $0.width, $0.y + $0.fontSize * TextRow.line) }
+      boxes += under.texts.map { let f = TextLook.frame($0); return Rect(Float(f.minX), Float(f.minY), Float(f.maxX), Float(f.maxY)) }
       boxes += under.pictures.map(\.row.rect)
       boxes += under.pdfPages.map { Rect(Float($0.rect.minX), Float($0.rect.minY), Float($0.rect.maxX), Float($0.rect.maxY)) }
     }

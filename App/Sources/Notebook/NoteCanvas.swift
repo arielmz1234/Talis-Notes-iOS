@@ -29,23 +29,35 @@ struct UnderItems: @unchecked Sendable {
 final class PagesLayer: CATiledLayer, @unchecked Sendable {
   nonisolated(unsafe) var layout = Pages.portrait
   nonisolated(unsafe) var count = 1
-  nonisolated(unsafe) var paper = PaperStyle.GRID
-  nonisolated(unsafe) var dark = false
+  nonisolated(unsafe) var paper = PaperSpec(style: .GRID)
+  /// A picture paper's image, once loaded.
+  nonisolated(unsafe) var picture: CGImage?
   nonisolated(unsafe) var under = UnderItems()
   /// Off when the paper is already painted (a PDF export painting it over a whole long page).
   nonisolated(unsafe) var drawsPaper = true
+  /// An endless canvas's size so far (paper all over it); nil for pages.
+  nonisolated(unsafe) var endless: CGSize?
 
   override class func fadeDuration() -> CFTimeInterval { 0.08 }
 
-  var worldSize: CGSize { CGSize(width: CGFloat(layout.width), height: CGFloat(layout.rect(max(count, 1) - 1).bottom)) }
+  var worldSize: CGSize { endless ?? CGSize(width: CGFloat(layout.width), height: CGFloat(layout.rect(max(count, 1) - 1).bottom)) }
 
-  override func draw(in cg: CGContext) {
+  override func draw(in cg: CGContext) { paint(in: cg) }
+
+  /// Draws what's under [cg]'s clip at [scale] points (or pixels) per world unit; on a tile that's
+  /// read from its transform. [print] draws the paper as printed paper (the PDF).
+  func paint(in cg: CGContext, scale given: CGFloat? = nil, print: Bool = false) {
     let rect = cg.boundingBoxOfClipPath
-    let scale = max(cg.ctm.a / max(contentsScale, 1), 0.01)
-    for i in 0..<max(count, 1) where drawsPaper {
-      let page = CGRect(layout.rect(i))
-      guard page.intersects(rect) else { continue }
-      PaperPainter.draw(paper, page: page, in: cg, scale: scale, dark: dark)
+    let scale = given ?? max(cg.ctm.a / max(contentsScale, 1), 0.01)
+    if drawsPaper, let endless {
+      let area = rect.intersection(CGRect(origin: .zero, size: endless))
+      if !area.isNull { PaperPainter.draw(paper, area: area, endless: true, in: cg, scale: scale, print: print, picture: picture) }
+    } else if drawsPaper {
+      for i in 0..<max(count, 1) {
+        let page = CGRect(layout.rect(i))
+        guard page.intersects(rect) else { continue }
+        PaperPainter.draw(paper, area: page, in: cg, scale: scale, print: print, picture: picture)
+      }
     }
     for p in under.pdfPages where p.rect.intersects(rect) { p.page.draw(in: p.rect, cg) }
     for pic in under.pictures where pic.rect.intersects(rect) {
@@ -75,7 +87,7 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
         cg.fillPath()
       }
       cg.addPath(path)
-      cg.setStrokeColor(UIColor(argb: dark ? s.color : s.color).cgColor)
+      cg.setStrokeColor(UIColor(argb: paper.dark ? DarkInk.onDarkPaper(s.color) : s.color).cgColor)
       cg.setLineWidth(CGFloat(s.size))
       if let dash = LineDash.pattern(s.line, width: CGFloat(s.size)) { cg.setLineDash(phase: 0, lengths: dash) } else { cg.setLineDash(phase: 0, lengths: []) }
       cg.strokePath()
@@ -83,9 +95,10 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
     cg.setLineDash(phase: 0, lengths: [])
     if !under.texts.isEmpty {
       UIGraphicsPushContext(cg)
-      for t in under.texts {
+      for var t in under.texts {
         let box = TextLook.frame(t)
         guard box.intersects(rect) else { continue }
+        if paper.dark { t.color = DarkInk.onDarkPaper(t.color) }
         TextLook.attributed(t).draw(with: CGRect(x: box.minX, y: box.minY, width: box.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil)
       }
       UIGraphicsPopContext()
@@ -271,10 +284,11 @@ struct NoteCanvas: UIViewRepresentable {
     let pages = PagesView(frame: .zero)
     pages.pages.layout = notebook.pageLayout
     pages.pages.paper = settings.paper
-    pages.pages.dark = settings.dark
+    pages.pages.picture = settings.paper.picture
     v.insertSubview(pages, at: 0)
     c.canvas = v
     c.pages = pages
+    c.installPageChrome(on: v, above: pages)
     v.onResize = { [weak c] in c?.updateContent() }
     c.load()
     return v
@@ -287,8 +301,10 @@ struct NoteCanvas: UIViewRepresentable {
     c.applyTool()
     if let cmd = command {
       DispatchQueue.main.async {
-        c.run(cmd)
+        // Another update before this ran scheduled it again: run it once.
+        guard command == cmd else { return }
         command = nil
+        c.run(cmd)
       }
     }
   }
@@ -403,6 +419,8 @@ struct NoteCanvas: UIViewRepresentable {
     var hold = HoldState()
     /// The eraser on shapes (see ShapeSelection.swift).
     var shapeEraser = ShapeEraser()
+    /// Page numbers and the pull past the last page (see PageChrome.swift).
+    var pageChrome = PageChromeState()
     /// The Shapes tool (see ShapeTool.swift), and the pen last used (shapes take its look).
     var shapeTool = ShapeToolState()
     /// Typing in a text box (see TextBoxes.swift).
@@ -418,12 +436,14 @@ struct NoteCanvas: UIViewRepresentable {
       let old = applied
       applied = parent.settings
       let s = parent.settings
-      if old?.paper != s.paper || old?.dark != s.dark {
+      if old?.paper != s.paper {
         pages.pages.paper = s.paper
-        pages.pages.dark = s.dark
+        pages.pages.picture = s.paper.picture
         pages.layer.setNeedsDisplay()
         canvas.overrideUserInterfaceStyle = s.dark ? .dark : .light
+        updateChrome()
       }
+      if old?.pageGuides != s.pageGuides { updateChrome() }
       if old?.between != s.between, old != nil {
         // Strokes are hidden past their page or the page column: their masks change.
         saveNow()
@@ -450,13 +470,11 @@ struct NoteCanvas: UIViewRepresentable {
         DispatchQueue.main.async { self.finishText() }
       }
       lastTool = parent.tool
-      // Draw with finger: Auto follows iOS's own Apple Pencil setting.
-      if !ProcessInfo.processInfo.arguments.contains("-uitest") {
-        switch parent.settings.fingerDraws {
-        case nil: canvas.drawingPolicy = .default
-        case true?: canvas.drawingPolicy = .anyInput
-        case false?: canvas.drawingPolicy = .pencilOnly
-        }
+      // Draw with finger: Auto follows iOS's own Apple Pencil setting (fingers write in UI tests, which have no pencil).
+      switch parent.settings.fingerDraws {
+      case nil: canvas.drawingPolicy = ProcessInfo.processInfo.arguments.contains("-uitest") ? .anyInput : .default
+      case true?: canvas.drawingPolicy = .anyInput
+      case false?: canvas.drawingPolicy = .pencilOnly
       }
       // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own loop.
       canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape
@@ -505,12 +523,18 @@ struct NoteCanvas: UIViewRepresentable {
       case .mirrorSelection(let h): mirrorSelection(horizontal: h)
       case .arrangeSelection(let f): arrangeSelection(toFront: f)
       case .deletePage(let i): deletePage(i)
+      case .rearrangePages(let order): rearrangePages(order)
+      case .setEndless(let on): setEndless(on)
       case .goToPage(let i):
         let target = min(max(i, 0), pageCount - 1)
         let r = layout.rect(target)
         let y = CGFloat(r.top) * canvas.zoomScale - canvas.contentInset.top
         canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: y), animated: true)
       case .fitZoom:
+        if !paged {
+          fitEverything()
+          break
+        }
         guard let pages else { break }
         let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
         canvas.setZoomScale(fit, animated: true)
@@ -534,6 +558,7 @@ struct NoteCanvas: UIViewRepresentable {
     func updateContent() {
       guard let canvas, let pages else { return }
       pages.pages.count = pageCount
+      pages.pages.endless = paged ? nil : endlessSize()
       let world = pages.worldSize
       let z = canvas.zoomScale
       pages.layer.anchorPoint = .zero
@@ -541,7 +566,8 @@ struct NoteCanvas: UIViewRepresentable {
       pages.transform = CGAffineTransform(scaleX: z, y: z)
       pages.layer.position = .zero
       pages.setNeedsDisplay()
-      canvas.contentSize = CGSize(width: world.width * z, height: (world.height + 300) * z)
+      canvas.contentSize = CGSize(width: world.width * z, height: world.height * z)
+      updateChrome()
       // Until she zooms by hand, the page keeps fitting the canvas as its size settles (the screen
       // slides in, the device turns): set once early, the fit was lost.
       if didFit, !zoomedByHand, canvas.bounds.size != fittedSize, canvas.bounds.width > 0 {
@@ -572,7 +598,7 @@ struct NoteCanvas: UIViewRepresentable {
       guard let canvas, let pages else { return }
       // It opens where she left off (Android keeps the view per notebook); the first time, the page's width.
       let saved = parent.notebook.viewport.flatMap { v -> Viewport? in v.zoom > 0.05 ? v : nil }
-      let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
+      let fit = min((canvas.bounds.width - 48) / (paged ? pages.worldSize.width : CGFloat(layout.width)), 1.2)
       let zoom = saved.map { min(max(CGFloat($0.zoom), canvas.minimumZoomScale), canvas.maximumZoomScale) } ?? fit
       // Animated: PKCanvasView ignored the plain zoom change here (the zoom chip's animated one works).
       canvas.setZoomScale(zoom, animated: true)
@@ -591,10 +617,12 @@ struct NoteCanvas: UIViewRepresentable {
       guard let canvas, let pages else { return }
       let w = pages.worldSize.width * canvas.zoomScale
       let side = max((canvas.bounds.width - w) / 2, 16)
-      canvas.contentInset = UIEdgeInsets(top: parent.topClearance, left: side, bottom: 40, right: side)
+      // A little room is always left under the last page (Android's `REST_DP`); pulling opens more.
+      canvas.contentInset = UIEdgeInsets(top: parent.topClearance, left: side, bottom: CGFloat(PagePull.rest), right: side)
     }
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
+      zoomEndsPull()
       updateContent()
       layoutTextEditor()
       redrawSelection()
@@ -613,6 +641,8 @@ struct NoteCanvas: UIViewRepresentable {
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateContent() }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+      growEndless()
+      updateChrome()
       reportView()
       reportSelection()
     }
@@ -783,7 +813,11 @@ enum CanvasCommand: Equatable {
   case copySelection, cutSelection, duplicateSelection, deleteSelection, boxSelection, paste
   case recolourSelection(UInt32), thickenSelection(Float), mirrorSelection(Bool), arrangeSelection(Bool)
   case deletePage(Int)
+  /// The pages laid out again: old page numbers, top to bottom.
+  case rearrangePages([Int])
   case goToPage(Int)
+  /// One endless page, or back to A4 pages.
+  case setEndless(Bool)
 }
 
 /// The eraser as she set it in its panel.

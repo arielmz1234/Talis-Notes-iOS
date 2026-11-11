@@ -148,7 +148,7 @@ extension Library {
     let layer = PagesLayer()
     layer.layout = layout
     layer.count = pages.count
-    layer.paper = .BLANK
+    layer.paper = PaperSpec(style: .BLANK)
     layer.under.pictures = placed.prefix(1).compactMap(TalisNotes.placed)
     Thumbnail.save(id: meta.id, region: Thumbnail.previewRegion(CGRect(layout.rect(0))), pages: layer, drawing: PKDrawing(), db: db)
     reload()
