@@ -31,6 +31,12 @@ struct LassoState {
   var lastAt: CGPoint = .zero
   let loopLayer = CAShapeLayer()
   let frameLayer = CAShapeLayer()
+  /// A picked-up shape's dots, and the one being dragged (`ShapeDots.swift`).
+  let dotsLayer = CAShapeLayer()
+  var handle: Int?
+  var handleBase: ShapeRow?
+  var handleLive: ShapeRow?
+  var handleGrab = Pt(0, 0)
 }
 
 /// Strokes copied or cut, carried across notebooks (Android's `Clipboard`), in world units.
@@ -78,6 +84,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     }
     lasso.shapeLayer.zPosition = 9
     v.layer.addSublayer(lasso.shapeLayer)
+    installShapeDots(on: v)
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
@@ -120,11 +127,17 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       lasso.lastAt = CGPoint(x: q.x / canvas.zoomScale, y: q.y / canvas.zoomScale)
     }
     let p = lasso.lastAt
+    if lasso.handle != nil {
+      if phase == .changed { dragDot(to: p) } else if phase != .began { endDotDrag() }
+      return
+    }
     switch phase {
     case .began:
+      if beginDotDrag(at: p) { return }
       let pad = 8 / canvas.zoomScale
       if let b = lasso.bounds, b.insetBy(dx: -pad, dy: -pad).contains(p) {
         lasso.moving = true
+        lasso.dotsLayer.path = nil
         lasso.moveStart = p
         lasso.before = canvas.drawing
         liftShapes()
@@ -245,6 +258,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     lasso.loop = []
     lasso.loopLayer.path = nil
     lasso.frameLayer.path = nil
+    drawShapeDots()
     parent.onSelection(nil)
   }
 
@@ -268,6 +282,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   func redrawSelection() {
     if !lasso.loop.isEmpty { drawLoop() }
+    drawShapeDots()
     guard let b = lasso.bounds else {
       lasso.frameLayer.path = nil
       return
@@ -290,7 +305,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   /// Makes this change one undo step: going back restores [before].
   /// Shapes are part of the step too: [beforeShapes] (by default the shapes as they are now) come back with it.
-  private func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil, texts beforeTexts: [TextRow]? = nil) {
+  func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil, texts beforeTexts: [TextRow]? = nil) {
     let shapesThen = beforeShapes ?? shapes
     let textsThen = beforeTexts ?? texts
     canvas?.undoManager?.registerUndo(withTarget: self) { coord in

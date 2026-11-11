@@ -80,22 +80,7 @@ extension NoteCanvas.Coordinator {
       return l
     }
     pages.pages.under.texts = texts.filter { !lasso.pickedTexts.contains($0.id) }
-    lasso.shapeLayer.sublayers = textLayers + picked.map { (s: ShapeRow) -> CALayer in
-      let l = CAShapeLayer()
-      let path = CGMutablePath()
-      let lines = s.geometry.paths(s.size)
-      for line in lines where line.count > 1 {
-        path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
-      }
-      l.path = path
-      l.strokeColor = UIColor(argb: s.color).cgColor
-      l.lineWidth = CGFloat(s.size) * z
-      l.lineCap = .round
-      l.lineJoin = .round
-      if let fill = s.fill, s.geometry.closed { l.fillColor = UIColor(argb: fill).cgColor } else { l.fillColor = UIColor.clear.cgColor }
-      if let dash = LineDash.pattern(s.line, width: CGFloat(s.size) * z) { l.lineDashPattern = dash.map { NSNumber(value: Double($0)) } }
-      return l
-    }
+    lasso.shapeLayer.sublayers = textLayers + picked.map { shapeLayer(for: $0, zoom: z) }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     lasso.shapeLayer.setAffineTransform(.identity)

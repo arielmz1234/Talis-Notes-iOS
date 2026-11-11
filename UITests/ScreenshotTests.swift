@@ -122,6 +122,20 @@ final class ScreenshotTests: XCTestCase {
           .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.42)), withVelocity: .slow, thenHoldForDuration: 0.05)
         settle()
         shot("4f-shape-drawn")
+        // The lasso picks the ellipse up on its own: its four dots show; the right one stretches it.
+        showTool(app, "tool-lasso")
+        if app.buttons["tool-lasso"].exists {
+          app.buttons["tool-lasso"].firstMatch.tap()
+          settle()
+          app.coordinate(withNormalizedOffset: CGVector(dx: 0.58, dy: 0.25))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.44)), withVelocity: .slow, thenHoldForDuration: 0.05)
+          settle()
+          shot("4f2-shape-dots")
+          app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.36))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.36)), withVelocity: .slow, thenHoldForDuration: 0.05)
+          settle()
+          shot("4f3-dot-dragged")
+        }
       }
       app.buttons["pen-p1"].firstMatch.tap()
       settle()
