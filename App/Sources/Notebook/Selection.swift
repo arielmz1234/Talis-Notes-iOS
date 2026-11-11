@@ -64,7 +64,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
     // The hold runs alongside everything; the lasso alongside PencilKit's own recognisers (scrolling
     // waits for it to fail instead).
-    if g === lasso.hold { return true }
+    if g === lasso.hold || g === hold.watcher { return true }
     if g === lasso.pan { return other !== canvas?.panGestureRecognizer }
     return false
   }

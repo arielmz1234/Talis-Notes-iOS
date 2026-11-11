@@ -158,6 +158,7 @@ struct NoteCanvas: UIViewRepresentable {
     }
     c.applied = settings
     c.installSelection(on: v)
+    c.installHoldToShape(on: v)
     bridge?.coordinator = c
     v.minimumZoomScale = 0.3
     v.maximumZoomScale = 6
@@ -201,6 +202,8 @@ struct NoteCanvas: UIViewRepresentable {
     /// What's stored, in drawing order, with the key that recognises each stroke in the PKDrawing.
     var stored: [(key: StrokeKey, stroke: InkStroke)] = []
     var pageCount = 1
+    /// The highest z among shapes, so new items go on top of them.
+    var shapeZ: Int64 = 0
     var loading = false
     private var didFit = false
     private var saveWork: DispatchWorkItem?
@@ -254,10 +257,12 @@ struct NoteCanvas: UIViewRepresentable {
       let rows = (try? parent.db.items(of: parent.notebook.id)) ?? []
       var strokes: [PKStroke] = []
       stored = []
+      shapeZ = 0
       var under = UnderItems()
       for row in rows {
         if let shape = ShapeRow(row) {
           under.shapes.append(shape)
+          shapeZ = max(shapeZ, row.z)
           continue
         }
         if row.kind == 2, let pic = picture(from: row) {
@@ -283,6 +288,8 @@ struct NoteCanvas: UIViewRepresentable {
     var archive: [StrokeKey: InkStroke] = [:]
     /// The lasso and what it picked up (see Selection.swift).
     var lasso = LassoState()
+    /// Hold-to-shape (see HoldToShape.swift).
+    var hold = HoldState()
 
     /// The settings the canvas was last given, to change only what changed.
     var applied: CanvasSettings?
@@ -461,7 +468,7 @@ struct NoteCanvas: UIViewRepresentable {
       var rebuilt: [PKStroke] = []
       var needsRebuild = false
       let pen = currentPen
-      var z = (stored.map(\.stroke.z).max() ?? 0) + 1
+      var z = max(stored.map(\.stroke.z).max() ?? 0, shapeZ) + 1
       for pk in drawing.strokes {
         let key = StrokeKey(pk)
         if let i = byKey[key]?.first(where: { !used.contains($0) }) {
@@ -489,6 +496,9 @@ struct NoteCanvas: UIViewRepresentable {
           growPages(for: s)
           rebuilt.append(pk)
           next.append((key, s))
+        } else if isSnappedStroke(pk) {
+          // The stroke that became a shape (hold-to-shape): it isn't kept.
+          needsRebuild = true
         } else {
           // A new stroke from the pen.
           let s = InkStroke.from(pk, pen: pen, id: newId(), z: z)
@@ -548,11 +558,11 @@ struct NoteCanvas: UIViewRepresentable {
       }
     }
 
-    private func persistPages() {
+    func persistPages() {
       try? parent.db.run("UPDATE notebooks SET pages=? WHERE id=?", [.int(Int64(pageCount)), .text(parent.notebook.id)])
     }
 
-    private func touch() {
+    func touch() {
       saveWork?.cancel()
       let id = parent.notebook.id, db = parent.db
       let w = DispatchWorkItem { try? db.run("UPDATE notebooks SET updated=? WHERE id=?", [.int(nowMillis()), .text(id)]) }

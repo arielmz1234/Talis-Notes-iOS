@@ -69,6 +69,9 @@ final class ScreenshotTests: XCTestCase {
     start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)))
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.55))
       .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.62)))
+    // Hold-to-shape: a slightly sloping line, held at its end, snaps level.
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.78))
+      .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.8)), withVelocity: .slow, thenHoldForDuration: 1.2)
     settle()
     shot("4-notebook")
     // The pen's panel with its thickness slider (glass on iOS 26).
