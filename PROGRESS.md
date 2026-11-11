@@ -270,3 +270,10 @@ Next:
   pencil, calligraphy) keep factor 1 until measured.
 - Not done for PDFs yet: sharp pages at zoom (`SharpPdf`), the Adding… pill, Photo and Camera in
   the + menu, Save-as-draft PDFs from other apps.
+- Run 43023666787: the page chip now says 1 / 2 for the two-slide PDF; tapping the zoom chip fits
+  the slide (71%) and the slide text is crisp (pages drawn from the PDF itself as vectors,
+  `SharpPage` in NoteCanvas.swift, in the tiled page layer; the JPEG stays as the fallback).
+  The first fit on opening was still undone right after (100%); it's now fitted again 0.35 s later
+  unless she has pinched (`fitWidth`, `zoomedByHand`). Live ink now measures ~2.2 pt for a 2.4 pen
+  (was 4.5). Reloaded points of 2.4 still render ~1.2 pt: suspected PencilKit's `secondaryScale`
+  left unset by the old point initialiser; now set to 1 (not yet seen).
