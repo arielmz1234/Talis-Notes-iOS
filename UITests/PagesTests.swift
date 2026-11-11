@@ -115,6 +115,50 @@ final class PagesTests: ShotCase {
     XCTAssertTrue(pageCountShown(app, 1), "back to one A4 page")
   }
 
+  func testPagesOverview() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait
+    let app = launch()
+    settle()
+    open(app, "Exam revision")
+    // Something on page 1, so moving it shows.
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.62)))
+    settle()
+    // Tapping the page chip's number opens the overview.
+    app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", "/ 1")).firstMatch.tap()
+    settle()
+    app.buttons["Add a page"].firstMatch.tap()
+    app.buttons["Add a page"].firstMatch.tap()
+    settle()
+    shot("o1-overview")
+    app.buttons["pages-select"].firstMatch.tap()
+    settle()
+    app.buttons["Pick page 1"].firstMatch.tap()
+    app.buttons["Pick page 2"].firstMatch.tap()
+    settle()
+    shot("o2-picking")
+    app.buttons["Duplicate"].firstMatch.tap()
+    settle()
+    shot("o3-duplicated")
+    XCTAssertTrue(app.buttons["Look at page 5"].exists, "two pages copied")
+    // Hold page 1 and drag it past page 3.
+    let first = app.buttons["Look at page 1"].firstMatch
+    let third = app.buttons["Look at page 3"].firstMatch
+    first.press(forDuration: 1.0, thenDragTo: third)
+    settle()
+    shot("o4-moved")
+    app.buttons["Look at page 2"].firstMatch.tap()
+    settle()
+    app.buttons["Delete page"].firstMatch.tap()
+    settle()
+    shot("o5-delete-asks")
+    let confirm = app.buttons.matching(NSPredicate(format: "label == 'Delete page'"))
+    confirm.element(boundBy: confirm.count - 1).tap()
+    settle()
+    shot("o6-deleted")
+    XCTAssertFalse(app.buttons["Look at page 5"].exists, "one page fewer")
+  }
+
   func testPapers() {
     continueAfterFailure = true
     XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait

@@ -521,6 +521,7 @@ struct NoteCanvas: UIViewRepresentable {
       case .mirrorSelection(let h): mirrorSelection(horizontal: h)
       case .arrangeSelection(let f): arrangeSelection(toFront: f)
       case .deletePage(let i): deletePage(i)
+      case .rearrangePages(let order): rearrangePages(order)
       case .setEndless(let on): setEndless(on)
       case .goToPage(let i):
         let target = min(max(i, 0), pageCount - 1)
@@ -810,6 +811,8 @@ enum CanvasCommand: Equatable {
   case copySelection, cutSelection, duplicateSelection, deleteSelection, boxSelection, paste
   case recolourSelection(UInt32), thickenSelection(Float), mirrorSelection(Bool), arrangeSelection(Bool)
   case deletePage(Int)
+  /// The pages laid out again: old page numbers, top to bottom.
+  case rearrangePages([Int])
   case goToPage(Int)
   /// One endless page, or back to A4 pages.
   case setEndless(Bool)

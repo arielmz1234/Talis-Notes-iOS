@@ -190,10 +190,13 @@ struct NotebookView: View {
           ZStack {
             c.scrim.ignoresSafeArea().onTapGesture { withAnimation(.easeOut(duration: 0.16)) { showPages = false } }
             PagesOverview(
-              count: pageCount, current: page, bridge: bridge,
+              count: pageCount, current: page, aspect: CGFloat(notebook.pageLayout.width / notebook.pageLayout.height), bridge: bridge,
               onGo: { command = .goToPage($0) },
               onAdd: { command = .addPage },
-              onDelete: { command = .deletePage($0) },
+              onRearrange: { order, message in
+                command = .rearrangePages(order)
+                show(message)
+              },
               onClose: { withAnimation(.easeOut(duration: 0.16)) { showPages = false } }
             )
           }
