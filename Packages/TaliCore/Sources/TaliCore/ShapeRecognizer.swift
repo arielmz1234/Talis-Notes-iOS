@@ -134,7 +134,7 @@ public enum ShapeRecognizer {
     return g
   }
 
-  private static func dedupe(_ points: [Pt]) -> [Pt] {
+  static func dedupe(_ points: [Pt]) -> [Pt] {
     var out: [Pt] = []
     out.reserveCapacity(points.count)
     for p in points where out.isEmpty || out[out.count - 1].dist(p) > 0.5 { out.append(p) }

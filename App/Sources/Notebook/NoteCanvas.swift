@@ -11,6 +11,7 @@ enum Tool: Equatable {
   case eraser
   case lasso
   case shape
+  case fill
 }
 
 /// What the page layer draws besides paper: shapes and pictures from the notebook (pictures first,
@@ -22,6 +23,8 @@ struct UnderItems: @unchecked Sendable {
   var pdfPages: [(id: String, rect: CGRect, page: SharpPage)] = []
   /// Typed text boxes (drawn as real text, sharp at any zoom).
   var texts: [TextRow] = []
+  /// Filled areas: pictures behind the writing and the shapes (see FillTool.swift).
+  var fills: [FillPicture] = []
 }
 
 /// Paper, pictures and shapes for the page column, drawn in tiles off the main thread so they stay
@@ -68,6 +71,7 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
       cg.draw(pic.image, in: CGRect(origin: .zero, size: pic.rect.size))
       cg.restoreGState()
     }
+    for f in under.fills where CGRect(f.row.rect).intersects(rect) { f.draw(in: cg) }
     cg.setLineCap(.round)
     cg.setLineJoin(.round)
     for s in under.shapes {
@@ -235,7 +239,7 @@ struct NoteCanvas: UIViewRepresentable {
   var bridge: CanvasBridge? = nil
   var eraser = EraserSettings()
   /// The shape the Shapes tool draws.
-  var shapeKind: ShapeKind = .RECTANGLE
+  var shape: ShapeSource = .kind(.LINE)
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
   /// Where what the lasso picked up is on screen (window coordinates), or nil; for the selection menu.
@@ -273,6 +277,7 @@ struct NoteCanvas: UIViewRepresentable {
     c.installHoldToShape(on: v)
     c.installShapeEraser(on: v)
     c.installShapeTool(on: v)
+    c.installFillTool(on: v)
     c.installTextBoxes(on: v)
     bridge?.coordinator = c
     v.minimumZoomScale = 0.2
@@ -388,6 +393,11 @@ struct NoteCanvas: UIViewRepresentable {
           shapeZ = max(shapeZ, row.z)
           continue
         }
+        if let fill = FillPicture(row) {
+          under.fills.append(fill)
+          shapeZ = max(shapeZ, row.z)
+          continue
+        }
         if row.kind == 2, let sharp = SharpPage.of(row) {
           under.pdfPages.append(sharp)
           continue
@@ -423,6 +433,8 @@ struct NoteCanvas: UIViewRepresentable {
     var pageChrome = PageChromeState()
     /// The Shapes tool (see ShapeTool.swift), and the pen last used (shapes take its look).
     var shapeTool = ShapeToolState()
+    /// The Fill tool (see FillTool.swift).
+    var fillTool = FillToolState()
     /// Typing in a text box (see TextBoxes.swift).
     var textEdit = TextEditState()
     var lastTool: Tool?
@@ -477,7 +489,8 @@ struct NoteCanvas: UIViewRepresentable {
       case false?: canvas.drawingPolicy = .pencilOnly
       }
       // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own loop.
-      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape
+      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape && parent.tool != .fill
+      applyFillTool()
       lasso.pan?.isEnabled = !parent.viewOnly && parent.tool == .lasso
       shapeTool.watcher?.isEnabled = !parent.viewOnly && parent.tool == .shape
       // Another tool puts down what the lasso picked up (after this update: it changes the screen's state).
@@ -496,8 +509,8 @@ struct NoteCanvas: UIViewRepresentable {
         } else {
           canvas.tool = PKEraserTool(.vector, width: CGFloat(parent.eraser.size))
         }
-      case .lasso, .shape:
-        // Our own lasso and Shapes tool (Android's): the canvas doesn't draw while they're in use.
+      case .lasso, .shape, .fill:
+        // Our own lasso, Shapes and Fill tools (Android's): the canvas doesn't draw while they're in use.
         canvas.tool = PKInkingTool(.monoline, color: .clear, width: 1)
       }
     }
@@ -694,7 +707,7 @@ struct NoteCanvas: UIViewRepresentable {
           growPages(for: s)
           rebuilt.append(pk)
           next.append((key, s))
-        } else if isSnappedStroke(pk) || parent.tool == .lasso || parent.tool == .shape {
+        } else if isSnappedStroke(pk) || parent.tool == .lasso || parent.tool == .shape || parent.tool == .fill {
           // The stroke that became a shape (hold-to-shape), or one PencilKit drew while the lasso was
           // on (in clear ink): neither is kept.
           needsRebuild = true

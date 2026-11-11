@@ -187,8 +187,9 @@ extension NoteCanvas.Coordinator {
 
   /// The pen rested mid-stroke: turn the stroke into a clean shape, if it clearly is one.
   private func snapToShape() {
-    guard let canvas, hold.live == nil, hold.points.count > 1, hold.screenLength >= Self.holdMinLength,
-      let geometry = ShapeRecognizer.recognize(hold.points)
+    // Her own shapes and the shapes of the subjects she starred are matched too (not every subject's).
+    guard let canvas, ShapeSettings.holdToShape, hold.live == nil, hold.points.count > 1, hold.screenLength >= Self.holdMinLength,
+      let geometry = ShapeRecognizer.recognize(hold.points, custom: ShapeSettings.customShapes, packs: ShapeSettings.starredShapes)
     else { return }
     let pen = currentPen
     let shape = ShapeRow(geometry: geometry, pen: pen.type.rawValue, color: pen.color, size: pen.size)

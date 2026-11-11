@@ -51,7 +51,6 @@ public enum Arrow {
 }
 
 /// A shape's geometry as the Android app stores it (JSON with a "type" key, `model/Shapes.kt`).
-/// This port draws every kind; designs from the subject packs ("param") are kept but not drawn yet.
 public indirect enum ShapeGeometry: Sendable, Equatable {
   case line(a: Pt, b: Pt, arrowStart: Bool, arrowEnd: Bool, ticks: Bool)
   case poly(points: [Pt], closed: Bool, smooth: Bool = false, rotation: Float = 0)
@@ -62,8 +61,8 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
   case triangle(a: Pt, b: Pt, c: Pt)
   case load(a: Pt, b: Pt, depth: Float, count: Int)
   case group([ShapeGeometry])
-  /// A subject-pack design (its template isn't ported yet).
-  case param
+  /// A subject shape with joints, rebuilt from its template (ParamShape.swift).
+  case param(ParamShape)
 
   /// Polylines to ink, each one continuous stroke. [penSize] sizes arrowheads.
   public func paths(_ penSize: Float) -> [[Pt]] {
@@ -118,8 +117,8 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
       return out
     case let .group(parts):
       return parts.flatMap { $0.paths(penSize) }
-    case .param:
-      return []
+    case let .param(p):
+      return p.paths(penSize)
     }
   }
 
@@ -167,7 +166,7 @@ public indirect enum ShapeGeometry: Sendable, Equatable {
       guard let a = pt("a"), let bb = pt("b") else { return nil }
       return .load(a: a, b: bb, depth: f("depth"), count: Int(f("count", 2)))
     case "group": return .group(((o["parts"] as? [Any]) ?? []).compactMap(decode))
-    case "param": return .param
+    case "param": return ParamShape(json: o).map(ShapeGeometry.param)
     default: return nil
     }
   }
@@ -242,8 +241,8 @@ extension ShapeGeometry {
       o = ["type": "load", "a": pt(a), "b": pt(b), "depth": num(depth), "count": count]
     case let .group(parts):
       o = ["type": "group", "parts": parts.map(\.json)]
-    case .param:
-      o = ["type": "param"]
+    case let .param(p):
+      o = p.json
     }
     return o
   }
@@ -275,7 +274,7 @@ extension ShapeGeometry {
     case let .triangle(a, b, c): return .triangle(a: m.apply(a), b: m.apply(b), c: m.apply(c))
     case let .load(a, b, depth, count): return .load(a: m.apply(a), b: m.apply(b), depth: depth * s, count: count)
     case let .group(parts): return .group(parts.map { $0.transformed(m) })
-    case .param: return .param
+    case let .param(p): return .param(p.transformed(m))
     }
   }
 }

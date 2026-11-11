@@ -35,7 +35,7 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
       finishText()
       return
     }
-    guard !parent.viewOnly, parent.tool != .lasso else { return }
+    guard !parent.viewOnly, parent.tool != .lasso, parent.tool != .fill else { return }
     let q = g.location(in: canvas)
     let p = CGPoint(x: q.x / canvas.zoomScale, y: q.y / canvas.zoomScale)
     if let t = texts.last(where: { !$0.locked && TextLook.frame($0).insetBy(dx: -6, dy: -6).contains(p) }) { editText(t) }

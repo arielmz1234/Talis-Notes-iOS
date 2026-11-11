@@ -4,6 +4,8 @@ import SwiftUI
 /// Draw a box around it, Delete, on a soft-edged cloud. It sits above the selection, or below it
 /// when there's no room above, and keeps clear of the toolbars.
 struct SelectionMenu: View {
+  /// Save as shape, offered when writing or shapes are picked up.
+  var onSaveShape: (() -> Void)? = nil
   var onCommand: (CanvasCommand) -> Void
   @Environment(\.tali) private var c
   /// ⋯ adds the rest of the buttons in the same row, right after itself.
@@ -43,6 +45,7 @@ struct SelectionMenu: View {
             ToolIcon(system: "square.3.layers.3d.bottom.filled", label: L("send_to_back")) { onCommand(.arrangeSelection(false)) }
             ToolIcon(system: "arrow.left.and.right", label: L("mirror_left_to_right")) { onCommand(.mirrorSelection(true)) }
             ToolIcon(system: "arrow.up.and.down", label: L("mirror_upside_down")) { onCommand(.mirrorSelection(false)) }
+            if let onSaveShape { ToolIcon(system: "sparkles", label: L("save_as_shape"), action: onSaveShape).accessibilityIdentifier("save-as-shape") }
           }
           .transition(.opacity.combined(with: .offset(x: -8)))
         }
@@ -94,6 +97,7 @@ struct SelectionMenu: View {
 struct SelectionMenuLayer: View {
   var selection: CGRect
   var narrow: Bool
+  var onSaveShape: (() -> Void)? = nil
   var onCommand: (CanvasCommand) -> Void
   @State private var size = CGSize(width: 290, height: 52)
 
@@ -108,7 +112,7 @@ struct SelectionMenuLayer: View {
       let below = rect.maxY + gap
       let y = above >= topLimit ? above : (below <= bottomLimit ? below : min(max(rect.minY + gap, topLimit), max(bottomLimit, topLimit)))
       let x = min(max(rect.midX - size.width / 2, gap), max(geo.size.width - size.width - gap, gap))
-      SelectionMenu(onCommand: onCommand)
+      SelectionMenu(onSaveShape: onSaveShape, onCommand: onCommand)
         .fixedSize()
         .background(GeometryReader { g in Color.clear.onAppear { size = g.size }.onChange(of: g.size) { _, v in size = v } })
         .position(x: x + size.width / 2, y: y + size.height / 2)
