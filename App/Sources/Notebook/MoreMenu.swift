@@ -24,6 +24,7 @@ struct MoreMenu: View {
   @Binding var between: Bool
   @Binding var fullScreen: Bool
   var onPages: () -> Void = {}
+  var onExport: () -> Void = {}
   var onFit: () -> Void
   var onViewOnly: () -> Void
   @Environment(\.tali) private var c
@@ -33,6 +34,7 @@ struct MoreMenu: View {
       HStack(spacing: 6) {
         if paged { tile("book.pages", L("pages"), action: onPages) }
         tile("arrow.up.left.and.arrow.down.right", paged ? L("whole_page") : L("everything"), action: onFit)
+        tile("square.and.arrow.up", L("export_pdf"), action: onExport)
       }
       Text(L("paper").uppercased()).font(TaliType.labelSmall).tracking(0.66).foregroundStyle(c.inkFaint)
         .padding(.leading, 6).padding(.top, 10).padding(.bottom, 6)

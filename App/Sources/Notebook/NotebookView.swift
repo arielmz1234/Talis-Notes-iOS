@@ -51,6 +51,7 @@ struct NotebookView: View {
   @State private var hintTask: Task<Void, Never>?
   @State private var bridge = CanvasBridge()
   @State private var showPages = false
+  @State private var exporting = false
   /// Draw with finger: -1 Auto, 0 off, 1 on (app-wide, as on Android).
   @AppStorage("fingerDraws") private var fingerDrawsRaw = -1
   @AppStorage("smartUndo") private var smartUndo = true
@@ -168,6 +169,12 @@ struct NotebookView: View {
               onDelete: { command = .deletePage($0) },
               onClose: { withAnimation(.easeOut(duration: 0.16)) { showPages = false } }
             )
+          }
+          .transition(.opacity)
+        }
+        if exporting {
+          DialogOverlay(onClose: { withAnimation(.easeOut(duration: 0.16)) { exporting = false } }) {
+            ExportCard(bridge: bridge, paged: notebook.pages != nil) { withAnimation(.easeOut(duration: 0.16)) { exporting = false } }
           }
           .transition(.opacity)
         }
@@ -290,6 +297,10 @@ struct NotebookView: View {
               onPages: {
                 moreOpen = false
                 withAnimation(Ease.outStrong(duration: 0.24)) { showPages = true }
+              },
+              onExport: {
+                moreOpen = false
+                withAnimation(Ease.outStrong(duration: 0.24)) { exporting = true }
               },
               onFit: {
                 moreOpen = false
