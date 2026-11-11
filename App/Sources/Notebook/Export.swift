@@ -81,7 +81,7 @@ extension CanvasBridge {
 }
 
 /// A PDF for the system's save screen.
-struct PDFDocument: FileDocument {
+struct ExportedPDF: FileDocument {
   static var readableContentTypes: [UTType] { [.pdf] }
   var data: Data
   init(data: Data) { self.data = data }
@@ -98,7 +98,7 @@ struct ExportCard: View {
   @Environment(\.tali) private var c
   @State private var quality = PdfQuality.best
   @State private var made: [PdfQuality: Data] = [:]
-  @State private var saving: PDFDocument?
+  @State private var saving: ExportedPDF?
   @State private var sharing: URL?
 
   var body: some View {
@@ -116,7 +116,7 @@ struct ExportCard: View {
       HStack(spacing: 10) {
         Spacer()
         Button(L("cancel"), action: onClose).buttonStyle(QuietButtonStyle())
-        Button(L("save")) { if let d = made[quality] { saving = PDFDocument(data: d) } }.buttonStyle(QuietButtonStyle())
+        Button(L("save")) { if let d = made[quality] { saving = ExportedPDF(data: d) } }.buttonStyle(QuietButtonStyle())
         Button(L("share")) { if let d = made[quality] { sharing = write(d) } }.buttonStyle(PrimaryButtonStyle())
       }
     }
