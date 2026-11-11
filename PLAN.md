@@ -72,19 +72,25 @@ simulators and its own UI test class (`UITests/<Area>Tests.swift` on `ShotCase`;
 - [ ] Pens and ink: line styles (19), quick colours and toolbar colours per pen (20, 30, 37),
       highlighter straight lines and square tip (25), laser (26), eraser filters and a precise
       eraser of our own, Apple Pencil double-tap and squeeze (Android's side button)
-- [ ] Library: folder colours, rename and move, folders inside folders with tiles and a path (3),
+- [x] Library: folder colours, rename and move, folders inside folders with tiles and a path (3),
       the + card (63), mist when things go (8), gliding highlight everywhere (7), first-run tour (61),
-      Select several notebooks
+      Select several notebooks. Merged 12 Nov. Left: the tour has 4 of 8 steps and Settings has no
+      Tips card (both wait for notebook features); hold menus are iOS context menus.
 - [x] Media: voice memos (44, 45), the camera with crop and looks (64, 81), PDFs and pictures from
       other apps and drag and drop (52), Export PDF's layouts (one long page, the PDF's own pages),
       the "Adding…" pill, pictures into a notebook, crop pictures (81). Merged 11 Nov; MediaTests pass
       on iPad. Not on a simulator: live camera, real microphone, a real drag or Open in. Left: crop
       only right after adding (needs pictures in the lasso), no share extension, writing exports as a
       picture (PencilKit), memos don't follow page delete/reorder.
-- [ ] Pages and paper: pull to add a page (1, 32), Endless canvas switch and page guides, your own
-      paper with opacity (2, 9), line thickness (21), page numbers, hide the toolbars with mist (5)
-- [ ] Shapes, more: the Style tab, snapping (49), fill (16), subject packs and joints (53, 55, 56),
-      my shapes ($P matcher), one rectangle tool with the square snap (38)
+- [x] Pages and paper: pull to add a page (1, 32), Endless canvas switch and page guides, your own
+      paper with opacity (2, 9), line thickness (21), page numbers, hide the toolbars with mist (5),
+      the pages overview (move, pick several). Merged 12 Nov. Left: the new-notebook card doesn't offer
+      her papers; dragging a picked group of pages; the overview's Duplicate to check by hand (XCUITest
+      taps Delete instead on the iPad Pro 13, likely the simulator).
+- [x] Shapes, more: the Style tab, fill (16), subject packs and joints (53, 55, 56), my shapes ($P
+      matcher), one rectangle tool with the square snap (38). Merged 12 Nov. Left: snapping (49),
+      fills following the lasso and eraser, joint dots (with shape editing), Save as shape on a phone
+      (the selection menu runs off the edge).
 - [ ] Selecting, more: lock and Unlock all (27), free form (36), screenshot lasso, the folding menu
       and paste beside the selection (42), typed text picked up, resized, recoloured (46)
 - [ ] Phone layout pass over all of the above (67, 73)
