@@ -10,6 +10,33 @@
    screenshots, macOS runners sometimes queue). Batch changes, and read compile errors with
    `gh run view <id> --log-failed | grep error:`.
 
+## Moving to a Mac (11 Nov 2026, end of session 2)
+
+The owner is continuing on a MacBook. There, build and test locally instead of waiting ~35 min for CI:
+
+```bash
+git clone https://github.com/arielmz1234/Talis-Notes-iOS && cd Talis-Notes-iOS
+brew install xcodegen && xcodegen generate          # makes TalisNotes.xcodeproj (never hand-edit it)
+swift test --package-path Packages/TaliCore          # 79 core tests
+open TalisNotes.xcodeproj                            # run on an iPad simulator, or a USB iPad
+```
+
+- Needs Xcode 26 (CI uses Xcode 26.6 on macos-26, iOS 26 simulators); the app targets iOS 17+.
+- UI screenshot tests: `xcodebuild test -scheme TalisNotes -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)'`
+  with env `TEST_RUNNER_SHOT_DIR=$PWD/shots` (see `.github/workflows`).
+- Running on a real iPad from Xcode with a free Apple ID works (Signing & Capabilities → your
+  team); it's re-signed every 7 days. iCloud stays off without a paid account.
+- The Android app (`Talis-Notes`, the spec) can be cloned beside it for reference.
+- Test-build-only diagnostics still in the code, to remove once seen: the ink hint in
+  `NoteCanvas.sync`/`load` ("live tool … | loaded …"), the fit note in `fitWidth`'s caller
+  ("fit … got …"), the lasso hints in `Selection.finishLoop`. All only under `-uitest`.
+
+**Last CI run checked: 43062180296 (green).** Pushed after it and not yet seen in CI: keyboard
+avoidance off for the canvas (text box scrolled below the toolbars), refit while the canvas size
+settles (iPhone page fit), the phone's folded tools, the test's tap-inside-the-box fix, A−/A+.
+First thing on the Mac: run the app and check those (typing a text box on iPad and iPhone, the
+iPhone opening fitted, the phone tools button).
+
 ## Session 1 (10 Nov 2026, the owner's Windows PC)
 
 Environment: Windows, no Swift or Xcode locally, Docker not running. CI on GitHub Actions

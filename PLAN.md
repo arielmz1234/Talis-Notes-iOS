@@ -41,7 +41,7 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 - [x] Our own lasso and selection menu (with ⋯), page overview, Export PDF
 - [ ] Precise eraser of our own; lasso UI test picking up
 - [x] iPhone: opens view-only, Write button remembered per notebook
-- [ ] Toolbar, panels, top bar (quick open, undo/redo, eye, ⋯)
+- [x] Toolbar, panels, top bar (quick open, undo/redo, eye, ⋯); phone toolbar with folded tools
 
 ### 4. Backups
 - [x] Android ink format (`StrokeInputBatch.encode`: gzip'd protobuf) read/write; shape JSON read (drawing only)
@@ -50,8 +50,13 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 - [ ] Google Drive (same layout and appProperties as Android)
 
 ### 5. PDFs, pictures, text
+- [x] + menu (Notebook, File, Camera, Photo); PDF and picture items with Android's naming and badges
+- [x] PDF pages drawn as vectors (sharp at any zoom); open for looking until Write
+- [x] Typed text: keyboard button, Android placement, tap to edit, A−/A+, lasso and eraser
+- [ ] PDF export of imported PDFs at full quality; "Adding…" pill; drafts from other apps
 ### 6. Shapes, hold-to-shape, snapping, fill, the rest of CLAUDE.md
 - [x] Hold-to-shape (recogniser ported with its tests; shapes stored the Android way)
-- [ ] Shapes in the eraser and lasso; Shapes tool and panel; snapping; fill
+- [x] Shapes in the eraser and lasso; Shapes tool and panel (standard + civil symbols)
+- [ ] Shapes Style tab, shape dots and resize/rotate chips, snapping, fill, subject packs
 ### 7. iPhone layout throughout (view-only by default, Write button)
 ### 8. App Store readiness (icon done from `tools/icon-source.png`; privacy manifest, screenshots, store text)

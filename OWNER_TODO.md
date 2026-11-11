@@ -1,5 +1,11 @@
 # Things only you can do
 
+## 0. Now on a Mac (11 Nov 2026)
+
+See the top of PROGRESS.md for building and testing locally. The scheduled task on the Windows PC
+("talis-notes-ios-port") still runs every few hours until 17 Nov; turn it off there (or in Claude's
+scheduled tasks) so it doesn't push to `main` while you work on the Mac.
+
 Nothing here is blocking the work right now. Each item says when it starts to matter.
 
 ## 1. Try it on an iPad by sideloading (when you want to, from Windows)
