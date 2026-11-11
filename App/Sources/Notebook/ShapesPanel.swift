@@ -11,7 +11,15 @@ struct ShapeIcon: View {
   var body: some View {
     Canvas { ctx, sz in
       let grid: Float = 66, pad: Float = 8
-      let g = kind.inBox(Pt(pad, pad + (kind == .ELLIPSE ? 14 : 0)), Pt(grid - pad, grid - pad - (kind == .ELLIPSE ? 14 : 0)))
+      let mid = Pt(grid / 2, grid / 2), r = grid / 2 - pad
+      let g: ShapeGeometry
+      switch kind {
+      // Drawn from their centre, so their icons are built round the tile's middle.
+      case .CIRCLE: g = .ellipse(center: mid, rx: r, ry: r, rotation: 0)
+      case .PART_CIRCLE: g = .sector(center: mid, radius: r, start: .pi / 4, sweep: 1.5 * .pi)
+      case .ELLIPSE: g = kind.inBox(Pt(pad, pad + 14), Pt(grid - pad, grid - pad - 14))
+      default: g = kind.inBox(Pt(pad, pad), Pt(grid - pad, grid - pad))
+      }
       let k = sz.width / CGFloat(grid)
       var path = Path()
       for line in g.paths(2.6) where line.count > 1 {

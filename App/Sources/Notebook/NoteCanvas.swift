@@ -281,6 +281,12 @@ struct NoteCanvas: UIViewRepresentable {
       }
       pages?.pages.under = under
       canvas.drawing = PKDrawing(strokes: strokes)
+      if ProcessInfo.processInfo.arguments.contains("-uitest"), let first = strokes.first, first.path.count > 0 {
+        let mid = first.path[first.path.count / 2]
+        let live = UserDefaults.standard.string(forKey: "uitest-ink") ?? "-"
+        let note = "\(live) | loaded point \(String(format: "%.2f", mid.size.width)) force \(String(format: "%.2f", mid.force))"
+        DispatchQueue.main.async { self.parent.onHint(note) }
+      }
       loading = false
       updateContent()
       applyTool()
@@ -348,7 +354,10 @@ struct NoteCanvas: UIViewRepresentable {
       canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape
       lasso.pan?.isEnabled = !parent.viewOnly && parent.tool == .lasso
       shapeTool.watcher?.isEnabled = !parent.viewOnly && parent.tool == .shape
-      if parent.tool != .lasso { clearSelection() }
+      // Another tool puts down what the lasso picked up (after this update: it changes the screen's state).
+      if parent.tool != .lasso, lasso.bounds != nil || !lasso.loop.isEmpty {
+        DispatchQueue.main.async { self.clearSelection() }
+      }
       switch parent.tool {
       case .pen(let id):
         lastPenId = id
@@ -518,7 +527,9 @@ struct NoteCanvas: UIViewRepresentable {
           if ProcessInfo.processInfo.arguments.contains("-uitest"), pk.path.count > 0 {
             let mid = pk.path[pk.path.count / 2]
             let sizes = pk.path.map { $0.size.width }
-            parent.onHint("ink tool \(pen.size) point \(String(format: "%.2f", mid.size.width)) max \(String(format: "%.2f", sizes.max() ?? 0)) n \(pk.path.count)")
+            let note = "live tool \(pen.size) point \(String(format: "%.2f", mid.size.width)) max \(String(format: "%.2f", sizes.max() ?? 0)) force \(String(format: "%.2f", mid.force))"
+            UserDefaults.standard.set(note, forKey: "uitest-ink")
+            parent.onHint(note)
           }
           z += 1
           changed.append(s)

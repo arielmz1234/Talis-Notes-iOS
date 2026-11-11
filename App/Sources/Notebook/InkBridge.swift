@@ -155,6 +155,12 @@ struct InkStroke {
 
   // MARK: PencilKit
 
+  /// The force PencilKit is given for a stored pressure: pens without pressure always the neutral 1
+  /// (a finger's stroke stores 0, which PencilKit drew as a hairline), others never below a light touch.
+  private func force(_ pressure: CGFloat) -> CGFloat {
+    pen.pressureSensitive ? max(pressure * 2, 0.4) : 1
+  }
+
   /// The PencilKit stroke that draws it, kept to [mask] (its page) when given.
   func pkStroke(mask: UIBezierPath?) -> PKStroke {
     let ink = PKInk(pen.ink, color: UIColor(argb: color))
@@ -166,7 +172,7 @@ struct InkStroke {
       let tilt = CGFloat(p.tilt ?? 0)
       return PKStrokePoint(
         location: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)), timeOffset: TimeInterval(p.t), size: CGSize(width: width, height: width),
-        opacity: 1, force: max(pressure * 2, 0.01), azimuth: CGFloat(p.orientation ?? 0), altitude: .pi / 2 - tilt)
+        opacity: 1, force: force(pressure), azimuth: CGFloat(p.orientation ?? 0), altitude: .pi / 2 - tilt)
     }
     return PKStroke(ink: ink, path: PKStrokePath(controlPoints: points, creationDate: start), transform: .identity, mask: mask)
   }
