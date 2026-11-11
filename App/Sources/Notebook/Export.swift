@@ -3,7 +3,7 @@ import SwiftUI
 import TaliCore
 import UniformTypeIdentifiers
 
-/// PDF quality (Android's `PdfQuality`), as how sharp the writing and pictures are drawn.
+/// PDF quality (Android's `PdfQuality`): how sharp pictures and slides are kept.
 enum PdfQuality: CaseIterable {
   case best, balanced, light
 
@@ -21,6 +21,14 @@ enum PdfQuality: CaseIterable {
     case .light: L("pdf_quality_light_detail")
     }
   }
+  /// Pixels per world unit (1/160 inch) pictures are reduced to: 150 or 75 dpi; nil keeps them whole.
+  var picturePixelsPerUnit: CGFloat? {
+    switch self {
+    case .best: nil
+    case .balanced: 150 / 160
+    case .light: 75 / 160
+    }
+  }
   /// Pixels per PDF point for the writing.
   var sharpness: CGFloat {
     switch self {
@@ -31,52 +39,95 @@ enum PdfQuality: CaseIterable {
   }
 }
 
-extension NoteCanvas.Coordinator {
-  /// The notebook as an A4 PDF (Android's `Exporter.pdf`): every page of a paged notebook; an
-  /// endless canvas cut into A4 pages, empty ones skipped.
-  func makePDF(_ quality: PdfQuality) -> Data? {
-    guard let canvas, let pages else { return nil }
-    let drawing = canvas.drawing
-    var rects: [CGRect] = []
-    if paged {
-      rects = (0..<pageCount).map { CGRect(layout.rect($0)) }
-    } else {
-      let w = CGFloat(Pages.portrait.width), h = CGFloat(Pages.portrait.height)
-      let content = drawing.bounds
-      if content.isNull || content.isEmpty {
-        rects = [CGRect(x: 0, y: 0, width: w, height: h)]
-      } else {
-        for row in Int(floor(content.minY / h))...Int(floor(content.maxY / h)) {
-          for col in Int(floor(content.minX / w))...Int(floor(content.maxX / w)) {
-            let r = CGRect(x: CGFloat(col) * w, y: CGFloat(row) * h, width: w, height: h)
-            if drawing.strokes.contains(where: { $0.renderBounds.intersects(r) }) { rects.append(r) }
-          }
-        }
+/// The export dialog's main choice (Android's `ExportChoice`): a quality, or one long page.
+enum ExportChoice: CaseIterable {
+  case best, balanced, light, long
+
+  var quality: PdfQuality {
+    switch self {
+    case .best, .long: .best
+    case .balanced: .balanced
+    case .light: .light
+    }
+  }
+  var label: String { self == .long ? L("one_long_page") : quality.name }
+  var detail: String { self == .long ? L("everything_on_one_long_page_sized") : quality.detail }
+}
+
+/// Everything an export needs, read from the canvas on the main thread so the PDF can be made off it.
+struct ExportSource: @unchecked Sendable {
+  var rows: [ItemRow]
+  var drawing: PKDrawing
+  var layout: Pages
+  /// Set for a paged notebook.
+  var pageCount: Int?
+  var paper: PaperStyle
+  var dark: Bool
+
+  /// Whether imported slides sit on it (they can come back as their own pages).
+  var hasPdfPages: Bool { rows.contains { PictureRow($0)?.pdfPage == true } }
+
+  /// The PDF (Android's `Exporter.pdf`): pages cut by [layout], each exactly its size in points (A4 is
+  /// 595 × 842), the paper, pictures at [quality]'s resolution (Best draws slides from the PDF itself),
+  /// shapes, typed text as real text, then the writing.
+  func pdf(_ layout: PdfLayout, _ quality: PdfQuality) -> Data {
+    let drawn = rows.filter { $0.kind != MemoRow.kind }
+    let items = drawn.map { ExportPages.Item(Rect($0.l, $0.t, $0.r, $0.b), pdfPage: PictureRow($0)?.pdfPage ?? false) }
+    let rects = ExportPages.pages(layout, items: items, pages: self.layout, pageCount: pageCount, fixedGrid: UserDefaults.standard.bool(forKey: "pageGuides"))
+    let layer = PagesLayer()
+    layer.layout = self.layout
+    layer.count = pageCount ?? 1
+    layer.paper = paper
+    layer.dark = dark
+    // A paged notebook's own pages carry their paper; anything else is painted as one sheet.
+    let ownPages = pageCount != nil && layout == .a4Pages
+    layer.drawsPaper = ownPages
+    var under = UnderItems()
+    for row in drawn {
+      if let t = TextRow(row) {
+        under.texts.append(t)
+      } else if let s = ShapeRow(row) {
+        under.shapes.append(s)
+      } else if quality == .best, let sharp = SharpPage.of(row) {
+        under.pdfPages.append(sharp)
+      } else if let p = PictureRow(row), let image = pictureImage(p, pixelsPerUnit: quality.picturePixelsPerUnit) {
+        under.pictures.append((CGRect(p.rect), image))
       }
     }
-    // A4 in points: 595 × 842 (or on its side).
-    let ptPerUnit: CGFloat = 72 / 160
+    layer.under = under
     let data = NSMutableData()
     UIGraphicsBeginPDFContextToData(data, .zero, nil)
     for r in rects {
-      let size = CGSize(width: r.width * ptPerUnit, height: r.height * ptPerUnit)
+      let pts = ExportPages.points(r)
+      let size = CGSize(width: pts.width, height: pts.height)
+      let world = CGRect(r)
       UIGraphicsBeginPDFPageWithInfo(CGRect(origin: .zero, size: size), nil)
       guard let cg = UIGraphicsGetCurrentContext() else { continue }
       cg.saveGState()
-      cg.scaleBy(x: ptPerUnit, y: ptPerUnit)
-      cg.translateBy(x: -r.minX, y: -r.minY)
-      cg.clip(to: r)
-      pages.pages.draw(in: cg)
+      cg.scaleBy(x: size.width / world.width, y: size.height / world.height)
+      cg.translateBy(x: -world.minX, y: -world.minY)
+      cg.clip(to: world)
+      if !ownPages { PaperPainter.draw(paper, page: world, in: cg, scale: size.width / world.width, dark: dark) }
+      layer.draw(in: cg)
       cg.restoreGState()
-      drawing.image(from: r, scale: ptPerUnit * quality.sharpness).draw(in: CGRect(origin: .zero, size: size))
+      drawing.image(from: world, scale: size.width / world.width * quality.sharpness).draw(in: CGRect(origin: .zero, size: size))
     }
     UIGraphicsEndPDFContext()
     return data as Data
   }
 }
 
+extension NoteCanvas.Coordinator {
+  var exportSource: ExportSource? {
+    guard let canvas else { return nil }
+    return ExportSource(
+      rows: (try? parent.db.items(of: parent.notebook.id)) ?? [], drawing: canvas.drawing, layout: layout, pageCount: paged ? pageCount : nil,
+      paper: parent.settings.paper, dark: parent.settings.dark)
+  }
+}
+
 extension CanvasBridge {
-  func pdf(_ q: PdfQuality) -> Data? { coordinator?.makePDF(q) }
+  var exportSource: ExportSource? { coordinator?.exportSource }
   var title: String { coordinator?.parent.notebook.title ?? English.untitled }
 }
 
@@ -89,42 +140,62 @@ struct ExportedPDF: FileDocument {
   func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { FileWrapper(regularFileWithContents: data) }
 }
 
-/// Export PDF (Android's `ExportDialog`): Best, Balanced or Light, with the real size of the file
-/// that choice makes, then Cancel, Save or Share.
+/// Export PDF (Android's `ExportDialog`): Best, Balanced, Light or One long page (and, with slides
+/// on an endless canvas, the slides' own pages or A4 pages), with the real size of the file that
+/// choice makes, then Cancel, Save or Share.
 struct ExportCard: View {
   var bridge: CanvasBridge
   var paged: Bool
   var onClose: () -> Void
   @Environment(\.tali) private var c
-  @State private var quality = PdfQuality.best
-  @State private var made: [PdfQuality: Data] = [:]
+  @State private var source: ExportSource?
+  @State private var pagesLayout = PdfLayout.a4Pages
+  @State private var choice = ExportChoice.best
+  @State private var made: [String: Data] = [:]
   @State private var saving: ExportedPDF?
   @State private var sharing: URL?
+
+  private var pageLayouts: [PdfLayout] { source?.hasPdfPages == true && !paged ? [.pdfPages, .a4Pages] : [.a4Pages] }
+  private var layout: PdfLayout { choice == .long ? .onePage : pagesLayout }
+  private var key: String { "\(layout)-\(choice.quality)" }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Text(L("export_pdf")).font(TaliType.titleLarge).foregroundStyle(c.ink)
       Spacer().frame(height: 16)
-      Segmented(options: PdfQuality.allCases, selected: $quality) { $0.name }
+      if pageLayouts.count > 1 && choice != .long {
+        Segmented(options: pageLayouts, selected: $pagesLayout) { $0 == .pdfPages ? L("slides_own_pages") : L("a4_pages") }
+        Spacer().frame(height: 14)
+      }
+      Segmented(options: ExportChoice.allCases, selected: $choice) { $0.label }
       Spacer().frame(height: 12)
-      Text(made[quality].map { sizeLabel($0.count) } ?? L("making_the_pdf_to_measure_it"))
-        .font(TaliType.titleSmall).foregroundStyle(made[quality] != nil ? c.ink : c.inkFaint)
+      Text(made[key].map { sizeLabel($0.count) } ?? L("making_the_pdf_to_measure_it"))
+        .font(TaliType.titleSmall).foregroundStyle(made[key] != nil ? c.ink : c.inkFaint)
+        .accessibilityIdentifier("export-size")
       Spacer().frame(height: 2)
-      Text((paged ? L("every_page_of_the_notebook_as") : L("the_canvas_cut_into_a4_pages")) + quality.detail)
-        .font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).lineLimit(3, reservesSpace: true)
+      Text(detail).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).lineLimit(3, reservesSpace: true)
       Spacer().frame(height: 24)
       HStack(spacing: 10) {
         Spacer()
         Button(L("cancel"), action: onClose).buttonStyle(QuietButtonStyle())
-        Button(L("save")) { if let d = made[quality] { saving = ExportedPDF(data: d) } }.buttonStyle(QuietButtonStyle())
-        Button(L("share")) { if let d = made[quality] { sharing = write(d) } }.buttonStyle(PrimaryButtonStyle())
+        Button(L("save")) { if let d = made[key] { saving = ExportedPDF(data: d) } }.buttonStyle(QuietButtonStyle())
+        Button(L("share")) { if let d = made[key] { sharing = write(d) } }.buttonStyle(PrimaryButtonStyle())
+          .accessibilityIdentifier("export-share")
       }
     }
     .padding(28)
     .frame(maxWidth: 560)
     .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
-    .task(id: quality) {
-      if made[quality] == nil, let d = bridge.pdf(quality) { made[quality] = d }
+    .onAppear {
+      source = bridge.exportSource
+      if let first = pageLayouts.first { pagesLayout = first }
+    }
+    .task(id: key) {
+      guard made[key] == nil, let source else { return }
+      let (k, l, q) = (key, layout, choice.quality)
+      let d = await Task.detached(priority: .userInitiated) { source.pdf(l, q) }.value
+      made[k] = d
+      if ProcessInfo.processInfo.arguments.contains("-uitest") { try? d.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("export-\(k).pdf")) }
     }
     .fileExporter(
       isPresented: Binding(get: { saving != nil }, set: { if !$0 { saving = nil } }), document: saving, contentType: .pdf,
@@ -133,6 +204,12 @@ struct ExportCard: View {
     .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
       if let url = sharing { ShareSheet(items: [url]) }
     }
+  }
+
+  private var detail: String {
+    if choice == .long { return choice.detail }
+    if layout == .pdfPages { return L("each_slide_you_imported_comes_back") + choice.detail }
+    return (paged ? L("every_page_of_the_notebook_as") : L("the_canvas_cut_into_a4_pages")) + choice.detail
   }
 
   private func write(_ d: Data) -> URL? {

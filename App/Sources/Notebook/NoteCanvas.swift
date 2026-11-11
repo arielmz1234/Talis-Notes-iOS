@@ -32,6 +32,8 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
   nonisolated(unsafe) var paper = PaperStyle.GRID
   nonisolated(unsafe) var dark = false
   nonisolated(unsafe) var under = UnderItems()
+  /// Off when the paper is already painted (a PDF export painting it over a whole long page).
+  nonisolated(unsafe) var drawsPaper = true
 
   override class func fadeDuration() -> CFTimeInterval { 0.08 }
 
@@ -40,7 +42,7 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
   override func draw(in cg: CGContext) {
     let rect = cg.boundingBoxOfClipPath
     let scale = max(cg.ctm.a / max(contentsScale, 1), 0.01)
-    for i in 0..<max(count, 1) {
+    for i in 0..<max(count, 1) where drawsPaper {
       let page = CGRect(layout.rect(i))
       guard page.intersects(rect) else { continue }
       PaperPainter.draw(paper, page: page, in: cg, scale: scale, dark: dark)
@@ -803,22 +805,6 @@ enum CrashNote {
       try? Data(line.utf8).write(to: url)
     }
   }
-}
-
-/// A picture item (kind 2): where it sits and its image, read from the app's images folder at a
-/// size that suits the page (a PDF page or photo is never decoded at full size).
-func picture(from row: ItemRow) -> (rect: CGRect, image: CGImage)? {
-  guard let p = PictureRow(row), !p.file.contains("/"), p.rect.width > 0, p.rect.height > 0 else { return nil }
-  let rect = CGRect(p.rect)
-  let url = AppFiles.folders.images.appendingPathComponent(p.file)
-  guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-  let maxSide = min(max(rect.width, rect.height) * 2, 2400)
-  let opts: [CFString: Any] = [
-    kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: maxSide,
-    kCGImageSourceCreateThumbnailWithTransform: true,
-  ]
-  guard let image = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
-  return (rect, image)
 }
 
 /// An imported PDF's page drawn from the PDF kept beside its picture (Android's `SharpPdf` draws
