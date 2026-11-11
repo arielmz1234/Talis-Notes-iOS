@@ -2,6 +2,8 @@
 
 Keys are the Android resource names, so the wording stays the same on both platforms.
 Placeholders: %1$s -> %1$@, %1$d -> %1$lld, %s -> %@, %d -> %lld.
+Strings only the Apple app has (Apple Pencil, where Android speaks of the S Pen) come from
+tools/ios_strings.json, one entry per key with all six languages.
 
     python tools/import_strings.py C:/dev/Talis-Notes/app/src/main/res
 """
@@ -55,6 +57,13 @@ def main(res):
             if el.get("translatable") == "false" and lang != "en":
                 continue
             table.setdefault(el.get("name"), {})[lang] = text_of(el)
+    extra = json.loads((Path(__file__).resolve().parent / "ios_strings.json").read_text(encoding="utf-8"))
+    for key, texts in extra.items():
+        if key in table:
+            sys.exit(f"{key} is an Android string: ios_strings.json can't replace it")
+        if set(texts) != set(LANGS.values()):
+            sys.exit(f"{key} needs every language: {sorted(LANGS.values())}")
+        table[key] = texts
     strings = {}
     for key in sorted(table):
         locs = {lang: {"stringUnit": {"state": "translated", "value": v}} for lang, v in table[key].items()}

@@ -209,6 +209,8 @@ struct NoteCanvas: UIViewRepresentable {
   var onHint: (String) -> Void = { _ in }
   /// A hold on the page offering Paste there (window coordinates), or nil.
   var onPasteOffer: (CGPoint?) -> Void = { _ in }
+  /// Apple Pencil was double-tapped or squeezed, with what the system's settings say it should do.
+  var onPencil: (PencilGesture.Preference) -> Void = { _ in }
   /// The page in the middle of the screen and the zoom, as they change (for the page and zoom chips).
   var onView: (Int, CGFloat) -> Void = { _, _ in }
   @Binding var command: CanvasCommand?
@@ -240,6 +242,7 @@ struct NoteCanvas: UIViewRepresentable {
     c.installShapeTool(on: v)
     c.installTextBoxes(on: v)
     c.installOwnInk(on: v)
+    c.installPencilGestures(on: v)
     bridge?.coordinator = c
     v.minimumZoomScale = 0.2
     v.maximumZoomScale = 6

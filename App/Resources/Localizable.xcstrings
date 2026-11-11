@@ -31530,6 +31530,47 @@
         }
       }
     },
+    "tip_double_tap_apple_pencil": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tip: double-tap Apple Pencil to switch to the eraser and back."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Consejo: toca dos veces el Apple Pencil para pasar al borrador y volver."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Astuce : touchez deux fois l'Apple Pencil pour passer à la gomme et revenir."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dica: toque duas vezes no Apple Pencil para mudar para a borracha e voltar."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "نصيحة: انقر مرتين على Apple Pencil للتبديل إلى الممحاة والعودة."
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "טיפ: הקשה כפולה על Apple Pencil עוברת למחק ובחזרה."
+          }
+        }
+      }
+    },
     "tip_hold_the_s_pen_button": {
       "extractionState": "manual",
       "localizations": {

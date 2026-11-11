@@ -25,6 +25,8 @@ struct NotebookView: View {
   @State private var tool: Tool = .pen(PenStore.activePen)
   @State private var pens: [PenSlot] = PenStore.load()
   @State private var panel: PanelKind?
+  /// The tool in use before this one, for Apple Pencil's double-tap to go back to.
+  @State private var toolBefore: Tool?
   /// The Shapes tool's shape (Android's `lastShape`).
   @AppStorage("lastShape") private var shapeKindRaw = ShapeKind.RECTANGLE.rawValue
   private var shapeKind: ShapeKind { ShapeKind(rawValue: shapeKindRaw) ?? .RECTANGLE }
@@ -84,6 +86,7 @@ struct NotebookView: View {
           onSelection: { r in withAnimation(.easeOut(duration: 0.14)) { selection = r } },
           onHint: { show($0) },
           onPasteOffer: { p in withAnimation(.easeOut(duration: 0.16)) { pasteOffer = p } },
+          onPencil: pencilGesture,
           onView: { p, z in
             page = p
             zoom = z
@@ -226,7 +229,10 @@ struct NotebookView: View {
       }
     }
     .onChange(of: pens) { _, new in PenStore.save(new) }
-    .onChange(of: tool) { _, new in if case .pen(let id) = new { PenStore.activePen = id } }
+    .onChange(of: tool) { old, new in
+      toolBefore = old
+      if case .pen(let id) = new { PenStore.activePen = id }
+    }
     .onChange(of: eraserAffects) { _, new in PenFilters.save(new, "eraserAffects") }
     .onChange(of: lassoPicks) { _, new in
       PenFilters.save(new.affects, "lassoAffects")
@@ -246,6 +252,21 @@ struct NotebookView: View {
       try? await Task.sleep(for: .seconds(2.8))
       guard !Task.isCancelled else { return }
       withAnimation(.easeOut(duration: 0.2)) { hint = nil }
+    }
+  }
+
+  private func pencilGesture(_ preference: PencilGesture.Preference) {
+    switch PencilGesture.action(for: preference, erasing: tool == .eraser) {
+    case .none: break
+    case .eraser:
+      panel = nil
+      withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { tool = .eraser }
+    case .previousTool:
+      panel = nil
+      withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { tool = toolBefore ?? .pen(PenStore.activePen) }
+    case .penSettings:
+      if activePenIndex == nil { tool = .pen(PenStore.activePen) }
+      withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .pen ? nil : .pen }
     }
   }
 
@@ -441,14 +462,15 @@ enum ViewOnly {
 /// The pens, kept between launches.
 enum PenStore {
   private static let reset: Void = {
-    if ProcessInfo.processInfo.arguments.contains("-uitest"), ProcessInfo.processInfo.arguments.contains("-reset-pens") {
+    if ProcessInfo.processInfo.arguments.contains("-uitest"), !ProcessInfo.processInfo.arguments.contains("-keep-pens") {
       for key in ["pens", "activePen", "savedColors", "highlighterColors", "eraserAffects", "lassoAffects", "lassoSelectsImages", "eraserPrecise", "eraserSize"] {
         UserDefaults.standard.removeObject(forKey: key)
       }
     }
   }()
 
-  /// A UI test asks for a new install's pens, colours and eraser (once, before any of them is read).
+  /// A UI test starts from a new install's pens, colours and eraser unless it asks to keep them:
+  /// what an earlier run left on the simulator (Freehand, another pen in use) changed what a test drew.
   static func resetForTests() { _ = reset }
 
   /// Android's `activePen`: the pen she last wrote with, or the first.

@@ -567,6 +567,10 @@ struct EraserPanel: View {
       SectionLabel(text: L("erases"))
       Spacer().frame(height: 8)
       PenFilterChips(filter: $affects, images: nil)
+      if !PhoneWriting.onPhone {
+        Spacer().frame(height: 14)
+        Text(L("tip_double_tap_apple_pencil")).font(TaliType.bodySmall).foregroundStyle(c.inkFaint)
+      }
     }
   }
 }
