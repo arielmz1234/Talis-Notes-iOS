@@ -23,7 +23,7 @@ struct SelectionMenu: View {
         ToolIcon(system: "scissors", label: L("cut_hold_anywhere_to_paste_it")) { onCommand(.cutSelection) }
         ToolIcon(system: "plus.square.on.square", label: L("duplicate")) { onCommand(.duplicateSelection) }
         ToolIcon(system: "square", label: L("draw_a_box_around_it")) { onCommand(.boxSelection) }
-        ToolIcon(system: "trash", label: L("delete")) { onCommand(.deleteSelection) }
+        ToolIcon(system: "trash", label: L("delete")) { onCommand(.deleteSelection) }.accessibilityIdentifier("selection-delete")
         Rectangle().fill(c.line).frame(width: 1, height: 24).padding(.horizontal, 2)
         // Like the toolbar's chevron: > opens the rest to its right, and turns round into < to fold them away.
         Button {

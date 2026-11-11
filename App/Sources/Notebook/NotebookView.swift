@@ -130,6 +130,11 @@ struct NotebookView: View {
         .overlay { MemoLayer(memos: memos, hint: show) }
         .overlay { CropOffer(crop: crop) }
         .overlay { CropLayer(crop: crop) }
+        // Under the bars and their panels, as on Android, where it belongs to the page.
+        if let sel = selection, !hidden, !viewing {
+          SelectionMenuLayer(selection: sel.rect, rotatable: sel.rotatable, narrow: narrow, onSaveShape: bridge.coordinator?.hasDrawingPicked == true ? { saveShape() } : nil) { command = $0 }
+            .ignoresSafeArea()
+        }
         VStack(spacing: narrow ? 18 : 0) {
           if viewing && draft {
             DraftBar(
@@ -212,10 +217,6 @@ struct NotebookView: View {
               .asymmetric(
                 insertion: .opacity.combined(with: .scale(scale: 0.9)).animation(Ease.outStrong(duration: 0.24).delay(0.08)),
                 removal: .opacity.combined(with: .scale(scale: 0.95)).animation(Ease.outStrong(duration: 0.14))))
-        }
-        if let sel = selection, !hidden, !viewing {
-          SelectionMenuLayer(selection: sel.rect, rotatable: sel.rotatable, narrow: narrow, onSaveShape: bridge.coordinator?.hasDrawingPicked == true ? { saveShape() } : nil) { command = $0 }
-            .ignoresSafeArea()
         }
         if let at = pasteOffer {
           // A tap anywhere else takes the offer away.

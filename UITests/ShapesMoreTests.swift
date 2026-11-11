@@ -237,11 +237,13 @@ final class ShapesMoreTests: ShotCase {
     shapesPanel(app)
     app.buttons["custom-\(name)"].firstMatch.press(forDuration: 1.2)
     settle()
-    XCTAssertTrue(app.buttons["Delete"].firstMatch.waitForExistence(timeout: 3), "rename and delete")
+    // The shape just drawn stays picked up, so its menu's trash is a "Delete" too.
+    let deletes = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Delete", "selection-delete"))
+    XCTAssertTrue(deletes.firstMatch.waitForExistence(timeout: 3), "rename and delete")
     shot("v6-saved-shape-menu")
-    app.buttons["Delete"].firstMatch.tap()
+    deletes.firstMatch.tap()
     settle()
-    let confirm = app.buttons.matching(identifier: "Delete")
+    let confirm = deletes
     XCTAssertGreaterThan(confirm.count, 0, "deleting asks first")
     confirm.element(boundBy: confirm.count - 1).tap()
     settle()
