@@ -75,7 +75,7 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
         cg.fillPath()
       }
       cg.addPath(path)
-      cg.setStrokeColor(UIColor(argb: dark ? s.color : s.color).cgColor)
+      cg.setStrokeColor(UIColor(argb: s.inkColor).cgColor)
       cg.setLineWidth(CGFloat(s.size))
       if let dash = LineDash.pattern(s.line, width: CGFloat(s.size)) { cg.setLineDash(phase: 0, lengths: dash) } else { cg.setLineDash(phase: 0, lengths: []) }
       cg.strokePath()
@@ -348,19 +348,23 @@ struct NoteCanvas: UIViewRepresentable {
     var layout: Pages { parent.notebook.pageLayout }
     var paged: Bool { parent.notebook.pages != nil }
 
+    /// Nil when a stroke that began at [y] isn't cut off anywhere.
+    func pageClip(startingAt y: Float) -> CGRect? {
+      guard paged, let r = layout.clip(anchorY: y, count: pageCount, between: parent.settings.between) else { return nil }
+      return CGRect(r)
+    }
+
     /// The page a stroke belongs to (where it began), as a PencilKit mask.
     func mask(for s: InkStroke) -> UIBezierPath? {
-      guard paged, let first = s.inputs.points.first else { return nil }
-      guard let r = layout.clip(anchorY: first.y, count: pageCount, between: parent.settings.between) else { return nil }
-      return UIBezierPath(rect: CGRect(x: CGFloat(r.left), y: CGFloat(r.top), width: CGFloat(r.width), height: CGFloat(r.height)))
+      guard let first = s.inputs.points.first, let page = pageClip(startingAt: first.y) else { return nil }
+      return UIBezierPath(rect: page)
     }
 
     func load() {
       guard let canvas else { return }
       loading = true
       let rows = (try? parent.db.items(of: parent.notebook.id)) ?? []
-      var strokes: [PKStroke] = []
-      stored = []
+      var inks: [InkStroke] = []
       shapeZ = 0
       var under = UnderItems()
       for row in rows {
@@ -381,13 +385,13 @@ struct NoteCanvas: UIViewRepresentable {
           under.pictures.append(pic)
           continue
         }
-        guard let ink = InkStroke(row: row) else { continue }
-        let pk = ink.pkStroke(mask: mask(for: ink))
-        strokes.append(pk)
-        stored.append((StrokeKey(pk), ink))
+        if let ink = InkStroke(row: row) { inks.append(ink) }
       }
       pages?.pages.under = under
-      canvas.drawing = PKDrawing(strokes: strokes)
+      // Highlighter under the writing, as Android draws it.
+      let drawn = (inks.filter(\.pen.isHighlighter) + inks.filter { !$0.pen.isHighlighter }).map { ($0.pkStroke(mask: mask(for: $0)), $0) }
+      stored = drawn.map { (StrokeKey($0.0), $0.1) }
+      canvas.drawing = PKDrawing(strokes: drawn.map(\.0))
       loading = false
       updateContent()
       applyTool()
@@ -647,7 +651,7 @@ struct NoteCanvas: UIViewRepresentable {
           var s = stored[i].stroke
           if pk.transform != .identity {
             // Moved or resized with the lasso: store the moved points, and draw it untransformed.
-            s = InkStroke.from(pk, pen: PenSlot(id: "", type: s.pen, color: s.color, size: s.size), id: s.id, z: s.z)
+            s = InkStroke.from(pk, pen: PenSlot(id: "", type: s.pen, color: s.color, size: s.size), id: s.id, z: s.z, tags: s.tags)
             s.size = Float(CGFloat(s.size) * sqrt(abs(pk.transform.a * pk.transform.d - pk.transform.b * pk.transform.c)))
             changed.append(s)
             let fresh = s.pkStroke(mask: mask(for: s))
@@ -695,6 +699,14 @@ struct NoteCanvas: UIViewRepresentable {
             next.append((key, s))
           }
         }
+      }
+      // Highlighter stays under the writing however late it was added (Android draws it first).
+      let highlights = next.indices.filter { next[$0].stroke.pen.isHighlighter }
+      if let last = highlights.last, last >= highlights.count {
+        let order = highlights + next.indices.filter { !next[$0].stroke.pen.isHighlighter }
+        next = order.map { next[$0] }
+        rebuilt = order.map { rebuilt[$0] }
+        needsRebuild = true
       }
       // A stroke replaced under the same id (recoloured, mirrored) isn't removed.
       let keptIds = Set(next.map(\.stroke.id))

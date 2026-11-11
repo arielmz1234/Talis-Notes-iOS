@@ -416,7 +416,14 @@ enum ViewOnly {
 
 /// The pens, kept between launches.
 enum PenStore {
+  private static let resetForTests: Void = {
+    if ProcessInfo.processInfo.arguments.contains("-uitest"), ProcessInfo.processInfo.arguments.contains("-reset-pens") {
+      for key in ["pens", "savedColors", "highlighterColors", "eraserAffects", "lassoAffects", "eraserPrecise"] { UserDefaults.standard.removeObject(forKey: key) }
+    }
+  }()
+
   static func load() -> [PenSlot] {
+    _ = resetForTests
     guard let d = UserDefaults.standard.data(forKey: "pens"), let p = try? JSONDecoder().decode([PenSlot].self, from: d), !p.isEmpty else {
       return PenSlot.defaults
     }

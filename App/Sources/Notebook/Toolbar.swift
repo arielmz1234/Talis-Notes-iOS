@@ -1,3 +1,4 @@
+import PencilKit
 import SwiftUI
 import TaliCore
 
@@ -380,7 +381,6 @@ struct PenPanel: View {
   @Binding var pen: PenSlot
   @Environment(\.tali) private var c
   @Namespace private var types
-  @State private var paletteVersion = 0
 
   var body: some View {
     ToolPanel(width: 392) {
@@ -403,7 +403,7 @@ struct PenPanel: View {
       Spacer().frame(height: 10)
       Text(penName(pen.type)).font(TaliType.titleMedium).foregroundStyle(c.ink)
       Spacer().frame(height: 10)
-      StrokePreview(pen: pen).frame(height: 70)
+      StrokePreview(pen: pen)
       Spacer().frame(height: 12)
       Segmented(options: [0, 1, 2], selected: Binding(get: { min(max(pen.sizeSlot, 0), 2) }, set: { pen = pen.pickSize($0) })) {
         String(format: "%.1f", pen.presetSizes[$0])
@@ -413,6 +413,16 @@ struct PenPanel: View {
         Text(L("size")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).frame(width: 44, alignment: .leading)
         StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: pen.type.minSize...pen.type.maxSize, step: 0.5)
         Text(String(format: "%.1f", pen.size)).font(TaliType.titleSmall).foregroundStyle(c.ink).frame(width: 40).padding(.leading, 8)
+      }
+      if pen.type.isHighlighter {
+        Spacer().frame(height: 12)
+        SectionLabel(text: L("draws"))
+        Spacer().frame(height: 8)
+        Segmented(options: [true, false], selected: Binding(get: { pen.straight }, set: { pen.freehand = !$0 })) { $0 ? L("straight_lines") : L("freehand") }
+        Spacer().frame(height: 12)
+        SectionLabel(text: L("tip"))
+        Spacer().frame(height: 8)
+        Segmented(options: [false, true], selected: Binding(get: { pen.square }, set: { pen.squareTip = $0 })) { $0 ? L("square") : L("round") }
       }
       Spacer().frame(height: 10)
       SectionLabel(text: pen.type == .HIGHLIGHTER ? L("highlighter_colours") : L("colours"))
@@ -441,26 +451,50 @@ struct PenPanel: View {
   }
 }
 
-/// A sample stroke in the pen's colour and size on a strip of paper.
+/// Android's `StrokePreview`, drawn by the code that draws stored strokes so it can't differ from the page.
 struct StrokePreview: View {
   var pen: PenSlot
   @Environment(\.tali) private var c
+  @Environment(\.displayScale) private var displayScale
+
+  /// Android lays the sample out this size in world units, so thicknesses read the same here.
+  private static let world = CGSize(width: 392, height: 70)
 
   var body: some View {
-    Canvas { ctx, size in
-      let w = size.width, h = size.height
-      var p = Path()
-      p.move(to: CGPoint(x: w * 0.1, y: h * 0.62))
-      p.addCurve(to: CGPoint(x: w * 0.5, y: h * 0.5), control1: CGPoint(x: w * 0.22, y: h * 0.1), control2: CGPoint(x: w * 0.36, y: h * 0.9))
-      p.addCurve(to: CGPoint(x: w * 0.9, y: h * 0.38), control1: CGPoint(x: w * 0.64, y: h * 0.1), control2: CGPoint(x: w * 0.78, y: h * 0.9))
-      let width = CGFloat(pen.size) * (pen.type == .HIGHLIGHTER ? 1 : 1.2)
-      ctx.stroke(
-        p, with: .color(Color(uiColor: UIColor(argb: pen.inkColor))),
-        style: StrokeStyle(lineWidth: width, lineCap: pen.type == .HIGHLIGHTER ? .square : .round, lineJoin: .round))
+    GeometryReader { geo in
+      Image(uiImage: StrokePreview.picture(pen, scale: displayScale * geo.size.width / StrokePreview.world.width))
+        .resizable()
+        .frame(width: geo.size.width, height: geo.size.height)
     }
+    .aspectRatio(StrokePreview.world.width / StrokePreview.world.height, contentMode: .fit)
     .background(c.paper)
     .clipShape(RoundedRectangle(cornerRadius: 14))
     .overlay(RoundedRectangle(cornerRadius: 14).stroke(c.line, lineWidth: 1))
+    .accessibilityHidden(true)
+  }
+
+  static func sample(_ pen: PenSlot) -> InkStroke {
+    let w = Float(world.width), h = Float(world.height)
+    let inputs: InkInputs
+    if pen.straight {
+      inputs = StraightLine.inputs(Pt(w * 0.12, h / 2), Pt(w * 0.88, h / 2))
+    } else {
+      let points = (0...90).map { i -> InkInput in
+        let f = Float(i) / 90
+        return InkInput(x: 14 + (w - 28) * f, y: h / 2 + sinf(f * 2 * .pi) * h * 0.22, t: Float(i) * 0.006, pressure: 0.35 + 0.55 * sinf(f * .pi))
+      }
+      inputs = InkInputs(points: points, tool: .stylus)
+    }
+    return InkStroke(id: "", z: 0, pen: pen.type, tags: InkStroke.tags(for: pen), color: pen.inkColor, size: pen.size, inputs: inputs)
+  }
+
+  private static func picture(_ pen: PenSlot, scale: CGFloat) -> UIImage {
+    var image = UIImage()
+    // The pen's own colour, whatever the app's theme (PencilKit lightens dark ink in dark mode).
+    UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+      image = PKDrawing(strokes: [sample(pen).pkStroke(mask: nil)]).image(from: CGRect(origin: .zero, size: world), scale: max(scale, 1))
+    }
+    return image
   }
 }
 

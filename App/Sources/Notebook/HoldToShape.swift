@@ -111,7 +111,7 @@ extension NoteCanvas.Coordinator {
 
   /// Whether this touch writes with the pen (not the eraser or lasso, not a finger that only scrolls).
   private func writes(_ t: UITouch) -> Bool {
-    guard let canvas, case .pen = parent.tool, !parent.viewOnly, canvas.drawingGestureRecognizer.isEnabled else { return false }
+    guard let canvas, case .pen = parent.tool, !parent.viewOnly, canvas.drawingGestureRecognizer.isEnabled || tracesOwnInk else { return false }
     if t.type == .pencil { return true }
     switch canvas.drawingPolicy {
     case .anyInput: return true
@@ -195,8 +195,10 @@ extension NoteCanvas.Coordinator {
     // PencilKit lets go of the stroke it was drawing (switching its recogniser off and on cancels
     // it); should it hand the stroke in anyway, `sync` drops it.
     hold.dropSince = hold.began.addingTimeInterval(-0.2)
-    canvas.drawingGestureRecognizer.isEnabled = false
-    canvas.drawingGestureRecognizer.isEnabled = true
+    if canvas.drawingGestureRecognizer.isEnabled {
+      canvas.drawingGestureRecognizer.isEnabled = false
+      canvas.drawingGestureRecognizer.isEnabled = true
+    }
     hold.live = shape
     hold.base = shape
     hold.liveAnchor = hold.points.last ?? .zero
@@ -243,7 +245,7 @@ extension NoteCanvas.Coordinator {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     hold.layer.path = path
-    hold.layer.strokeColor = UIColor(argb: shape.color).cgColor
+    hold.layer.strokeColor = UIColor(argb: shape.inkColor).cgColor
     hold.layer.lineWidth = CGFloat(shape.size) * z
     CATransaction.commit()
   }

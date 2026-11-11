@@ -286,7 +286,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   /// Makes this change one undo step: going back restores [before].
   /// Shapes are part of the step too: [beforeShapes] (by default the shapes as they are now) come back with it.
-  private func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil, texts beforeTexts: [TextRow]? = nil) {
+  func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil, texts beforeTexts: [TextRow]? = nil) {
     let shapesThen = beforeShapes ?? shapes
     let textsThen = beforeTexts ?? texts
     canvas?.undoManager?.registerUndo(withTarget: self) { coord in
@@ -352,7 +352,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         t += 0.004
       }
     }
-    let box = InkStroke(id: newId(), z: 0, pen: pen.type, color: pen.inkColor, size: pen.size, inputs: InkInputs(points: pts, tool: .stylus))
+    let box = InkStroke(id: newId(), z: 0, pen: pen.type, tags: InkStroke.tags(for: pen), color: pen.inkColor, size: pen.size, inputs: InkInputs(points: pts, tool: .stylus))
     let keepShapes = pickedShapeRows
     let added = add([box], offset: .zero)
     select(pickedStrokes + added.strokes, shapes: keepShapes)

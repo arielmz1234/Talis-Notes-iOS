@@ -88,7 +88,7 @@ extension NoteCanvas.Coordinator {
         path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
       }
       l.path = path
-      l.strokeColor = UIColor(argb: s.color).cgColor
+      l.strokeColor = UIColor(argb: s.inkColor).cgColor
       l.lineWidth = CGFloat(s.size) * z
       l.lineCap = .round
       l.lineJoin = .round

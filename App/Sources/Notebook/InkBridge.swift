@@ -75,6 +75,15 @@ struct InkStroke {
       l: b.left, t: b.top, r: b.right, b: b.bottom)
   }
 
+  var square: Bool { tags.contains("SQUARE") }
+
+  var locked: Bool { tags.contains("LOCKED") }
+
+  /// Android stores a square-tipped highlighter's strokes as "HIGHLIGHTER/SQUARE".
+  static func tags(for pen: PenSlot) -> [String] {
+    pen.square ? ["SQUARE"] : []
+  }
+
   /// Where it's drawn: its samples grown by half the pen.
   var bounds: TaliCore.Rect {
     (inputs.bounds ?? TaliCore.Rect(0, 0, 0, 0)).outset(size / 2)
@@ -90,6 +99,17 @@ struct InkStroke {
 
   /// The PencilKit stroke that draws it, kept to [mask] (its page) when given.
   func pkStroke(mask: UIBezierPath?) -> PKStroke {
+    if let look = InkLook(pen: pen, square: square) {
+      let at = inputs.points.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }
+      var shape = look.outline(size: CGFloat(size), points: at)
+      if let mask, !mask.bounds.contains(shape.boundingBoxOfPath) { shape = shape.intersection(mask.cgPath) }
+      let cover = CGFloat(size) * InkLook.coverPerSize + InkLook.coverExtra
+      let under = PKStrokePath(
+        controlPoints: zip(at, inputs.points).map { p, i in
+          PKStrokePoint(location: p, timeOffset: TimeInterval(i.t), size: CGSize(width: cover, height: cover), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2, secondaryScale: 1)
+        }, creationDate: Date())
+      return PKStroke(ink: PKInk(.monoline, color: UIColor(argb: color)), path: under, transform: .identity, mask: UIBezierPath(cgPath: shape))
+    }
     let ink = PKInk(pen.ink, color: UIColor(argb: color))
     let start = Date(timeIntervalSinceReferenceDate: 0)
     // Built like PencilKit's own live points for this ink (see InkWidth).
@@ -107,7 +127,7 @@ struct InkStroke {
   }
 
   /// A stroke PencilKit just drew, in world units (the canvas's drawing is kept at zoom 1).
-  static func from(_ s: PKStroke, pen: PenSlot, id: String, z: Int64) -> InkStroke {
+  static func from(_ s: PKStroke, pen: PenSlot, id: String, z: Int64, tags: [String]? = nil) -> InkStroke {
     let t = s.transform
     let pts = s.path.map { p -> InkInput in
       let at = p.location.applying(t)
@@ -117,7 +137,7 @@ struct InkStroke {
         x: Float(at.x), y: Float(at.y), t: Float(p.timeOffset), pressure: pressure, tilt: Float(max(0, .pi / 2 - p.altitude)),
         orientation: Float(p.azimuth.truncatingRemainder(dividingBy: 2 * .pi) + (p.azimuth < 0 ? 2 * .pi : 0)))
     }
-    return InkStroke(id: id, z: z, pen: pen.type, color: pen.inkColor, size: pen.size, inputs: InkInputs(points: pts, tool: .stylus))
+    return InkStroke(id: id, z: z, pen: pen.type, tags: tags ?? InkStroke.tags(for: pen), color: pen.inkColor, size: pen.size, inputs: InkInputs(points: pts, tool: .stylus))
   }
 }
 

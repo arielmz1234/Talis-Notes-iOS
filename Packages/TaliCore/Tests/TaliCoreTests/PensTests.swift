@@ -3,6 +3,21 @@ import Testing
 @testable import TaliCore
 
 // Ported from Android's LineStyleTest, RoundThreeTest (the pen's three thicknesses) and PencilDroppedTest.
+struct ShapeInkTests {
+  private func shape(_ pen: String, _ color: UInt32) -> ShapeRow {
+    ShapeRow(geometry: .line(a: Pt(0, 0), b: Pt(10, 0), arrowStart: false, arrowEnd: false, ticks: false), pen: pen, color: Int32(bitPattern: color), size: 2)
+  }
+
+  @Test func aHighlightersShapeIsSeeThroughLikeItsInk() {
+    #expect(UInt32(bitPattern: shape("HIGHLIGHTER", 0xFFFF_D60A).inkColor) == 0x66FF_D60A)
+  }
+
+  @Test func otherShapesKeepTheirOpacityAndAColourWithoutAnyIsOpaque() {
+    #expect(UInt32(bitPattern: shape("FINELINER", 0x801F_5FD1).inkColor) == 0x801F_5FD1)
+    #expect(UInt32(bitPattern: shape("FINELINER", 0x001F_5FD1).inkColor) == 0xFF1F_5FD1)
+  }
+}
+
 struct LineStyleTests {
   let line = [Pt(0, 0), Pt(600, 0)]
 
