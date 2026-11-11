@@ -5,7 +5,7 @@ import UIKit
 /// A picked-up shape's dots (Android's `drawShapeHandles`, `handleAt` and `Mode.HANDLE_DRAG`): when
 /// the lasso has picked up one shape and nothing else, its dots show; dragging one reshapes it live
 /// (`ShapeGeometry.withHandle`), and letting go keeps it, one undo step, still picked up.
-/// Not ported yet: snapping a dot onto other shapes and lining it up with them.
+/// A dot snaps onto other shapes on screen and lines up with them (`TaliCore/Snap.swift`).
 extension NoteCanvas.Coordinator {
   /// Android's dot sizes, in points on screen.
   private static let tinyShape: CGFloat = 32
@@ -26,6 +26,7 @@ extension NoteCanvas.Coordinator {
     l.lineWidth = 2
     l.zPosition = 11
     v.layer.addSublayer(l)
+    installSnapGuides(on: v)
   }
 
   /// How big [s] is on screen, for sizing its dots: a line's, arc's or curve's length, else its shorter side.
@@ -106,20 +107,62 @@ extension NoteCanvas.Coordinator {
     guard let i = lasso.handle, let base = lasso.handleBase else { return }
     let raw = Pt(Float(p.x) + lasso.handleGrab.x, Float(p.y) + lasso.handleGrab.y)
     let bg = base.geometry
-    var g: ShapeGeometry
+    let z = Float(canvas?.zoomScale ?? 1)
+    let snap = lasso.snap ?? SnapSession(contact: Self.snapPt / z, align: Self.alignPt / z)
+    lasso.snap = snap
+    snap.begin(contact: Self.snapPt / z, align: Self.alignPt / z)
+    let targets = snapTargets(skipping: base.id)
+    // A line's or a distributed load's end: the other end, which it turns about.
+    var lineFixed: Pt?
     switch bg {
-    case let .load(a, b, _, _) where i < 2:
-      // A load's end keeps to the same tidy angles as a line's.
-      let fixed = i == 0 ? b : a
+    case let .line(a, b, _, _, _): lineFixed = i == 0 ? b : a
+    case let .load(a, b, _, _) where i < 2: lineFixed = i == 0 ? b : a
+    default: break
+    }
+    // A dot dragged onto another shape's corner or edge locks on there (a line meeting a line).
+    var stuck: Pt?
+    if let fixed = lineFixed {
+      let (q, on) = lineEndAt(fixed, raw, targets, snap)
+      if on { stuck = q }
+    } else {
+      stuck = Snap.point(raw, targets, snap)
+    }
+    // Not touching anything: it lines up with other shapes' sides, middles and corners (and its own
+    // shape's other corners); a line's end on a tidy angle slides along the line to line up.
+    var aligned: (Pt, [SnapGuide])?
+    if stuck == nil {
+      let tidy = lineFixed.map { Self.tidyEnd($0, raw) }
+      if let fixed = lineFixed, let tidy, tidy.dist(raw) > 0.01 {
+        let r = Snap.alongAngle(fixed, tidy, targets, snap)
+        if !r.1.isEmpty { aligned = r }
+      } else {
+        let r = Snap.alignPoint(raw, targets + Self.ownCorners(bg, i), snap)
+        if !r.1.isEmpty { aligned = r }
+      }
+    }
+    let at = stuck ?? aligned?.0
+    var g: ShapeGeometry
+    if let at {
+      switch bg {
+      case let .triangle(a, b, c, turn):
+        g = .triangle(a: i == 0 ? at : a, b: i == 1 ? at : b, c: i == 2 ? at : c, turn: turn)
+      case let .line(a, b, s, e, t):
+        g = .line(a: i == 0 ? at : a, b: i == 0 ? b : at, arrowStart: s, arrowEnd: e, ticks: t)
+      default:
+        g = bg.withHandle(i, at)
+      }
+    } else if let fixed = lineFixed, case .load = bg {
+      // A load's end not touching anything keeps to the same tidy angles as a line's.
       g = bg.withHandle(i, Self.tidyEnd(fixed, raw))
-    default:
+    } else {
       g = bg.withHandle(i, raw)
     }
     // A line's end snaps to the same tidy angles as a freshly drawn line.
-    if case let .line(a, b, s, e, t) = g {
+    if at == nil, case let .line(a, b, s, e, t) = g {
       g = i == 1 ? .line(a: a, b: Self.tidyEnd(a, b), arrowStart: s, arrowEnd: e, ticks: t)
         : .line(a: Self.tidyEnd(b, a), b: b, arrowStart: s, arrowEnd: e, ticks: t)
     }
+    showSnap(stuck.map { [SnapGuide.touch($0)] } ?? aligned?.1 ?? [])
     var live = base
     live.geometry = g
     lasso.handleLive = live
@@ -130,6 +173,98 @@ extension NoteCanvas.Coordinator {
     CATransaction.commit()
     if let b = g.bounds(live.size) { lasso.bounds = CGRect(b) }
     redrawSelection()
+  }
+
+  /// Android's `SNAP_DP` and `ALIGN_DP`: touching catches from 14 pt on screen, lining up from 8.
+  static let snapPt: Float = 14
+  static let alignPt: Float = 8
+
+  /// What a dot can snap to: the other shapes on screen (Android's `snapItemsInView`).
+  func snapTargets(skipping id: String) -> [SnapFeatures] {
+    guard let canvas else { return [] }
+    let z = canvas.zoomScale
+    let b = canvas.bounds
+    let view = Rect(Float(b.minX / z), Float(b.minY / z), Float(b.maxX / z), Float(b.maxY / z))
+    return (lasso.shapesBefore ?? shapes).compactMap { s in
+      guard s.id != id, let r = s.geometry.bounds(s.size), r.intersects(view) else { return nil }
+      return s.geometry.snapFeatures()
+    }
+  }
+
+  /// Where a line's end goes, dragged to [raw] with its other end at [fixed]: onto another shape's
+  /// end or corner; else, keeping its tidy angle, onto the edge it reaches; else onto the nearest
+  /// edge; else free at its tidy angle. The second value says whether it locked on (Android's `lineEndAt`).
+  private func lineEndAt(_ fixed: Pt, _ raw: Pt, _ targets: [SnapFeatures], _ s: SnapSession) -> (Pt, Bool) {
+    if let c = Snap.corner(raw, targets, s) { return (c, true) }
+    let angled = Self.tidyEnd(fixed, raw)
+    if let q = Snap.alongLine(fixed, angled, targets, s) { return (q, true) }
+    if let q = Snap.point(raw, targets, s) { return (q, true) }
+    return (angled, false)
+  }
+
+  /// The shape's other corners, for a dragged corner to line up with (triangles and free polygons only).
+  private static func ownCorners(_ g: ShapeGeometry, _ index: Int) -> [SnapFeatures] {
+    let corners: [Pt]
+    switch g {
+    case let .triangle(a, b, c, _): corners = [a, b, c]
+    case let .poly(p, _, smooth, _, _) where !smooth && !g.isRect: corners = p
+    default: return []
+    }
+    return [SnapFeatures(corners.enumerated().filter { $0.offset != index }.map(\.element), [], nil)]
+  }
+
+  /// Shows [guides] (dashed lines where things line up, one small cross where it touches) and ends
+  /// the frame's snapping; a light tick when something first locks on.
+  func showSnap(_ guides: [SnapGuide]) {
+    let touch = guides.last { $0.isTouch }
+    let shown = guides.filter { !$0.isTouch } + (touch.map { [$0] } ?? [])
+    if !shown.isEmpty && !lasso.snapShowing { UISelectionFeedbackGenerator().selectionChanged() }
+    lasso.snapShowing = !shown.isEmpty
+    lasso.snap?.end()
+    let z = canvas?.zoomScale ?? 1
+    let pad: CGFloat = 14
+    let lines = CGMutablePath(), cross = CGMutablePath()
+    for g in shown {
+      switch g {
+      case let .align(vertical, at, from, to):
+        if vertical {
+          lines.move(to: CGPoint(x: CGFloat(at) * z, y: CGFloat(from) * z - pad))
+          lines.addLine(to: CGPoint(x: CGFloat(at) * z, y: CGFloat(to) * z + pad))
+        } else {
+          lines.move(to: CGPoint(x: CGFloat(from) * z - pad, y: CGFloat(at) * z))
+          lines.addLine(to: CGPoint(x: CGFloat(to) * z + pad, y: CGFloat(at) * z))
+        }
+      case let .touch(q):
+        let c = CGPoint(x: CGFloat(q.x) * z, y: CGFloat(q.y) * z), k: CGFloat = 2.6
+        cross.move(to: CGPoint(x: c.x - k, y: c.y - k))
+        cross.addLine(to: CGPoint(x: c.x + k, y: c.y + k))
+        cross.move(to: CGPoint(x: c.x - k, y: c.y + k))
+        cross.addLine(to: CGPoint(x: c.x + k, y: c.y - k))
+      }
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    lasso.guideLayer.path = lines
+    lasso.crossHalo.path = cross
+    lasso.crossLayer.path = cross
+    CATransaction.commit()
+  }
+
+  func installSnapGuides(on v: PKCanvasView) {
+    let accent = UIColor(argb: Int32(bitPattern: 0xFF7A_4ED6)).cgColor
+    lasso.guideLayer.strokeColor = accent
+    lasso.guideLayer.lineWidth = 1.2
+    lasso.guideLayer.lineDashPattern = [5, 4]
+    lasso.crossHalo.strokeColor = UIColor(white: 1, alpha: 0.9).cgColor
+    lasso.crossHalo.lineWidth = 3.4
+    lasso.crossLayer.strokeColor = accent
+    lasso.crossLayer.lineWidth = 1.4
+    for (i, l) in [lasso.guideLayer, lasso.crossHalo, lasso.crossLayer].enumerated() {
+      l.fillColor = nil
+      l.lineCap = .round
+      l.zPosition = 12 + CGFloat(i)
+      v.layer.addSublayer(l)
+    }
   }
 
   /// Where [end] goes from [fixed] on a tidy angle (every 45°), as `ShapeRecognizer.snappedLine`.
@@ -145,6 +280,8 @@ extension NoteCanvas.Coordinator {
     lasso.handle = nil
     lasso.handleBase = nil
     lasso.handleLive = nil
+    lasso.snap = nil
+    showSnap([])
     if live.geometry != base.geometry, let canvas {
       record(canvas.drawing, shapes: before)
       setShapes(before.map { $0.id == live.id ? live : $0 })

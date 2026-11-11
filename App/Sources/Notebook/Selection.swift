@@ -37,6 +37,12 @@ struct LassoState {
   var handleBase: ShapeRow?
   var handleLive: ShapeRow?
   var handleGrab = Pt(0, 0)
+  /// The dot drag's snapping and its guides.
+  var snap: SnapSession?
+  var snapShowing = false
+  let guideLayer = CAShapeLayer()
+  let crossHalo = CAShapeLayer()
+  let crossLayer = CAShapeLayer()
 }
 
 /// Strokes copied or cut, carried across notebooks (Android's `Clipboard`), in world units.
