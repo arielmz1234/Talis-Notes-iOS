@@ -9,6 +9,9 @@ final class StrokeWatcher: UIGestureRecognizer {
   var began: (UITouch, UIEvent) -> Void = { _, _ in }
   var moved: (UITouch, UIEvent) -> Void = { _, _ in }
   var ended: (Bool) -> Void = { _ in }
+  /// Whether to follow a touch at all; one it doesn't want fails the watcher at once (so scrolling,
+  /// which may wait for it to fail, goes ahead).
+  var accepts: (UITouch) -> Bool = { _ in true }
   private weak var tracked: UITouch?
 
   override init(target: Any?, action: Selector?) {
@@ -20,6 +23,10 @@ final class StrokeWatcher: UIGestureRecognizer {
 
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
     if tracked == nil, let t = touches.first, (event.allTouches?.count ?? 1) == 1 {
+      guard accepts(t) else {
+        state = .failed
+        return
+      }
       tracked = t
       began(t, event)
     } else if tracked != nil {

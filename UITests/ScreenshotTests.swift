@@ -92,6 +92,22 @@ final class ScreenshotTests: XCTestCase {
       app.buttons["pen-p1"].firstMatch.tap()
       settle()
     }
+    // The Shapes tool: its panel opens, an ellipse is chosen and dragged out.
+    if app.buttons["tool-shapes"].exists {
+      app.buttons["tool-shapes"].firstMatch.tap()
+      settle()
+      shot("4e-shapes-panel")
+      if app.buttons["shape-ELLIPSE"].exists {
+        app.buttons["shape-ELLIPSE"].firstMatch.tap()
+        settle()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.62, dy: 0.3))
+          .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.42)), withVelocity: .slow, thenHoldForDuration: 0.05)
+        settle()
+        shot("4f-shape-drawn")
+      }
+      app.buttons["pen-p1"].firstMatch.tap()
+      settle()
+    }
     if app.buttons["more"].exists {
       app.buttons["more"].firstMatch.tap()
       settle()

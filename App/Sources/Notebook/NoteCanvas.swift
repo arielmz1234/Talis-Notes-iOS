@@ -9,6 +9,7 @@ enum Tool: Equatable {
   case pen(String)  // a PenSlot id
   case eraser
   case lasso
+  case shape
 }
 
 /// What the page layer draws besides paper: shapes and pictures from the notebook (pictures first,
@@ -124,6 +125,8 @@ struct NoteCanvas: UIViewRepresentable {
   /// Lets the notebook screen ask for page pictures.
   var bridge: CanvasBridge? = nil
   var eraser = EraserSettings()
+  /// The shape the Shapes tool draws.
+  var shapeKind: ShapeKind = .RECTANGLE
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
   /// Where what the lasso picked up is on screen (window coordinates), or nil; for the selection menu.
@@ -160,6 +163,7 @@ struct NoteCanvas: UIViewRepresentable {
     c.installSelection(on: v)
     c.installHoldToShape(on: v)
     c.installShapeEraser(on: v)
+    c.installShapeTool(on: v)
     bridge?.coordinator = c
     v.minimumZoomScale = 0.3
     v.maximumZoomScale = 6
@@ -293,6 +297,9 @@ struct NoteCanvas: UIViewRepresentable {
     var hold = HoldState()
     /// The eraser on shapes (see ShapeSelection.swift).
     var shapeEraser = ShapeEraser()
+    /// The Shapes tool (see ShapeTool.swift), and the pen last used (shapes take its look).
+    var shapeTool = ShapeToolState()
+    var lastPenId: String?
 
     /// The settings the canvas was last given, to change only what changed.
     var applied: CanvasSettings?
@@ -338,11 +345,13 @@ struct NoteCanvas: UIViewRepresentable {
         }
       }
       // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own loop.
-      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso
+      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape
       lasso.pan?.isEnabled = !parent.viewOnly && parent.tool == .lasso
+      shapeTool.watcher?.isEnabled = !parent.viewOnly && parent.tool == .shape
       if parent.tool != .lasso { clearSelection() }
       switch parent.tool {
       case .pen(let id):
+        lastPenId = id
         let pen = parent.pens.first { $0.id == id } ?? PenSlot.defaults[0]
         canvas.tool = PKInkingTool(pen.type.ink, color: UIColor(argb: pen.inkColor), width: CGFloat(pen.size))
       case .eraser:
@@ -352,8 +361,8 @@ struct NoteCanvas: UIViewRepresentable {
         } else {
           canvas.tool = PKEraserTool(.vector, width: CGFloat(parent.eraser.size))
         }
-      case .lasso:
-        // Our own lasso (Android's): the canvas doesn't draw while it's in use.
+      case .lasso, .shape:
+        // Our own lasso and Shapes tool (Android's): the canvas doesn't draw while they're in use.
         canvas.tool = PKInkingTool(.monoline, color: .clear, width: 1)
       }
     }
@@ -499,7 +508,7 @@ struct NoteCanvas: UIViewRepresentable {
           growPages(for: s)
           rebuilt.append(pk)
           next.append((key, s))
-        } else if isSnappedStroke(pk) || parent.tool == .lasso {
+        } else if isSnappedStroke(pk) || parent.tool == .lasso || parent.tool == .shape {
           // The stroke that became a shape (hold-to-shape), or one PencilKit drew while the lasso was
           // on (in clear ink): neither is kept.
           needsRebuild = true

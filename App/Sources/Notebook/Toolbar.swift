@@ -5,7 +5,7 @@ import SwiftUI
 // the pen's settings, her first few colours, her three thicknesses, then the tools.
 
 /// Which panel hangs under the toolbar.
-enum PanelKind { case pen, eraser }
+enum PanelKind { case pen, eraser, shapes }
 
 /// Saved colours (Android's `savedColors` / `highlighterColors`) and how many sit in the toolbar.
 enum Palette {
@@ -149,6 +149,7 @@ struct MainToolbar: View {
   @Binding var pens: [PenSlot]
   @Binding var tool: Tool
   @Binding var panel: PanelKind?
+  var shapeKind: ShapeKind = .RECTANGLE
   var showColors = true
   @Environment(\.tali) private var c
   @Namespace private var toolGlide
@@ -210,6 +211,7 @@ struct MainToolbar: View {
       HStack(spacing: 0) {
         toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
         toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
+        toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
       }
       .padding(.trailing, 2)
     }
@@ -233,12 +235,21 @@ struct MainToolbar: View {
     return Button {
       if tool == t {
         if t == .eraser { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .eraser ? nil : .eraser } }
+        if t == .shape { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .shapes ? nil : .shapes } }
       } else {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { tool = t }
-        withAnimation(.easeOut(duration: 0.12)) { panel = nil }
+        // The Shapes tool opens its panel straight away, to choose what to draw.
+        withAnimation(.easeOut(duration: 0.12)) { panel = t == .shape ? .shapes : nil }
       }
     } label: {
-      Image(systemName: icon).font(.system(size: 19)).foregroundStyle(on ? c.blue : c.ink)
+      Group {
+        // While on, the Shapes tool shows the shape it draws.
+        if t == .shape && on {
+          ShapeIcon(kind: shapeKind, color: c.blue, size: 24)
+        } else {
+          Image(systemName: icon).font(.system(size: 19)).foregroundStyle(on ? c.blue : c.ink)
+        }
+      }
         .frame(width: 44, height: 44)
         .background {
           if on { RoundedRectangle(cornerRadius: 14).fill(c.blueSoft).matchedGeometryEffect(id: "tool", in: toolGlide) }

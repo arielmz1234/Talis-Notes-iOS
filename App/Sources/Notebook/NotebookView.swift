@@ -25,6 +25,9 @@ struct NotebookView: View {
   @State private var tool: Tool = .pen(PenStore.load().first?.id ?? "p1")
   @State private var pens: [PenSlot] = PenStore.load()
   @State private var panel: PanelKind?
+  /// The Shapes tool's shape (Android's `lastShape`).
+  @AppStorage("lastShape") private var shapeKindRaw = ShapeKind.RECTANGLE.rawValue
+  private var shapeKind: ShapeKind { ShapeKind(rawValue: shapeKindRaw) ?? .RECTANGLE }
   @AppStorage("eraserPrecise") private var eraserPrecise = false
   @AppStorage("eraserSize") private var eraserSize: Double = 20
   @State private var canUndo = false
@@ -68,6 +71,7 @@ struct NotebookView: View {
           settings: CanvasSettings(paper: paper, dark: dark, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between),
           bridge: bridge,
           eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize)),
+          shapeKind: shapeKind,
           onUndoState: { u, r in
             canUndo = u
             canRedo = r
@@ -139,6 +143,11 @@ struct NotebookView: View {
                 if let i = activePenIndex { PenPanel(pen: $pens[i]) }
               case .eraser:
                 EraserPanel(precise: $eraserPrecise, size: Binding(get: { Float(eraserSize) }, set: { eraserSize = Double($0) }))
+              case .shapes:
+                ShapesPanel(kind: Binding(get: { shapeKind }, set: { shapeKindRaw = $0.rawValue })) {
+                  // Choosing a shape closes the panel so she can draw it straight away.
+                  withAnimation(.easeOut(duration: 0.12)) { panel = nil }
+                }
               }
             }
             .transition(
@@ -234,7 +243,7 @@ struct NotebookView: View {
   }
 
   private func mainToolbar(showColors: Bool) -> some View {
-    MainToolbar(pens: $pens, tool: $tool, panel: $panel, showColors: showColors)
+    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shapeKind: shapeKind, showColors: showColors)
   }
 
   private var fingerDraws: Bool? { fingerDrawsRaw < 0 ? nil : fingerDrawsRaw == 1 }

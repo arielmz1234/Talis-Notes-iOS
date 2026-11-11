@@ -223,3 +223,25 @@ Found:
 Next:
 - Lasso UI test picking nothing up (see above).
 - Eraser and lasso for shapes; the Shapes tool and panel; snapping.
+
+### Session 2, continued (owner said keep going)
+
+- Lasso fixed (run 42997378616, seen in `ipad-light-4d-lasso`): it now follows its own touches with a
+  `StrokeWatcher` (like hold-to-shape) instead of a `UIPanGestureRecognizer`, which PKCanvasView let
+  begin but never began. 191 loop points, both strokes picked, frame and menu showing. A second
+  finger cancels the loop (pinch/scroll).
+- The UI test now reopens the notebook (`5b-reopened`). It showed two bugs:
+  1. **Reloaded ink is a hairline** (~1 px) while live ink was ~4.5 pt for a 2.5 pt fineliner. So
+     `InkStroke.pkStroke` point sizes don't render like PencilKit's live tool width. The test build
+     now shows "ink tool W point P max M n N" for each new stroke (hint in `4-notebook`) to
+     measure the relation. Then make live and reloaded match Android's width.
+  2. The lasso's own drag was stored as an invisible ink stroke (PencilKit kept drawing in the
+     lasso's clear ink). Strokes arriving while the lasso is the tool are now dropped in `sync`.
+     PencilKit drawing during the lasso should also be truly off (`drawingGestureRecognizer`
+     disabled evidently isn't enough on iOS 26).
+- Shapes in the lasso and eraser (`Notebook/ShapeSelection.swift`): the lasso picks up shapes it
+  touches (unlocked); move (carried in an overlay layer, page tiles redrawn once), copy, cut,
+  duplicate, paste, recolour (keeps the shape's alpha), thickness, mirror and delete include them,
+  and undo restores shapes with the drawing (`record(_:shapes:)` → `setShapes`, which saves only
+  what changed). The eraser takes whole shapes it passes over (its own watcher; one undo step for
+  the shapes). Arrange (front/back) is ink only: shapes are always under the writing here.
