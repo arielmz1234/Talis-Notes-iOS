@@ -210,7 +210,7 @@ struct NoteCanvas: UIViewRepresentable {
     c.installShapeTool(on: v)
     c.installTextBoxes(on: v)
     bridge?.coordinator = c
-    v.minimumZoomScale = 0.3
+    v.minimumZoomScale = 0.2
     v.maximumZoomScale = 6
     v.showsVerticalScrollIndicator = false
     v.showsHorizontalScrollIndicator = false
@@ -495,8 +495,15 @@ struct NoteCanvas: UIViewRepresentable {
       pages.layer.position = .zero
       pages.setNeedsDisplay()
       canvas.contentSize = CGSize(width: world.width * z, height: (world.height + 300) * z)
+      // Until she zooms by hand, the page keeps fitting the canvas as its size settles (the screen
+      // slides in, the device turns): set once early, the fit was lost.
+      if didFit, !zoomedByHand, canvas.bounds.size != fittedSize, canvas.bounds.width > 0 {
+        fittedSize = canvas.bounds.size
+        DispatchQueue.main.async { [weak self] in self?.fitWidth() }
+      }
       if !didFit, canvas.bounds.width > 0 {
         didFit = true
+        fittedSize = canvas.bounds.size
         // The page's whole width on screen (a slide-shaped PDF page is far wider than A4), once the
         // canvas has its size. Something in the canvas's first moments set the zoom back to 100%, so
         // it's fitted again a moment later unless she has zoomed meanwhile.
@@ -512,6 +519,7 @@ struct NoteCanvas: UIViewRepresentable {
 
     /// She pinched: the first fit doesn't come back over it.
     var zoomedByHand = false
+    var fittedSize: CGSize = .zero
 
     func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
       if scrollView.isTracking || scrollView.isZoomBouncing || scrollView.pinchGestureRecognizer?.state == .began { zoomedByHand = true }
