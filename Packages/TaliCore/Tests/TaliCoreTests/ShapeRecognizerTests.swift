@@ -135,27 +135,36 @@ struct ShapeRecognizerTests {
   }
 
   @Test func aWaveBecomesACurve() {
-    let wave = (0..<120).map { i in Pt(Float(i) * 3, 60 * Float(sin(Double(i) / 119 * 4 * .pi)) + rnd.next() * 2) }
+    let wave = (0..<120).map { (i: Int) -> Pt in
+      let a: Double = Double(i) / 119 * 4 * Double.pi
+      return Pt(Float(i) * 3, 60 * Float(sin(a)) + rnd.next() * 2)
+    }
     let g = ShapeRecognizer.recognize(wave)
     guard case let .curve(points)? = g else { Issue.record("got \(String(describing: g))"); return }
     #expect(points.first!.dist(wave.first!) < 3 && points.last!.dist(wave.last!) < 3)
     let path = g!.paths(1)[0]
     #expect(wave.allSatisfy { p in path.map { $0.dist(p) }.min()! < 15 })
-    let s = (0..<100).map { i in
-      let t = Double(i) / 99 * .pi
+    let s = (0..<100).map { (i: Int) -> Pt in
+      let t: Double = Double(i) / 99 * Double.pi
       return Pt(80 * Float(sin(2 * t)), Float(i) * 3)
     }
     guard case .curve? = ShapeRecognizer.recognize(s) else { Issue.record("an S: got \(String(describing: ShapeRecognizer.recognize(s)))"); return }
   }
 
   @Test func pentagonKeepsItsCorners() {
-    let corners = (0..<6).map { i in Pt(100 * Float(cos(-Double.pi / 2 + 2 * .pi * Double(i) / 5)), 100 * Float(sin(-Double.pi / 2 + 2 * .pi * Double(i) / 5))) }
+    let corners = (0..<6).map { (i: Int) -> Pt in
+      let a: Double = -Double.pi / 2 + 2 * Double.pi * Double(i) / 5
+      return Pt(Float(100 * cos(a)), Float(100 * sin(a)))
+    }
     let g = ShapeRecognizer.recognize(wobbly(corners, jitter: 2))
     guard case let .poly(p, _, _, _)? = g, p.count == 5 else { Issue.record("got \(String(describing: g))"); return }
   }
 
   @Test func hexagonIsNotMistakenForCircle() {
-    let corners = (0..<7).map { i in Pt(100 * Float(cos(2 * .pi * Double(i) / 6)), 100 * Float(sin(2 * .pi * Double(i) / 6))) }
+    let corners = (0..<7).map { (i: Int) -> Pt in
+      let a: Double = 2 * Double.pi * Double(i) / 6
+      return Pt(Float(100 * cos(a)), Float(100 * sin(a)))
+    }
     let g = ShapeRecognizer.recognize(wobbly(corners, jitter: 2))
     guard case let .poly(p, _, _, _)? = g, p.count == 6 else { Issue.record("got \(String(describing: g))"); return }
   }
@@ -172,8 +181,8 @@ struct ShapeRecognizerTests {
 
   private func arch(_ r: Float, _ sweepDeg: Double, hooks: Bool = false) -> [Pt] {
     let half = sweepDeg / 2 * .pi / 180
-    let pts = (0..<90).map { i in
-      let a = Double.pi + (Double.pi / 2 - half) + 2 * half * Double(i) / 89
+    let pts = (0..<90).map { (i: Int) -> Pt in
+      let a: Double = Double.pi + (Double.pi / 2 - half) + 2 * half * Double(i) / 89
       return Pt(r * Float(cos(a)) + rnd.next() * 2, r * Float(sin(a)) + rnd.next() * 2)
     }
     if !hooks { return pts }
@@ -201,7 +210,10 @@ struct ShapeRecognizerTests {
   }
 
   @Test func scribbleStaysInk() {
-    let scribble = (0..<120).map { i in Pt(Float(i) * 3, i % 2 == 0 ? 0 : 60 + rnd.next() * 40) }
+    let scribble = (0..<120).map { (i: Int) -> Pt in
+      let y: Float = i % 2 == 0 ? 0 : 60 + rnd.next() * 40
+      return Pt(Float(i) * 3, y)
+    }
     #expect(ShapeRecognizer.recognize(scribble) == nil)
   }
 

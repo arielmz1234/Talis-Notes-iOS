@@ -151,7 +151,59 @@ Decisions:
 - World units = points at zoom 1 (Android's dp).
 
 Known problems:
+- The lasso UI test picks nothing up (run 42930179315). Unknown whether the app or XCUITest's drag
+  is at fault; worth a log line from `lassoPan` in the test build.
+- Shapes (from Android or hold-to-shape) can't be erased or lassoed yet.
 - After a lasso move, the moved strokes are swapped for their stored form, so the lasso selection
   ends (PencilKit's lasso). Our own lasso will replace it.
 - New strokes are kept as PencilKit drew them until reopened (control points ≈ samples); strokes
   loaded from Android go through PencilKit's spline, so they look slightly smoother than on Android.
+
+## Session 2 (11 Nov 2026, scheduled run, owner's Windows PC)
+
+Found on start: the night session's last commit (Export PDF, 11ba273) was never pushed, and its
+notes stopped before its last three commits. Those commits, all built green in CI before Export:
+- the selection menu's ⋯ (colour, thickness, to front/back, mirror) — 61cbdef;
+- the lasso running alongside PencilKit's touch handling, simulators booted before tests — 314a6a1;
+- the pages overview from the ⋯ menu (every page, go to, delete, add) — e9b3906;
+- Export PDF from the ⋯ menu (Best / Balanced / Light with the real size, Save or Share) — 11ba273,
+  pushed this session; it builds in the same run as hold-to-shape below.
+
+Seen in run 42930179315's screenshots: the lasso still picks nothing up in the UI test (no loop,
+frame or menu in `4d-lasso` on iPad or iPhone; a tiny mark appears in the iPad's bottom-right
+corner). Not solved yet: see Known problems.
+
+Done this session:
+- `TaliCore/ShapeRecognizer.swift`: Android's `ShapeRecognizer.kt` ported line for line (lines
+  snapping to 45°, arrows, arcs with the half-circle snap and hook trimming, curves, L/Z polylines,
+  circles, ellipses, triangles incl. right-angle and isosceles snaps, rectangles/squares, diamonds,
+  regular pentagons/hexagons, stars), plus `Geo.resample/simplify/meanDistToPolyline/centroid`.
+  `ShapeRecognizerTests` ports all of `ShapeRecognizerTest.kt` (a seeded SplitMix generator
+  replaces Kotlin's `Random(7)`, so the wobble differs; the thresholds are the same).
+- Shapes are written the Android way: `ShapeGeometry.json` (kotlinx's form: "type" key, defaults
+  left out), `ShapeRow.row(id:z:)` (kind 1, extra "fill"/"locked"/"line"), `bounds`, `transformed`.
+  `.poly` gained `rotation` (Android stores it for rectangles).
+- App: hold-to-shape (`Notebook/HoldToShape.swift`). A `StrokeWatcher` gesture recogniser watches
+  the writing touch without ever recognising (PencilKit keeps the stroke). After 0.45 s resting
+  (7 pt tolerance, stroke ≥ 24 pt on screen) the stroke is recognised; PencilKit's live stroke is
+  cancelled by switching its drawing recogniser off and on (and `sync` drops it if it arrives anyway,
+  `isSnappedStroke`); the live shape is drawn in a CAShapeLayer and follows the pen (a line's end
+  snaps to 45°, others scale round their middle, 0.15–8×); on lift it's stored as a shape row,
+  drawn by the page layer, one undo step (redo works too). Medium haptic on the snap.
+- UI test: a sloping line held at its end, which should come out exactly level in `4-notebook`.
+
+Decisions:
+- Hold-to-shape is always on (Android's default); the switch lives in the Shapes panel's Style tab,
+  which isn't ported yet.
+- Shapes keep being drawn by the page layer under the writing. So shapes made here can't yet be
+  erased or picked up with the lasso (PencilKit only knows ink). Needs our own item model for
+  shapes in the eraser and lasso — next big step.
+- Not done from Android's hold-to-shape: snapping a line's start/end to other shapes (`Snap`),
+  custom and subject-pack shapes, the measuring badge, the square/circle diagonal hint.
+
+Next:
+- Check run 42989607121 (or later): core tests (ShapeRecognizerTests), and the level held line in
+  `4-notebook`. If the recogniser tests fail on the seeded wobble, compare with Android's thresholds
+  before loosening anything.
+- Lasso UI test picking nothing up (see above).
+- Eraser and lasso for shapes; the Shapes tool and panel; snapping.

@@ -71,6 +71,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
     if g === lasso.hold { return !InkClipboard.strokes.isEmpty && !parent.viewOnly }
+    if g === lasso.pan, ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso should begin") }
     return true
   }
 
@@ -89,6 +90,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     let p = world(g)
     switch g.state {
     case .began:
+      if ProcessInfo.processInfo.arguments.contains("-uitest") { parent.onHint("lasso began") }
       let pad = 8 / canvas.zoomScale
       if let b = lasso.bounds, b.insetBy(dx: -pad, dy: -pad).contains(p) {
         lasso.moving = true

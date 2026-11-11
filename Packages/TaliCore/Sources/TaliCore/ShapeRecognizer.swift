@@ -270,7 +270,12 @@ public enum ShapeRecognizer {
     let stroke = Geo.resample(points, 120)
     func close(_ c: ShapeGeometry) -> Bool {
       guard let path = c.paths(1).first, path.count > 1 else { return false }
-      let worst = stroke.map { p in (0..<(path.count - 1)).map { Geo.distToSegment(p, path[$0], path[$0 + 1]) }.min()! }.max() ?? 0
+      var worst: Float = 0
+      for p in stroke {
+        var nearest = Float.greatestFiniteMagnitude
+        for i in 0..<(path.count - 1) { nearest = min(nearest, Geo.distToSegment(p, path[i], path[i + 1])) }
+        worst = max(worst, nearest)
+      }
       return worst < 0.05 * diag && Geo.meanDistToPolyline(stroke, path, closed: false) < 0.02 * diag
     }
     for tolerance: Float in [0.05, 0.035, 0.02] {
@@ -278,7 +283,9 @@ public enum ShapeRecognizer {
       if turns.count > 12 { break }
       var at = turns.map { t in stroke.firstIndex(of: t)! }
       while at.count < curveDots {
-        let gap = (0..<(at.count - 1)).max { at[$0 + 1] - at[$0] < at[$1 + 1] - at[$1] }!
+        // The widest gap (the first of equal ones, as Kotlin's maxBy).
+        var gap = 0
+        for i in 1..<(at.count - 1) where at[i + 1] - at[i] > at[gap + 1] - at[gap] { gap = i }
         if at[gap + 1] - at[gap] < 2 { break }
         at.insert((at[gap] + at[gap + 1]) / 2, at: gap + 1)
       }

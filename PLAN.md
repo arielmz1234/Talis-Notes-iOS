@@ -38,7 +38,8 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 - [x] Pens (fineliner, fountain, pencil, calligraphy, highlighter), type/colour/thickness panel
 - [ ] Line styles (dashes) for ink, quick colours and three sizes in the toolbar
 - [x] Eraser and lasso (PencilKit's own for now), undo/redo
-- [ ] Our own lasso and selection menu, precise eraser, page overview
+- [x] Our own lasso and selection menu (with ⋯), page overview, Export PDF
+- [ ] Precise eraser of our own; lasso UI test picking up
 - [x] iPhone: opens view-only, Write button remembered per notebook
 - [ ] Toolbar, panels, top bar (quick open, undo/redo, eye, ⋯)
 
@@ -50,5 +51,7 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 
 ### 5. PDFs, pictures, text
 ### 6. Shapes, hold-to-shape, snapping, fill, the rest of CLAUDE.md
+- [x] Hold-to-shape (recogniser ported with its tests; shapes stored the Android way)
+- [ ] Shapes in the eraser and lasso; Shapes tool and panel; snapping; fill
 ### 7. iPhone layout throughout (view-only by default, Write button)
 ### 8. App Store readiness (icon done from `tools/icon-source.png`; privacy manifest, screenshots, store text)
