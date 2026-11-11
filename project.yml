@@ -51,6 +51,7 @@ targets:
           [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIApplicationSupportsIndirectInputEvents: true
         ITSAppUsesNonExemptEncryption: false
+        NSCameraUsageDescription: "The camera is used only while it's open, for a photo of the board or a page. Photos stay on this device."
   TalisNotesUITests:
     type: bundle.ui-testing
     platform: iOS

@@ -17,6 +17,8 @@ struct LibraryView: View {
   /// The + menu's Photo: the system photo picker (up to 30, as on Android).
   @State private var pickingPhotos = false
   @State private var photos: [PhotosPickerItem] = []
+  /// The + menu's Camera.
+  @State private var camera = false
   @State private var importNote: String?
   @State private var drawer = false
   @State private var renaming: NotebookMeta?
@@ -84,6 +86,18 @@ struct LibraryView: View {
         }
         if await lib.importPictures(data: data) == nil { importNote = L("couldn_t_open_that_file") }
       }
+    }
+    .fullScreenCover(isPresented: $camera) {
+      CameraPicker(
+        onPhoto: { image in
+          // A photo comes out the way the camera holds it; drawn upright before it's kept.
+          let upright = UIGraphicsImageRenderer(size: image.size).image { _ in image.draw(at: .zero) }
+          guard let data = upright.jpegData(compressionQuality: 0.9) else { return }
+          Task { @MainActor in _ = await lib.importPictures(data: [data]) }
+        },
+        onClose: { camera = false }
+      )
+      .ignoresSafeArea()
     }
     .alert(importNote ?? "", isPresented: Binding(get: { importNote != nil }, set: { if !$0 { importNote = nil } })) {
       Button(L("close")) { importNote = nil }
@@ -266,7 +280,8 @@ struct LibraryView: View {
           AddMenu(
             onNotebook: { withAnimation(Ease.outStrong(duration: 0.24)) { creating = true } },
             onFile: { importing = true },
-            onPhoto: { pickingPhotos = true })
+            onPhoto: { pickingPhotos = true },
+            onCamera: CameraPicker.available ? { camera = true } : nil)
         }
       }
       .transition(.opacity.combined(with: .offset(y: 8)))
@@ -485,6 +500,7 @@ struct AddMenu: View {
   var onNotebook: () -> Void
   var onFile: () -> Void
   var onPhoto: () -> Void
+  var onCamera: (() -> Void)? = nil
   @Environment(\.tali) private var c
 
   var body: some View {
@@ -495,6 +511,10 @@ struct AddMenu: View {
         .accessibilityIdentifier("add-file")
       Button(action: onPhoto) { Label(L("add_photo"), systemImage: "photo.on.rectangle") }
         .accessibilityIdentifier("add-photo")
+      if let onCamera {
+        Button(action: onCamera) { Label(L("add_camera"), systemImage: "camera") }
+          .accessibilityIdentifier("add-camera")
+      }
     } label: {
       Image(systemName: "plus").font(.system(size: 22, weight: .medium)).foregroundStyle(c.onAccent)
         .frame(width: 48, height: 48)
