@@ -180,15 +180,62 @@ extension NoteCanvas.Coordinator {
   static let alignPt: Float = 8
 
   /// What a dot can snap to: the other shapes on screen (Android's `snapItemsInView`).
-  func snapTargets(skipping id: String) -> [SnapFeatures] {
+  func snapTargets(skipping id: String) -> [SnapFeatures] { snapTargets(skipping: [id]) }
+
+  /// Shapes and text boxes on screen now, apart from [ids]. Handwriting isn't snapped to.
+  func snapTargets(skipping ids: Set<String>) -> [SnapFeatures] {
     guard let canvas else { return [] }
     let z = canvas.zoomScale
     let b = canvas.bounds
     let view = Rect(Float(b.minX / z), Float(b.minY / z), Float(b.maxX / z), Float(b.maxY / z))
-    return (lasso.shapesBefore ?? shapes).compactMap { s in
-      guard s.id != id, let r = s.geometry.bounds(s.size), r.intersects(view) else { return nil }
+    let shapeTargets: [SnapFeatures] = (lasso.shapesBefore ?? shapes).compactMap { s in
+      guard !ids.contains(s.id), let r = s.geometry.bounds(s.size), r.intersects(view) else { return nil }
       return s.geometry.snapFeatures()
     }
+    let textTargets: [SnapFeatures] = (lasso.textsBefore ?? texts).compactMap { t in
+      guard !ids.contains(t.id) else { return nil }
+      let r = Self.rect(TextLook.frame(t))
+      return r.intersects(view) ? Self.boxFeatures(r) : nil
+    }
+    return shapeTargets + textTargets
+  }
+
+  static func rect(_ f: CGRect) -> Rect { Rect(Float(f.minX), Float(f.minY), Float(f.maxX), Float(f.maxY)) }
+
+  /// A box's corners, centre and sides (Android's `boxFeatures`, for pictures and text boxes).
+  static func boxFeatures(_ r: Rect) -> SnapFeatures {
+    let c = [Pt(r.left, r.top), Pt(r.right, r.top), Pt(r.right, r.bottom), Pt(r.left, r.bottom)]
+    return SnapFeatures(c + [r.center], c.indices.map { (c[$0], c[($0 + 1) % 4]) }, r)
+  }
+
+  /// Starts snapping a move of what's picked up (Android's `startMoveSnap`): shapes and text boxes
+  /// snap by their own features; handwriting alone lines up only the middle of its box.
+  func startMoveSnap() {
+    guard let canvas else { return }
+    let z = Float(canvas.zoomScale)
+    lasso.snap = SnapSession(contact: Self.snapPt / z, align: Self.alignPt / z)
+    var parts = shapes.filter { lasso.pickedShapes.contains($0.id) }.map { $0.geometry.snapFeatures() }
+    parts += texts.filter { lasso.pickedTexts.contains($0.id) }.map { Self.boxFeatures(Self.rect(TextLook.frame($0))) }
+    if !parts.isEmpty {
+      let f = SnapFeatures.of(parts)
+      // A big selection just lines up by its box (checking every corner of every part would be slow).
+      lasso.snapMoving = f.points.count > 80 || f.segments.count > 600 ? SnapFeatures([], [], f.box) : f
+    } else if let b = lasso.bounds {
+      lasso.snapMoving = SnapFeatures.middleOf(Self.rect(b))
+    } else {
+      lasso.snapMoving = nil
+    }
+    lasso.snapTargets = snapTargets(skipping: lasso.pickedShapes.union(lasso.pickedTexts))
+  }
+
+  /// The carry [dx], [dy] (world units) nudged to lock onto nearby shapes, showing the guides.
+  func snappedMove(_ dx: CGFloat, _ dy: CGFloat) -> CGPoint {
+    guard let m = lasso.snapMoving, let s = lasso.snap, let canvas else { return CGPoint(x: dx, y: dy) }
+    let z = Float(canvas.zoomScale)
+    s.begin(contact: Self.snapPt / z, align: Self.alignPt / z)
+    let r = Snap.move(m.moved(Float(dx), Float(dy)), lasso.snapTargets, s)
+    showSnap(r.guides)
+    return CGPoint(x: dx + CGFloat(r.offset.x), y: dy + CGFloat(r.offset.y))
   }
 
   /// Where a line's end goes, dragged to [raw] with its other end at [fixed]: onto another shape's

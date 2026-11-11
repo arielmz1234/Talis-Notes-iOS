@@ -329,3 +329,38 @@ Next:
 - Phone toolbar: the tools fold into one button (`compactTools`, Android's `MainToolbarPhone`),
   dropping a bar of eraser, lasso, shapes, keyboard. The UI test opens it (`showTool`).
 - CI now prints the failure lines of each screenshot test run (the element, the reason).
+
+## Session 3 (11 Nov 2026 evening, scheduled run, owner's Windows PC)
+
+Started from run 43068434218 (green): its screenshots show the text box placed where Android puts
+it on iPad and iPhone (`4g-typing`); the page's grid was still drawing in those shots.
+
+Done:
+- `ShapeGeometry` now carries what Android stores: `poly.form` (`PolyForm`: diamond, parallelogram,
+  trapezoid, regular), `ellipse.stretchable` (the Ellipse tool's), `triangle.turn`, `group.turn`,
+  and subject shapes (`param`) are kept whole (template, place, frame, settings) so moving one
+  writes it back unchanged; before, a moved param shape would have been saved as just
+  `{"type":"param"}`. Ellipses scale evenly and loads flip their arrows when mirrored (Android's way).
+  The Shapes tool gives diamonds, parallelograms, trapezoids, pentagons, hexagons and stars their forms.
+- `TaliCore/ShapeHandles.swift`: every kind's `handles()` and `withHandle()`, line for line from
+  `Shapes.kt` (rectangle sides with the square snap and turning over, the forms, circle radius dot,
+  ellipse stretch, arc/part-circle ends wrapping and snapping, triangle corners locking to tidy
+  angles, load ends and arrow length). Tests: Android's ShapeResizeTest, ShapeFormsTest,
+  TriangleShapeTest, SectorShapeTest (`ShapeHandleTests.swift`).
+- `TaliCore/Snap.swift`: `Snap.kt` and `snapFeatures()` ported, with `SnapTest` (`SnapTests.swift`;
+  the two "old group upgrades" tests left out, that loader isn't ported).
+- App (`Notebook/ShapeDots.swift`): a shape picked up on its own with the lasso shows its dots
+  (white, blue ring, sized by the shape as on Android, none under 32 pt); dragging one reshapes it
+  live in the overlay, snapping onto other shapes on screen (corner, edge, along a tidy angle) or
+  lining up with them, with the dashed guides and the small cross; a tick when it locks. Letting go
+  saves it, one undo step, still picked up. UI test: `4f2-shape-dots` and `4f3-dot-dragged`.
+
+Verified: run 43095374946 compiled the core and all TaliCore tests passed (the new shape tests
+included) before it was replaced. The snapping run: see below.
+
+Not done (next):
+- Snapping while moving a selection and while drawing with the Shapes tool / hold-to-shape (the
+  core is there: `Snap.move`, `Snap.point`, `alongLine`, `startGuides`).
+- The resize chip, move chip and rotate handle on the selection frame; Android's "a shape stays
+  picked up after it's drawn" (soft selection) — on iOS a selection only exists under the lasso tool.
+- Subject shapes (`param`) still aren't drawn (templates not ported), so they can't be picked up.

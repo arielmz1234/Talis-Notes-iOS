@@ -37,6 +37,10 @@ struct LassoState {
   var handleBase: ShapeRow?
   var handleLive: ShapeRow?
   var handleGrab = Pt(0, 0)
+  /// Moving: how far it has been carried (snapped), and what of it snaps.
+  var moveShift: CGPoint = .zero
+  var snapMoving: SnapFeatures?
+  var snapTargets: [SnapFeatures] = []
   /// The dot drag's snapping and its guides.
   var snap: SnapSession?
   var snapShowing = false
@@ -145,7 +149,9 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         lasso.moving = true
         lasso.dotsLayer.path = nil
         lasso.moveStart = p
+        lasso.moveShift = .zero
         lasso.before = canvas.drawing
+        startMoveSnap()
         liftShapes()
         parent.onSelection(nil)
       } else {
@@ -154,7 +160,9 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       }
     case .changed:
       if lasso.moving, let before = lasso.before {
-        let shift = CGAffineTransform(translationX: p.x - lasso.moveStart.x, y: p.y - lasso.moveStart.y)
+        let d = snappedMove(p.x - lasso.moveStart.x, p.y - lasso.moveStart.y)
+        lasso.moveShift = d
+        let shift = CGAffineTransform(translationX: d.x, y: d.y)
         loading = true
         canvas.drawing = PKDrawing(strokes: before.strokes.enumerated().map { i, s in
           guard i < stored.count, lasso.picked.contains(stored[i].stroke.id) else { return s }
@@ -172,7 +180,10 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     case .ended, .cancelled, .failed:
       if lasso.moving {
         lasso.moving = false
-        let dx = p.x - lasso.moveStart.x, dy = p.y - lasso.moveStart.y
+        let dx = lasso.moveShift.x, dy = lasso.moveShift.y
+        lasso.snap = nil
+        lasso.snapMoving = nil
+        showSnap([])
         let shapesBefore = lasso.shapesBefore ?? shapes
         let textsBefore = lasso.textsBefore ?? texts
         if let before = lasso.before, abs(dx) + abs(dy) > 0.5 {
