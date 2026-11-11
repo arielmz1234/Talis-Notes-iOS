@@ -466,13 +466,19 @@ struct NoteCanvas: UIViewRepresentable {
     /// The first page's whole width on screen, from the top of the first page.
     private func fitWidth() {
       guard let canvas, let pages else { return }
+      // It opens where she left off (Android keeps the view per notebook); the first time, the page's width.
+      let saved = parent.notebook.viewport.flatMap { v -> Viewport? in v.zoom > 0.05 ? v : nil }
       let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
+      let zoom = saved.map { min(max(CGFloat($0.zoom), canvas.minimumZoomScale), canvas.maximumZoomScale) } ?? fit
       // Animated: PKCanvasView ignored the plain zoom change here (the zoom chip's animated one works).
-      canvas.setZoomScale(fit, animated: true)
+      canvas.setZoomScale(zoom, animated: true)
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
         guard let self, let canvas = self.canvas else { return }
         self.updateContent()
-        canvas.setContentOffset(CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top), animated: false)
+        let z = canvas.zoomScale
+        let at = saved.map { CGPoint(x: CGFloat($0.x) * z - canvas.contentInset.left, y: CGFloat($0.y) * z - canvas.contentInset.top) }
+          ?? CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
+        canvas.setContentOffset(at, animated: false)
         self.reportView()
       }
     }
