@@ -27,10 +27,10 @@ extension Library {
 
   /// A PDF from her files, named after the file. Throws with a message she can read.
   @discardableResult
-  func importPDF(_ url: URL, progress: (Int, Int) -> Void = { _, _ in }) async throws -> NotebookMeta {
+  func importPDF(_ url: URL, draft: Bool = false, progress: (Int, Int) -> Void = { _, _ in }) async throws -> NotebookMeta {
     let pages = try await renderPDF(url, progress: progress)
     let title = url.deletingPathExtension().lastPathComponent
-    return build(kind: .pdf, title: title.isEmpty ? "PDF" : title, pages: pages)
+    return build(kind: .pdf, title: title.isEmpty ? "PDF" : title, pages: pages, draft: draft)
   }
 
   /// A PDF's pages as pictures in the images folder, the PDF kept beside them so they draw sharp;
@@ -68,14 +68,14 @@ extension Library {
 
   /// Pictures picked together: one item, a picture on each page (Android's `Imports.pictures`).
   @discardableResult
-  func importPictures(_ urls: [URL]) async -> NotebookMeta? {
+  func importPictures(_ urls: [URL], draft: Bool = false) async -> NotebookMeta? {
     var sources: [CGImageSource] = []
     for url in urls {
       let scoped = url.startAccessingSecurityScopedResource()
       defer { if scoped { url.stopAccessingSecurityScopedResource() } }
       if let src = CGImageSourceCreateWithURL(url as CFURL, nil) { sources.append(src) }
     }
-    return await importPictures(sources)
+    return await importPictures(sources, draft: draft)
   }
 
   /// Photos from the photo picker (their data), as one Picture item.
@@ -84,14 +84,14 @@ extension Library {
     await importPictures(data.compactMap { CGImageSourceCreateWithData($0 as CFData, nil) })
   }
 
-  private func importPictures(_ sources: [CGImageSource]) async -> NotebookMeta? {
+  private func importPictures(_ sources: [CGImageSource], draft: Bool = false) async -> NotebookMeta? {
     var pages: [ImportedPage] = []
     for src in sources {
       if let p = Self.savePicture(src) { pages.append(p) }
       await Task.yield()
     }
     guard !pages.isEmpty else { return nil }
-    return build(kind: .picture, title: pages.count > 1 ? English.nPictures(pages.count) : English.picture, pages: pages)
+    return build(kind: .picture, title: pages.count > 1 ? English.nPictures(pages.count) : English.picture, pages: pages, draft: draft)
   }
 
   /// A picture kept in the images folder as an upright JPEG, at most 2400 pixels on its long side.
@@ -120,7 +120,9 @@ extension Library {
 
   /// The item itself: pages the shape of the first one, each picture filling its page (one of another
   /// shape sits in the middle), every picture a page of its own (`pdfPage`: the lasso never takes it).
-  private func build(kind: DocKind, title: String, pages: [ImportedPage]) -> NotebookMeta {
+  /// [draft]: opened from another app, just for looking until she saves it (kept out of the library;
+  /// its name is only made unique when it's saved).
+  private func build(kind: DocKind, title: String, pages: [ImportedPage], draft: Bool = false) -> NotebookMeta {
     let folder: String? = if case .folder(let id) = shelf { id } else { nil }
     let first = pages[0]
     let aspect = Float(first.width / first.height)
@@ -128,8 +130,8 @@ extension Library {
     let now = nowMillis()
     let taken = notebooks.filter { $0.folderId == folder }.map(\.title)
     let meta = NotebookMeta(
-      id: newId(), title: Names.numbered(title, taken: taken), created: now, updated: now, cover: 0xFF7A_4ED6, paper: .BLANK,
-      folderId: folder, pages: pages.count, landscape: layout.isLandscape, kind: kind, pageAspect: aspect)
+      id: newId(), title: draft ? title : Names.numbered(title, taken: taken), created: now, updated: now, cover: 0xFF7A_4ED6, paper: .BLANK,
+      folderId: draft ? nil : folder, pages: pages.count, landscape: layout.isLandscape, draft: draft, kind: kind, pageAspect: aspect)
     try? db.insert(meta)
     var placed: [PictureRow] = []
     for (i, p) in pages.enumerated() {

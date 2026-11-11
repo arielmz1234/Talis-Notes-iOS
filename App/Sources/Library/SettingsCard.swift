@@ -11,6 +11,7 @@ struct SettingsCard: View {
   @AppStorage("themeMode") private var themeMode = "LIGHT"
   @AppStorage("minimal") private var minimal = false
   @AppStorage("colorTheme") private var family = ColorTheme.LILAC.rawValue
+  @AppStorage("pdfsToLibrary") private var pdfsToLibrary = false
   @Namespace private var ring
 
   var body: some View {
@@ -38,6 +39,12 @@ struct SettingsCard: View {
       Spacer().frame(height: 6)
       Text(minimal ? L("clean_edges_on_bars_and_cards") : L("soft_cloud_edges_on_bars_and"))
         .font(TaliType.bodySmall).foregroundStyle(c.inkMuted)
+      Spacer().frame(height: 18)
+      SectionLabel(text: L("pdfs_from_other_apps"))
+      Spacer().frame(height: 4)
+      ToggleRow(
+        label: L("add_them_to_my_notebooks"), on: $pdfsToLibrary,
+        detail: pdfsToLibrary ? L("a_pdf_you_open_with_tali") : L("a_pdf_you_open_with_tali_2"))
       Spacer().frame(height: 22)
       HStack {
         Spacer()

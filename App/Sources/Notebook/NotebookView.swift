@@ -14,7 +14,8 @@ struct NotebookView: View {
     self.notebook = notebook
     self.onBack = onBack
     self.onSwitch = onSwitch
-    _viewing = State(initialValue: PhoneWriting.opensViewOnly(notebook.id, kind: notebook.kind))
+    _viewing = State(initialValue: notebook.draft || PhoneWriting.opensViewOnly(notebook.id, kind: notebook.kind))
+    _draft = State(initialValue: notebook.draft)
     _title = State(initialValue: notebook.title)
     _paper = State(initialValue: notebook.paper)
     _dark = State(initialValue: notebook.dark)
@@ -58,6 +59,10 @@ struct NotebookView: View {
   /// Insert's choice, being run (the photo picker, camera or file picker).
   @State private var inserting: InsertChoice?
   @State private var memos = MemoModel()
+  /// Opened from another app and not saved yet: just for looking, with Save (Android's draft).
+  @State private var draft: Bool
+  @State private var savingDraft = false
+  @State private var leavingDraft = false
   @Environment(\.scenePhase) private var scenePhase
   /// Draw with finger: -1 Auto, 0 off, 1 on (app-wide, as on Android).
   @AppStorage("fingerDraws") private var fingerDrawsRaw = -1
@@ -102,7 +107,13 @@ struct NotebookView: View {
         })
         .overlay { MemoLayer(memos: memos, hint: show) }
         VStack(spacing: narrow ? 18 : 0) {
-          if viewing {
+          if viewing && draft {
+            DraftBar(
+              title: title, pages: notebook.pages != nil ? pageCount : nil, dark: $dark,
+              onBack: { leavingDraft = true }, onSave: { savingDraft = true },
+              onPages: notebook.pages != nil ? { withAnimation(Ease.outStrong(duration: 0.24)) { showPages = true } } : nil,
+              onFit: { command = .fitZoom })
+          } else if viewing {
             HStack(spacing: 10) {
               leftBars
               Spacer(minLength: 10)
@@ -200,6 +211,29 @@ struct NotebookView: View {
           }
           .transition(.opacity)
         }
+        if savingDraft {
+          DialogOverlay(onClose: { savingDraft = false }) {
+            SaveDraftCard(title: title, onCancel: { savingDraft = false }) { name, folder in saveDraft(name, folder) }
+          }
+          .transition(.opacity)
+        } else if leavingDraft {
+          DialogOverlay(onClose: { leavingDraft = false }) {
+            LeaveDraftCard(
+              title: title, onStay: { leavingDraft = false },
+              onLeave: {
+                leavingDraft = false
+                onBack()
+                let id = notebook.id
+                // After the canvas has closed (it saves its view and preview as it goes).
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { lib.discardDraft(id) }
+              },
+              onSave: {
+                leavingDraft = false
+                savingDraft = true
+              })
+          }
+          .transition(.opacity)
+        }
         if let hint {
           VStack {
             Spacer()
@@ -244,6 +278,15 @@ struct NotebookView: View {
     .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
     .statusBarHidden(fullScreen)
     .persistentSystemOverlays(fullScreen ? .hidden : .automatic)
+  }
+
+  /// The draft becomes one of hers: the viewer leaves and the toolbars come in.
+  private func saveDraft(_ name: String, _ folder: String?) {
+    title = lib.saveDraft(notebook.id, title: name, folder: folder)
+    savingDraft = false
+    draft = false
+    PhoneWriting.startWriting(notebook.id)
+    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { viewing = false }
   }
 
   /// Shows [text] for a few seconds.

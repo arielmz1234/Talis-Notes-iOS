@@ -31,6 +31,7 @@ struct TalisNotesApp: App {
 struct RootView: View {
   @Environment(Library.self) private var lib
   @State private var open: NotebookMeta?
+  @State private var incoming = Incoming()
 
   var body: some View {
     ZStack {
@@ -59,9 +60,22 @@ struct RootView: View {
           .zIndex(1)
       }
     }
+    .overlay(alignment: .bottom) { OpeningPill(text: incoming.opening) }
+    // A PDF or picture opened with the app from another one opens as itself, on top of what was open.
+    .onOpenURL { url in
+      incoming.open(url, into: lib) { n in
+        lib.noteOpened(n.id)
+        withAnimation(.easeInOut(duration: 0.42)) { open = n }
+      }
+    }
     .onAppear {
+      lib.sweepDrafts()
       let args = ProcessInfo.processInfo.arguments
       if args.contains("-openFirst"), let first = lib.shown.first { open = first }
+      if let i = args.firstIndex(of: "-openURL"), i + 1 < args.count {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(args[i + 1])
+        incoming.open(url, into: lib) { n in open = n }
+      }
     }
   }
 }

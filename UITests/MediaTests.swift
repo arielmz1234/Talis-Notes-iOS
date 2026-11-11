@@ -223,6 +223,33 @@ extension MediaTests {
   }
 }
 
+extension MediaTests {
+  /// A PDF opened with the app from another one (-openURL stands in for iOS handing it over): a draft
+  /// just for looking, with Save; Back asks; Save makes it one of hers and the toolbars come in.
+  func testPdfFromAnotherApp() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
+    let app = launch(["-openURL", "Lecture slides.pdf"])
+    XCTAssertTrue(app.buttons["draft-save"].waitForExistence(timeout: 8), "the draft viewer opens with Save")
+    settle()
+    shot("o1-draft")
+    app.buttons["back"].firstMatch.tap()
+    settle()
+    shot("o2-leave")
+    app.buttons["Keep looking"].firstMatch.tap()
+    settle()
+    app.buttons["draft-save"].firstMatch.tap()
+    settle()
+    shot("o3-save")
+    app.buttons["draft-save-confirm"].firstMatch.tap()
+    settle()
+    shot("o4-saved")
+    app.buttons["back"].firstMatch.tap()
+    settle()
+    shot("o5-library")
+  }
+}
+
 /// English labels the tests tap.
 enum L10n {
   static let exportPDF = "Export PDF"
