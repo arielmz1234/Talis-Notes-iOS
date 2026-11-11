@@ -467,10 +467,14 @@ struct NoteCanvas: UIViewRepresentable {
     private func fitWidth() {
       guard let canvas, let pages else { return }
       let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
-      canvas.setZoomScale(fit, animated: false)
-      updateContent()
-      canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
-      reportView()
+      // Animated: PKCanvasView ignored the plain zoom change here (the zoom chip's animated one works).
+      canvas.setZoomScale(fit, animated: true)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        guard let self, let canvas = self.canvas else { return }
+        self.updateContent()
+        canvas.setContentOffset(CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top), animated: false)
+        self.reportView()
+      }
     }
 
     private func centre() {
@@ -559,8 +563,8 @@ struct NoteCanvas: UIViewRepresentable {
           let s = InkStroke.from(pk, pen: pen, id: newId(), z: z)
           if !pen.type.pressureSensitive, pk.path.count > 2 {
             // Keep the live width matching the stored one (see InkWidth).
-            let sizes = pk.path.map { $0.size.width }.sorted()
-            InkWidth.learn(pen.type.ink, toolWidth: InkWidth.toolWidth(pen.size, pen.type.ink), pointSize: sizes[sizes.count / 2])
+            let mid = pk.path[pk.path.count / 2]
+            InkWidth.learn(pen.type.ink, size: pen.size, pointSize: mid.size.width, secondary: mid.secondaryScale)
           }
           if ProcessInfo.processInfo.arguments.contains("-uitest"), pk.path.count > 0 {
             let mid = pk.path[pk.path.count / 2]

@@ -165,14 +165,16 @@ struct InkStroke {
   func pkStroke(mask: UIBezierPath?) -> PKStroke {
     let ink = PKInk(pen.ink, color: UIColor(argb: color))
     let start = Date(timeIntervalSinceReferenceDate: 0)
-    let w = CGFloat(size)
+    // Built like PencilKit's own live points for this ink (see InkWidth).
+    let style = InkWidth.pointStyle(pen.ink)
+    let w = CGFloat(size) * style.perSize
     let points = inputs.points.map { p -> PKStrokePoint in
       let pressure = CGFloat(p.pressure ?? 0.5)
       let width = pen.pressureSensitive ? w * (0.55 + 0.9 * pressure) : w
       let tilt = CGFloat(p.tilt ?? 0)
       return PKStrokePoint(
         location: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y)), timeOffset: TimeInterval(p.t), size: CGSize(width: width, height: width),
-        opacity: 1, force: force(pressure), azimuth: CGFloat(p.orientation ?? 0), altitude: .pi / 2 - tilt, secondaryScale: 1)
+        opacity: 1, force: force(pressure), azimuth: CGFloat(p.orientation ?? 0), altitude: .pi / 2 - tilt, secondaryScale: style.secondary)
     }
     return PKStroke(ink: ink, path: PKStrokePath(controlPoints: points, creationDate: start), transform: .identity, mask: mask)
   }
@@ -198,25 +200,33 @@ extension CGRect {
   }
 }
 
-/// How much wider PencilKit draws a live stroke than the tool width it's given, per ink (measured in
-/// the simulator: monoline 2.4 → points 4.40, about 1.83×). The tool is given the pen's size divided
-/// by this, so live strokes are the pen's real width, the width Android draws and the width they
-/// reload at. Learned again from each stroke of an ink without pressure, so it stays right.
+/// Making rebuilt strokes look like live ones. PencilKit's live points don't carry the tool width it
+/// was given: a monoline tool of width 1.31 gave points 2.8 wide with a secondary scale of 0.36, and
+/// points built from stored strokes with the plain size drew about half as wide. So the tool gets the
+/// pen's size divided by a fixed factor (monoline 1.83, which draws the pen's width), and every live
+/// stroke of an ink without pressure records its points' size per pen size and secondary scale, which
+/// stored strokes are rebuilt with: live and reloaded strokes then draw the same.
 @MainActor
 enum InkWidth {
-  static func factor(_ ink: PKInk.InkType) -> CGFloat {
-    let stored = UserDefaults.standard.double(forKey: "inkWidth-\(ink.rawValue)")
-    if stored > 0 { return CGFloat(stored) }
-    return ink == .monoline ? 1.83 : 1
-  }
+  static func factor(_ ink: PKInk.InkType) -> CGFloat { ink == .monoline ? 1.83 : 1 }
 
   /// The tool width that draws a stroke [size] wide with [ink].
   static func toolWidth(_ size: Float, _ ink: PKInk.InkType) -> CGFloat { CGFloat(size) / factor(ink) }
 
-  /// A live stroke drawn with [toolWidth] came out with points [pointSize] wide.
-  static func learn(_ ink: PKInk.InkType, toolWidth: CGFloat, pointSize: CGFloat) {
-    guard toolWidth > 0.1, pointSize > 0.1 else { return }
-    let f = min(max(pointSize / toolWidth, 0.5), 3)
-    UserDefaults.standard.set(Double(f), forKey: "inkWidth-\(ink.rawValue)")
+  /// Point size per pen size, and secondary scale, as live strokes of [ink] have them.
+  nonisolated static func pointStyle(_ ink: PKInk.InkType) -> (perSize: CGFloat, secondary: CGFloat) {
+    let d = UserDefaults.standard
+    let per = d.double(forKey: "inkPoint-\(ink.rawValue)")
+    let sec = d.double(forKey: "inkSecondary-\(ink.rawValue)")
+    if per > 0 { return (CGFloat(per), CGFloat(sec > 0 ? sec : 1)) }
+    // Before any live stroke: what the simulator showed for monoline.
+    return ink == .monoline ? (1.17, 0.36) : (1, 1)
+  }
+
+  /// A live stroke drawn by a pen [size] wide had points [pointSize] wide with [secondary].
+  static func learn(_ ink: PKInk.InkType, size: Float, pointSize: CGFloat, secondary: CGFloat) {
+    guard size > 0.1, pointSize > 0.05, secondary > 0 else { return }
+    UserDefaults.standard.set(Double(pointSize / CGFloat(size)), forKey: "inkPoint-\(ink.rawValue)")
+    UserDefaults.standard.set(Double(secondary), forKey: "inkSecondary-\(ink.rawValue)")
   }
 }
