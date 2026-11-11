@@ -67,8 +67,10 @@ Worked in areas that touch different files, each by one agent in its own worktre
 simulators and its own UI test class (`UITests/<Area>Tests.swift` on `ShotCase`;
 `ONLY=<Class> sh scripts/local-shots.sh …` runs one). Android item numbers are from its CLAUDE.md.
 
-- [ ] Shape editing: dots, resize/turn chips, move chip, triangle corners, part circle and arc ends,
-      circle radius dot, soft selection (items 13, 14, 17, 18, 23, 24, 58, 85)
+- [x] Shape editing: dots, resize/turn chips, move chip, triangle corners, part circle and arc ends,
+      circle radius dot, soft selection, measuring badges (items 13, 14, 17, 18, 23, 24, 58, 85).
+      Merged 12 Nov. Left: snapping and joint dots (with Selecting, more); rotation snaps to 45° as
+      Android's code does (its README says 15°); stale ink after a lasso resize seen once on iPhone.
 - [ ] Pens and ink: line styles (19), quick colours and toolbar colours per pen (20, 30, 37),
       highlighter straight lines and square tip (25), laser (26), eraser filters and a precise
       eraser of our own, Apple Pencil double-tap and squeeze (Android's side button)
