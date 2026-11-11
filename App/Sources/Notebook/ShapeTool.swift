@@ -11,6 +11,9 @@ struct ShapeToolState {
   var startScreen: CGPoint = .zero
   var drawing = false
   var preview: ShapeRow?
+  /// The start locked onto another shape, or lined up with them (its guides).
+  var startStuck = false
+  var startGuides: [SnapGuide] = []
   let layer = CAShapeLayer()
 }
 
@@ -57,7 +60,19 @@ extension NoteCanvas.Coordinator {
     clearSelection()
     let q = t.location(in: canvas)
     shapeTool.startScreen = q
-    shapeTool.start = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
+    let p = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
+    // A new shape can start right on another one (a line from a corner or off an edge); not
+    // touching anything, it starts lined up with other shapes' sides, middles and corners.
+    let z = Float(canvas.zoomScale)
+    func session() -> SnapSession { SnapSession(contact: Self.snapPt / z, align: Self.alignPt / z) }
+    let targets = snapTargets(skipping: Set<String>())
+    lasso.snapTargets = targets
+    let stuck = Snap.point(p, targets, session())
+    let lined = stuck == nil ? Snap.alignPoint(p, targets, session()) : nil
+    lasso.snap = session()
+    shapeTool.start = stuck ?? lined?.0 ?? p
+    shapeTool.startStuck = stuck != nil
+    shapeTool.startGuides = lined?.1 ?? []
     shapeTool.drawing = false
     shapeTool.preview = nil
   }
@@ -69,9 +84,38 @@ extension NoteCanvas.Coordinator {
       guard hypot(q.x - shapeTool.startScreen.x, q.y - shapeTool.startScreen.y) >= Self.shapeStartSlide else { return }
       shapeTool.drawing = true
     }
-    let p = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
+    let raw = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
+    let kind = parent.shapeKind
+    let z = Float(canvas.zoomScale)
+    let snap = lasso.snap ?? SnapSession(contact: Self.snapPt / z)
+    lasso.snap = snap
+    snap.begin(contact: Self.snapPt / z, align: Self.alignPt / z)
+    let targets = lasso.snapTargets
+    // Where the drag ends: a line's end onto an edge or corner; a box's corner onto a corner or
+    // edge, or lined up with other shapes. Shapes drawn out from a point only snap where they start.
+    let result: (Pt, [SnapGuide])
+    if kind.drawnFromPoint {
+      result = (raw, [])
+    } else if kind.drawnAsLine {
+      let (p, on) = lineEndAt(start, raw, targets, snap)
+      if on {
+        result = (p, [.touch(p)])
+      } else if p.dist(raw) > 0.01 {
+        // On a tidy angle already: it keeps it, sliding along to line up with other shapes.
+        let r = Snap.alongAngle(start, p, targets, snap)
+        result = r.1.isEmpty ? (raw, []) : r
+      } else {
+        result = Snap.alignPoint(raw, targets, snap)
+      }
+    } else if let p = Snap.point(raw, targets, snap) {
+      result = (p, [.touch(p)])
+    } else {
+      result = Snap.alignPoint(raw, targets, snap)
+    }
+    let (end, guides) = result
+    showSnap((shapeTool.startStuck ? [SnapGuide.touch(start)] : []) + shapeTool.startGuides + guides)
     let pen = shapePen
-    shapeTool.preview = ShapeRow(geometry: parent.shapeKind.drawn(start, p), pen: pen.type == .HIGHLIGHTER ? "FINELINER" : pen.type.rawValue, color: pen.color | Int32(bitPattern: 0xFF00_0000), size: pen.type == .HIGHLIGHTER ? 2.5 : pen.size)
+    shapeTool.preview = ShapeRow(geometry: kind.drawn(start, end, keepEnd: !guides.isEmpty), pen: pen.type == .HIGHLIGHTER ? "FINELINER" : pen.type.rawValue, color: pen.color | Int32(bitPattern: 0xFF00_0000), size: pen.type == .HIGHLIGHTER ? 2.5 : pen.size)
     drawShapePreview()
   }
 
@@ -80,6 +124,10 @@ extension NoteCanvas.Coordinator {
     shapeTool.start = nil
     shapeTool.drawing = false
     shapeTool.preview = nil
+    shapeTool.startStuck = false
+    shapeTool.startGuides = []
+    lasso.snap = nil
+    showSnap([])
     drawShapePreview()
     if let shape { addShape(shape) }
   }

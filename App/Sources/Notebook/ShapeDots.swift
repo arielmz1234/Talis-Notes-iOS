@@ -241,7 +241,7 @@ extension NoteCanvas.Coordinator {
   /// Where a line's end goes, dragged to [raw] with its other end at [fixed]: onto another shape's
   /// end or corner; else, keeping its tidy angle, onto the edge it reaches; else onto the nearest
   /// edge; else free at its tidy angle. The second value says whether it locked on (Android's `lineEndAt`).
-  private func lineEndAt(_ fixed: Pt, _ raw: Pt, _ targets: [SnapFeatures], _ s: SnapSession) -> (Pt, Bool) {
+  func lineEndAt(_ fixed: Pt, _ raw: Pt, _ targets: [SnapFeatures], _ s: SnapSession) -> (Pt, Bool) {
     if let c = Snap.corner(raw, targets, s) { return (c, true) }
     let angled = Self.tidyEnd(fixed, raw)
     if let q = Snap.alongLine(fixed, angled, targets, s) { return (q, true) }
