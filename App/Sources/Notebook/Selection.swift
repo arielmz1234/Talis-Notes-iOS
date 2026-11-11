@@ -89,6 +89,12 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     return false
   }
 
+  func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    // A tap inside the text box being typed in is the text box's own (placing the cursor), not "done".
+    if g === textEdit.tap, let v = textEdit.view, let hit = touch.view, hit === v || hit.isDescendant(of: v) { return false }
+    return true
+  }
+
   func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
     if g === lasso.hold { return !InkClipboard.isEmpty && !parent.viewOnly }
     return true
