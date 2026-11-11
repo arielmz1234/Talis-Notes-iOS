@@ -55,6 +55,13 @@ final class ScreenshotTests: XCTestCase {
     }
     app.buttons["add"].firstMatch.tap()
     settle()
+    // The + is a menu: Notebook opens the new-notebook card.
+    let notebookItem = app.buttons["add-notebook"].firstMatch
+    if notebookItem.waitForExistence(timeout: 3) {
+      shot("2b-add-menu")
+      notebookItem.tap()
+      settle()
+    }
     shot("3-new-notebook")
     app.buttons["create"].firstMatch.tap()
     settle()

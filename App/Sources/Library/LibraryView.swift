@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import TaliCore
 
 /// The library, laid out like Android's `LibraryScreen`: one continuous sky across the top of the
@@ -10,6 +11,9 @@ struct LibraryView: View {
   @Environment(\.tali) private var c
   var onOpen: (NotebookMeta) -> Void
   @State private var creating = false
+  /// The + menu's File: the system file picker, then what was picked becomes an item of its own.
+  @State private var importing = false
+  @State private var importNote: String?
   @State private var drawer = false
   @State private var renaming: NotebookMeta?
   @State private var moving: NotebookMeta?
@@ -47,6 +51,26 @@ struct LibraryView: View {
         }
         if phone { drawerLayer }
       }
+    }
+    .fileImporter(isPresented: $importing, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { result in
+      guard case .success(let urls) = result, !urls.isEmpty else { return }
+      Task { @MainActor in
+        // Each PDF becomes an item of its own; pictures picked together become one.
+        for u in urls where u.pathExtension.lowercased() == "pdf" {
+          do {
+            try await lib.importPDF(u)
+          } catch Library.ImportError.message(let m) {
+            importNote = m
+          } catch {
+            importNote = L("couldn_t_open_that_file")
+          }
+        }
+        let pictures = urls.filter { $0.pathExtension.lowercased() != "pdf" }
+        if !pictures.isEmpty, await lib.importPictures(pictures) == nil { importNote = L("couldn_t_open_that_file") }
+      }
+    }
+    .alert(importNote ?? "", isPresented: Binding(get: { importNote != nil }, set: { if !$0 { importNote = nil } })) {
+      Button(L("close")) { importNote = nil }
     }
     .overlay {
       if creating {
@@ -223,7 +247,9 @@ struct LibraryView: View {
             Button(L("select")) { withAnimation(.easeOut(duration: 0.2)) { picked = [] } }.buttonStyle(QuietButtonStyle())
             Spacer().frame(width: 8)
           }
-          AddButton { withAnimation(Ease.outStrong(duration: 0.24)) { creating = true } }
+          AddMenu(
+            onNotebook: { withAnimation(Ease.outStrong(duration: 0.24)) { creating = true } },
+            onFile: { importing = true })
         }
       }
       .transition(.opacity.combined(with: .offset(y: 8)))
@@ -436,6 +462,29 @@ struct SortButton: View {
   }
 }
 
+/// The + (Android's `AddButton` and its card): a system menu with Notebook (the new-notebook card)
+/// and File (PDFs and pictures from her files). A native menu on iOS rather than Android's card.
+struct AddMenu: View {
+  var onNotebook: () -> Void
+  var onFile: () -> Void
+  @Environment(\.tali) private var c
+
+  var body: some View {
+    Menu {
+      Button(action: onNotebook) { Label(L("notebook"), systemImage: "book.closed") }
+        .accessibilityIdentifier("add-notebook")
+      Button(action: onFile) { Label(L("add_file"), systemImage: "doc.badge.plus") }
+        .accessibilityIdentifier("add-file")
+    } label: {
+      Image(systemName: "plus").font(.system(size: 22, weight: .medium)).foregroundStyle(c.onAccent)
+        .frame(width: 48, height: 48)
+        .background(RoundedRectangle(cornerRadius: 16).fill(c.accentGradient))
+    }
+    .accessibilityLabel(L("add"))
+    .accessibilityIdentifier("add")
+  }
+}
+
 /// The + : a 48 pt rounded square in the violet-to-blue gradient.
 struct AddButton: View {
   var action: () -> Void
@@ -448,7 +497,6 @@ struct AddButton: View {
     }
     .buttonStyle(PressStyle(scale: 0.94))
     .accessibilityLabel(L("add"))
-    .accessibilityIdentifier("add")
   }
 }
 

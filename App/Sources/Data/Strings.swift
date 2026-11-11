@@ -15,6 +15,8 @@ enum English {
   static let newNotebook = "New notebook"
   static let newFolder = "New folder"
   static let untitled = "Untitled"
+  static let picture = "Picture"
+  static func nPictures(_ n: Int) -> String { "\(n) pictures" }
 }
 
 func nowMillis() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }

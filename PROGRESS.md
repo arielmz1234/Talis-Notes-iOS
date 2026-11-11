@@ -245,3 +245,15 @@ Next:
   and undo restores shapes with the drawing (`record(_:shapes:)` → `setShapes`, which saves only
   what changed). The eraser takes whole shapes it passes over (its own watcher; one undo step for
   the shapes). Arrange (front/back) is ink only: shapes are always under the writing here.
+- Shapes tool (`Notebook/ShapeTool.swift`, `ShapesPanel.swift`, `TaliCore/ShapeKinds.swift` with
+  `ShapeKindTests`): seen in run 43004155595 — the panel (`4e-shapes-panel`: 16 standard tiles and the
+  7 civil-engineering symbols, Rectangle chosen in blue) and an ellipse dragged out
+  (`4f-shape-drawn`), the toolbar button showing the ellipse. The engineering symbols are in the
+  panel under "Civil Engineering" (Android has them in the Civil subject of More shapes; the
+  subject packs aren't ported). No Style tab yet: shapes take the last pen's colour and size.
+- Same run, reopened (`5b-reopened`): the lasso's drag is no longer saved. Reloaded ink was still
+  a hairline, probably because a finger's stroke stores pressure 0 and was reloaded with force
+  0.01. Pens without pressure now reload at force 1 (`InkStroke.force`). The test build shows
+  "live … | loaded …" numbers in `5b-reopened` to confirm.
+- The lasso's menu stayed up after switching tools: `clearSelection` from inside `updateUIView`
+  changed SwiftUI state mid-update. It's now deferred.

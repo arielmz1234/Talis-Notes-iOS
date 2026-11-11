@@ -19,7 +19,7 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 - [x] Colours (lilac light/dark), fonts (Figtree, Bricolage, Heebo, Vazirmatn), cloud surface, sky clouds
 - [x] String catalog from Android, six languages
 - [x] Settings card (theme, Cloudy/Minimal style, language via iOS Settings)
-- [ ] Colour families (Sky, Sage, Peach)
+- [x] Colour families (Sky, Sage, Peach)
 - [ ] Gliding selection, cloud-puff "goes away" mist
 
 ### 2. Library
