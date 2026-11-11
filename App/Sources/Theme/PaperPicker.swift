@@ -41,6 +41,7 @@ struct PaperPicker: View {
         .transition(.opacity)
       }
     }
+    .slidingHighlight(glide, selected: style, fill: .color(c.accentSoft), corner: 10)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(GeometryReader { g in Color.clear.onAppear { width = g.size.width }.onChange(of: g.size.width) { _, w in width = w } })
   }
@@ -48,7 +49,7 @@ struct PaperPicker: View {
   private func tile(_ p: PaperStyle) -> some View {
     let on = p == style
     return Button {
-      withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { style = p }
+      withAnimation(.easeOut(duration: 0.2)) { style = p }
     } label: {
       VStack(spacing: 4) {
         PaperPreview(style: p, dark: dark, zoom: 2.6)
@@ -59,9 +60,7 @@ struct PaperPicker: View {
       }
       .padding(.vertical, 6)
       .frame(width: tileWidth)
-      .background {
-        if on { RoundedRectangle(cornerRadius: 10).fill(c.accentSoft).matchedGeometryEffect(id: "paper", in: glide) }
-      }
+      .slidingOption(p, in: glide)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)

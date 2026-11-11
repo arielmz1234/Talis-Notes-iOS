@@ -90,15 +90,35 @@ struct CloudPuffCanvas: View {
   var vivid = false
   @Environment(\.tali) private var c
 
-  static let overflow: CGFloat = 56
+  /// How far past a [w] by [h] area the wisps can reach as they swell, drift and lift.
+  static func reach(_ w: CGFloat, _ h: CGFloat, smooth: Bool, vivid: Bool) -> CGFloat {
+    let swell = vivid ? 1.14 : 1.22
+    let lift = min(h, w) * (vivid ? 0.22 : 0.28)
+    var out: CGFloat = 0
+    for p in mist(w, h, smooth: smooth) {
+      let r = p.r * (vivid ? 1.18 : 1.35)
+      let across = abs(p.x * swell) + abs(p.dx) + r - w / 2
+      let up = abs(p.y * swell) + abs(p.dy) + lift + r - h / 2
+      let down = abs(p.y * swell) + abs(p.dy) + p.r * 0.3 + r - h / 2
+      out = max(out, across, up, down)
+    }
+    return ceil(out)
+  }
 
   var body: some View {
-    Canvas { ctx, size in
+    // Canvas clips to its frame (Compose doesn't), so it's made as big as the mist can get.
+    GeometryReader { g in
+      let w = g.size.width, h = g.size.height
+      let m = w > 0 && h > 0 ? CloudPuffCanvas.reach(w, h, smooth: c.isDark, vivid: vivid) : 0
+      canvas(w, h, m).frame(width: w + 2 * m, height: h + 2 * m).offset(x: -m, y: -m)
+    }
+    .allowsHitTesting(false)
+  }
+
+  private func canvas(_ w: CGFloat, _ h: CGFloat, _ m: CGFloat) -> some View {
+    Canvas { ctx, _ in
       let t = progress
-      guard t > 0, t < 1 else { return }
-      let m = CloudPuffCanvas.overflow
-      let w = size.width - 2 * m, h = size.height - 2 * m
-      guard w > 0, h > 0 else { return }
+      guard t > 0, t < 1, w > 0, h > 0 else { return }
       let dark = c.isDark
       let wisps = mist(w, h, smooth: dark)
       let top: Color = dark ? mix(mix(c.cloudTop, c.dusk, 0.4), .white, 0.45) : (vivid ? mix(.white, c.cloudBelly, 0.28) : .white)
@@ -136,8 +156,6 @@ struct CloudPuffCanvas: View {
         }
       }
     }
-    .padding(-CloudPuffCanvas.overflow)
-    .allowsHitTesting(false)
   }
 }
 

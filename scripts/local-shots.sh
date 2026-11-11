@@ -27,7 +27,7 @@ TEST_RUNNER_SHOT_DIR="$PWD/shots" TEST_RUNNER_SHOT_TAG="$tag" TEST_RUNNER_SHOT_D
   ${ONLY:+-only-testing:TalisNotesUITests/$ONLY} > "build/$tag.log" 2>&1 &
 run=$!
 # On Xcode 27 xcodebuild can sit forever after the last test: stop it once the summary is out.
-until ! kill -0 $run 2>/dev/null || grep -qE "Test Suite 'All tests' (passed|failed)" "build/$tag.log"; do sleep 2; done
+until ! kill -0 $run 2>/dev/null || grep -qE "Test Suite '(All|Selected) tests' (passed|failed)" "build/$tag.log"; do sleep 2; done
 i=0; while kill -0 $run 2>/dev/null && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done
 kill $run 2>/dev/null || true
 grep -E "error:|failed:|Assertion|No matches|not hittable|ScreenshotTests.swift:" "build/$tag.log" | grep -v "Test Suite" | head -20 || true

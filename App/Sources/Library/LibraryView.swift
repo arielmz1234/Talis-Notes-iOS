@@ -3,15 +3,38 @@ import SwiftUI
 import UniformTypeIdentifiers
 import TaliCore
 
+/// The one card over the library at a time.
+enum LibraryDialog: Equatable {
+  case newNotebook, backups, settings, tour, emptyTrash
+  case rename(NotebookMeta)
+  case delete(NotebookMeta)
+  case deletePicked(Set<String>)
+  case trash(NotebookMeta)
+  case newFolder(parent: String?)
+  case renameFolder(Folder)
+  case moveFolder(Folder)
+  case deleteFolder(Folder)
+
+  /// Confirmations add no tint behind them (Android's `dim = false`).
+  var dims: Bool {
+    switch self {
+    case .delete, .deletePicked, .trash, .emptyTrash, .deleteFolder: false
+    default: true
+    }
+  }
+}
+
 /// The library, laid out like Android's `LibraryScreen`: one continuous sky across the top of the
-/// whole screen with the sidebar and notebooks below it; a greeting, the big heading and a count
-/// line; search, sort and + beside it (under it when narrow); a ruler; then the notebooks. On a phone
-/// the sidebar is a drawer (☰).
+/// whole screen with the sidebar and notebooks below it; a greeting, the way back up out of a
+/// folder, the big heading and a count line; search, sort and + beside it (under it when narrow);
+/// a ruler; then the folders and notebooks. On a phone the sidebar is a drawer (☰).
 struct LibraryView: View {
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
+  @Environment(\.layoutDirection) private var direction
   var onOpen: (NotebookMeta) -> Void
-  @State private var creating = false
+  @State private var dialog: LibraryDialog?
+  @State private var addCardOpen = false
   /// The + menu's File: the system file picker, then what was picked becomes an item of its own.
   @State private var importing = false
   /// The + menu's Photo: the system photo picker (up to 30, as on Android).
@@ -22,17 +45,14 @@ struct LibraryView: View {
   /// What + is adding, shown in a pill at the bottom.
   @State private var adding = AddingModel()
   @State private var drawer = false
-  @State private var renaming: NotebookMeta?
-  @State private var moving: NotebookMeta?
-  @State private var deleting: NotebookMeta?
-  @State private var restoring: NotebookMeta?
-  @State private var newFolder = false
-  @State private var backups = false
-  @State private var settings = false
   /// Picking several notebooks (Select): the ones ticked, or nil when not picking.
   @State private var picked: Set<String>?
-  @State private var deletingPicked = false
+  /// Notebooks and folders on their way out (puffing away), and a folder that has just been made.
+  @State private var vanishing: Set<String> = []
+  @State private var fresh: Set<String> = []
+  @State private var knownFolders: Set<String>?
   @AppStorage("minimal") private var minimal = false
+  @AppStorage("tourSeen") private var tourSeen = false
 
   var body: some View {
     GeometryReader { geo in
@@ -59,6 +79,8 @@ struct LibraryView: View {
         if phone { drawerLayer }
       }
     }
+    .overlayPreferenceValue(AddButtonBounds.self) { anchor in addLayer(anchor) }
+    .puffLayerHost()
     .fileImporter(isPresented: $importing, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { result in
       guard case .success(let urls) = result, !urls.isEmpty else { return }
       adding.addFiles(urls, into: lib)
@@ -85,99 +107,239 @@ struct LibraryView: View {
       AddingPill(adding: adding) { id in if let n = lib.notebooks.first(where: { $0.id == id }) { onOpen(n) } }
     }
     .overlay {
-      if creating {
-        DialogOverlay(onClose: { creating = false }) {
-          NewNotebookCard(onClose: { closeDialogs() }, folderName: openFolderName) { title, paper, pages, landscape, dark, cover in
-            let n = lib.create(title: title, paper: paper, pages: pages, landscape: landscape, dark: dark, cover: cover)
-            closeDialogs()
-            onOpen(n)
-          }
+      if let d = dialog {
+        DialogOverlay(dim: d.dims, onClose: { close() }) { card(for: d) }
+      }
+    }
+    // Changing folder or opening Recently deleted ends picking.
+    .onChange(of: lib.shelf) { _, _ in picked = nil }
+    .onChange(of: lib.folders.map(\.id), initial: true) { _, ids in noteNewFolder(Set(ids)) }
+    .onAppear(perform: welcome)
+  }
+
+  // MARK: Dialogs
+
+  private func show(_ d: LibraryDialog) {
+    withAnimation(Ease.outStrong(duration: 0.24)) { dialog = d }
+  }
+
+  private func close() {
+    withAnimation(.easeOut(duration: 0.16)) { dialog = nil }
+  }
+
+  @ViewBuilder private func card(for d: LibraryDialog) -> some View {
+    switch d {
+    case .newNotebook:
+      NewNotebookCard(onClose: { close() }, folderName: lib.openFolder?.name, suggestedName: lib.freeNotebookName, defaultCover: lib.nextCover) {
+        title, paper, pages, landscape, dark, cover in
+        let n = lib.create(title: title, paper: paper, pages: pages, landscape: landscape, dark: dark, cover: cover)
+        close()
+        onOpen(n)
+      }
+    case .backups: BackupCard(onClose: { close() })
+    case .settings:
+      SettingsCard(onClose: { close() }, onTour: { show(.tour) })
+    case .tour: TourCard(onDone: { close() })
+    case .rename(let n):
+      NameCard(title: L("rename_notebook"), initial: n.title, placeholder: L("notebook_name"), confirm: L("rename"), onClose: { close() }) {
+        lib.rename(n.id, to: $0)
+        close()
+      }
+    case .delete(let n):
+      ConfirmCard(
+        title: L("delete_n", n.title), message: L("it_moves_to_recently_deleted_where", trashDays), confirm: L("delete"), destructive: true,
+        onClose: { close() }
+      ) {
+        close()
+        vanish(n.id) { lib.moveToTrash(n.id) }
+      }
+    case .deletePicked(let ids):
+      ConfirmCard(
+        title: ids.count == 1 ? L("delete_1_notebook") : L("delete_n_notebooks", ids.count), message: L("they_move_to_recently_deleted_where", trashDays),
+        confirm: L("delete"), destructive: true, onClose: { close() }
+      ) {
+        close()
+        picked = nil
+        for id in ids { vanish(id) { lib.moveToTrash(id) } }
+      }
+    case .trash(let n):
+      TrashCard(
+        notebook: n, onClose: { close() },
+        onErase: {
+          lib.eraseForGood(n.id)
+          close()
+        },
+        onRestore: {
+          lib.restore(n.id)
+          close()
+        })
+    case .emptyTrash:
+      ConfirmCard(
+        title: L("empty_recently_deleted"),
+        message: lib.trash.count == 1 ? L("t_1_notebook_will_be_deleted_for") : L("n_notebooks_will_be_deleted_for", lib.trash.count),
+        confirm: L("delete_forever"), destructive: true, onClose: { close() }
+      ) {
+        lib.emptyTrash()
+        close()
+      }
+    case .newFolder(let parent):
+      NewFolderCard(
+        title: lib.folder(parent).map { L("new_folder_in_n", $0.name) } ?? L("new_folder"), placeholder: lib.freeFolderName(in: parent),
+        initialColor: lib.nextFolderColor(in: parent), onClose: { close() }
+      ) { name, color in
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { lib.createFolder(name: name, color: color, parent: parent) }
+        close()
+      }
+    case .renameFolder(let f):
+      NameCard(title: L("rename_folder"), initial: f.name, placeholder: L("folder_name"), confirm: L("rename"), onClose: { close() }) {
+        lib.renameFolder(f.id, to: $0)
+        close()
+      }
+    case .moveFolder(let f):
+      MoveFolderCard(folder: f, folders: lib.folders, onClose: { close() }) {
+        lib.moveFolder(f.id, to: $0)
+        close()
+      }
+    case .deleteFolder(let f):
+      ConfirmCard(
+        title: L("delete_the_n_folder", f.name),
+        message: lib.folder(f.parentId).map { L("nothing_inside_is_deleted_its_notebooks", $0.name) } ?? L("nothing_inside_is_deleted_its_notebooks_2"),
+        confirm: L("delete_folder"), destructive: true, onClose: { close() }
+      ) {
+        close()
+        vanish(f.id) { lib.deleteFolder(f.id) }
+      }
+    }
+  }
+
+  /// Plays [id]'s puff of mist, then does [then] once it has gone (Android's `vanish`).
+  private func vanish(_ id: String, then: @escaping () -> Void) {
+    vanishing.insert(id)
+    DispatchQueue.main.asyncAfter(deadline: .now() + PuffTiming.leave) {
+      withAnimation(.spring(response: 0.36, dampingFraction: 0.9)) { then() }
+      vanishing.remove(id)
+    }
+  }
+
+  /// One new folder is one she just made (not the list loading in): it arrives on a puff.
+  private func noteNewFolder(_ ids: Set<String>) {
+    if let old = knownFolders {
+      let new = ids.subtracting(old)
+      if new.count == 1 {
+        fresh = new
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { if fresh == new { fresh = [] } }
+      }
+    }
+    knownFolders = ids
+  }
+
+  /// Someone new (nothing in the library yet) gets the tour once.
+  private func welcome() {
+    if !tourSeen && !ProcessInfo.processInfo.arguments.contains("-uitest") && lib.notebooks.isEmpty && lib.trash.isEmpty {
+      tourSeen = true
+      show(.tour)
+    }
+  }
+
+  // MARK: The + card
+
+  @ViewBuilder private func addLayer(_ anchor: Anchor<CGRect>?) -> some View {
+    let rtl = direction == .rightToLeft
+    GeometryReader { g in
+      let b = anchor.map { g[$0] } ?? .zero
+      let width = min(330, g.size.width - 16)
+      let x = min(max(rtl ? b.minX : b.maxX - width, 8), max(g.size.width - width - 8, 8))
+      ZStack(alignment: .topLeading) {
+        if addCardOpen {
+          Color.clear.contentShape(Rectangle())
+            .onTapGesture { withAnimation(Ease.outStrong(duration: 0.24)) { addCardOpen = false } }
+            .accessibilityHidden(true)
         }
-      } else if backups {
-        DialogOverlay(onClose: { closeDialogs() }) { BackupCard(onClose: { closeDialogs() }) }
-      } else if settings {
-        DialogOverlay(onClose: { closeDialogs() }) { SettingsCard(onClose: { closeDialogs() }) }
+        if addCardOpen, anchor != nil {
+          AddCard(choices: AddChoice.allCases.filter { $0 != .camera || CameraScreen.available || ProcessInfo.processInfo.arguments.contains("-cameraPicture") }) { pickAdd($0) }
+            .frame(width: width)
+            .environment(\.layoutDirection, direction)
+            .transition(
+              .asymmetric(
+                insertion: .scale(scale: 0.9, anchor: rtl ? .topLeading : .topTrailing).combined(with: .opacity),
+                removal: .scale(scale: 0.95, anchor: rtl ? .topLeading : .topTrailing).combined(with: .opacity).animation(.easeOut(duration: 0.13))))
+            .offset(x: x, y: b.maxY + 8)
+        }
       }
+      .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
     }
-    .alert(L("rename"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }), presenting: renaming) { n in
-      RenameField(initial: n.title) { lib.rename(n.id, to: $0) }
-    }
-    .alert(L("new_folder"), isPresented: $newFolder) {
-      RenameField(initial: "") { name in
-        let parent: String? = if case .folder(let id) = lib.shelf { id } else { nil }
-        lib.createFolder(name: name, color: Covers.soft[lib.folders.count % Covers.soft.count], parent: parent)
-      }
-    }
-    .confirmationDialog(L("move_to"), isPresented: Binding(get: { moving != nil }, set: { if !$0 { moving = nil } }), presenting: moving) { n in
-      Button(L("no_folder")) { lib.move(n.id, to: nil) }
-      ForEach(lib.folders) { f in Button(f.name) { lib.move(n.id, to: f.id) } }
-    }
-    .confirmationDialog(L("delete"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { n in
-      Button(L("delete"), role: .destructive) { withAnimation(.easeOut(duration: 0.22)) { lib.moveToTrash(n.id) } }
-    } message: { _ in
-      Text(L("it_moves_to_recently_deleted_where", trashDays))
-    }
-    .confirmationDialog(
-      restoring?.title ?? "", isPresented: Binding(get: { restoring != nil }, set: { if !$0 { restoring = nil } }), titleVisibility: .visible,
-      presenting: restoring
-    ) { n in
-      Button(L("restore")) { withAnimation(.easeOut(duration: 0.22)) { lib.restore(n.id) } }
-      Button(L("delete_forever"), role: .destructive) { withAnimation(.easeOut(duration: 0.22)) { lib.eraseForGood(n.id) } }
+    .environment(\.layoutDirection, .leftToRight)
+  }
+
+  private func pickAdd(_ choice: AddChoice) {
+    withAnimation(Ease.outStrong(duration: 0.24)) { addCardOpen = false }
+    switch choice {
+    case .notebook: show(.newNotebook)
+    case .file: importing = true
+    case .camera: camera = true
+    case .photo: pickingPhotos = true
     }
   }
 
-  private var openFolderName: String? {
-    if case .folder(let id) = lib.shelf { return lib.folder(id)?.name }
-    return nil
-  }
-
-  private func closeDialogs() {
-    withAnimation(.easeOut(duration: 0.16)) {
-      creating = false
-      backups = false
-      settings = false
-    }
-  }
+  // MARK: The screen
 
   private func sidebar(phone: Bool) -> some View {
     Sidebar(
-      onNewFolder: { newFolder = true },
-      onPicked: { if phone { withAnimation(.easeOut(duration: 0.2)) { drawer = false } } },
-      onBackups: { withAnimation(Ease.outStrong(duration: 0.24)) { backups = true } }, onSettings: { withAnimation(Ease.outStrong(duration: 0.24)) { settings = true } })
+      onNewFolder: { parent in
+        closeDrawer(phone)
+        show(.newFolder(parent: parent))
+      },
+      onRenameFolder: { show(.renameFolder($0)) },
+      onMoveFolder: { show(.moveFolder($0)) },
+      onDeleteFolder: { show(.deleteFolder($0)) },
+      onPicked: { closeDrawer(phone) },
+      onBackups: { show(.backups) }, onSettings: { show(.settings) },
+      vanishing: vanishing, fresh: fresh)
+  }
+
+  private func closeDrawer(_ phone: Bool) {
+    if phone { withAnimation(.easeOut(duration: 0.18)) { drawer = false } }
   }
 
   @ViewBuilder private func main(width: CGFloat, phone: Bool) -> some View {
     let side: CGFloat = phone ? 16 : 36
     VStack(alignment: .leading, spacing: 0) {
-      if phone {
-        Spacer().frame(height: minimal ? 8 : 64)
-        Button { withAnimation(.easeOut(duration: 0.24)) { drawer = true } } label: {
-          Image(systemName: "line.3.horizontal").font(.system(size: 20)).foregroundStyle(c.ink)
-            .frame(width: 44, height: 44).background(RoundedRectangle(cornerRadius: 14).fill(c.surface.opacity(0.7)))
+      VStack(alignment: .leading, spacing: 0) {
+        if phone {
+          Spacer().frame(height: minimal ? 8 : 64)
+          Button { withAnimation(Ease.outStrong(duration: 0.26)) { drawer = true } } label: {
+            Image(systemName: "line.3.horizontal").font(.system(size: 20)).foregroundStyle(c.ink)
+              .frame(width: 44, height: 44).background(RoundedRectangle(cornerRadius: 14).fill(c.surface.opacity(0.7)))
+          }
+          .accessibilityLabel(L("folders"))
+          .accessibilityIdentifier("drawer")
+          Spacer().frame(height: 12)
+        } else {
+          Spacer().frame(height: minimal ? 36 : 112)
         }
-        .accessibilityLabel(L("folders"))
-        Spacer().frame(height: 12)
-      } else {
-        Spacer().frame(height: minimal ? 36 : 112)
-      }
-      // Narrow, there isn't room for all of it on one line: the search and buttons go underneath.
-      if phone || width < 732 {
-        heading
-        Spacer().frame(height: 16)
-        actions(searchWidth: nil)
-      } else {
-        HStack(alignment: .bottom, spacing: 0) {
-          heading.frame(maxWidth: .infinity, alignment: .leading)
-          actions(searchWidth: 240)
+        // Narrow, there isn't room for all of it on one line: the search and buttons go underneath.
+        if phone || width < 732 {
+          heading
+          Spacer().frame(height: 16)
+          actions(searchWidth: nil)
+        } else {
+          HStack(alignment: .bottom, spacing: 0) {
+            heading.frame(maxWidth: .infinity, alignment: .leading)
+            actions(searchWidth: 240)
+          }
         }
+        Spacer().frame(height: 18)
+        RulerDivider()
+        Spacer().frame(height: 22)
       }
-      Spacer().frame(height: 18)
-      RulerDivider()
-      Spacer().frame(height: 22)
       ScrollView {
         content(phone: phone).padding(.bottom, 40)
       }
       .scrollIndicators(.hidden)
+      // Cut along the top only, as Compose's grid is: cards slide under the ruler, not over the
+      // heading, while their shadows keep room at the sides and the list runs on under the home bar.
+      .scrollClipDisabled()
+      .mask(Rectangle().padding(.horizontal, -48).padding(.bottom, -200))
     }
     .padding(.horizontal, side)
   }
@@ -187,6 +349,12 @@ struct LibraryView: View {
       if lib.shelf != .trash {
         GreetingLine()
         Spacer().frame(height: 2)
+      }
+      // Inside a folder within a folder: the way back up, one tap per level.
+      let path = Array(FolderTree.path(to: lib.openFolder?.id, in: lib.folders).dropLast())
+      if !path.isEmpty {
+        Breadcrumb(path: path) { id in lib.shelf = id.map(Shelf.folder) ?? .all }
+        Spacer().frame(height: 4)
       }
       Text(headingText).font(TaliType.displayLarge).tracking(-1.04).foregroundStyle(c.ink)
         .lineLimit(1).minimumScaleFactor(0.62)
@@ -213,7 +381,7 @@ struct LibraryView: View {
     case .all: count = lib.notebooks.count
     case .starred: count = lib.notebooks.filter { lib.starred.contains($0.id) }.count
     case .folder(let id):
-      count = lib.notebooks.filter { $0.folderId == id }.count
+      count = lib.count(in: id)
       inside = lib.folders.filter { $0.parentId == id }.count
     case .trash: count = 0
     }
@@ -225,67 +393,80 @@ struct LibraryView: View {
 
   @ViewBuilder private func actions(searchWidth: CGFloat?) -> some View {
     @Bindable var lib = lib
-    if let chosen = picked {
-      PickBar(
-        count: chosen.count, allPicked: !lib.shown.isEmpty && lib.shown.allSatisfy { chosen.contains($0.id) }, folders: lib.folders,
-        onAll: {
-          let ids = Set(lib.shown.map(\.id))
-          picked = ids.isSubset(of: chosen) ? [] : ids
-        },
-        onMove: { folder in
-          for id in chosen { lib.move(id, to: folder) }
-          picked = nil
-        },
-        onDuplicate: {
-          for id in chosen { lib.duplicate(id) }
-          picked = nil
-        },
-        onDelete: { deletingPicked = true },
-        onDone: { withAnimation(.easeOut(duration: 0.2)) { picked = nil } }
-      )
-      .transition(.opacity.combined(with: .offset(y: 8)))
-    } else {
-      HStack(spacing: 0) {
-        SearchField(text: $lib.search).frame(width: searchWidth).frame(maxWidth: searchWidth == nil ? .infinity : nil)
-        if lib.shelf != .trash {
-          Spacer().frame(width: 8)
-          SortButton()
-        }
-        Spacer().frame(width: 12)
-        if lib.shelf == .trash {
-          if !lib.trash.isEmpty { Button(L("empty")) { lib.emptyTrash() }.buttonStyle(QuietButtonStyle(warning: true)) }
-        } else {
-          if !lib.shown.isEmpty {
-            Button(L("select")) { withAnimation(.easeOut(duration: 0.2)) { picked = [] } }.buttonStyle(QuietButtonStyle())
+    ZStack {
+      if let chosen = picked {
+        PickBar(
+          count: chosen.count, allPicked: !lib.shown.isEmpty && lib.shown.allSatisfy { chosen.contains($0.id) }, folders: lib.folders,
+          onAll: {
+            let ids = Set(lib.shown.map(\.id))
+            picked = ids.isSubset(of: chosen) ? [] : ids
+          },
+          onMove: { folder in
+            for id in chosen { lib.move(id, to: folder) }
+            picked = nil
+          },
+          onDuplicate: {
+            for id in chosen { lib.duplicate(id) }
+            picked = nil
+          },
+          onDelete: { show(.deletePicked(chosen)) },
+          onDone: { picked = nil }
+        )
+        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 10)).animation(Ease.outStrong(duration: 0.22).delay(0.06)), removal: .opacity.animation(.easeOut(duration: 0.12))))
+      } else {
+        HStack(spacing: 0) {
+          SearchField(text: $lib.search).frame(width: searchWidth).frame(maxWidth: searchWidth == nil ? .infinity : nil)
+          if lib.shelf != .trash {
             Spacer().frame(width: 8)
+            SortButton()
           }
-          AddMenu(
-            onNotebook: { withAnimation(Ease.outStrong(duration: 0.24)) { creating = true } },
-            onFile: { importing = true },
-            onPhoto: { pickingPhotos = true },
-            onCamera: CameraScreen.available || ProcessInfo.processInfo.arguments.contains("-cameraPicture") ? { camera = true } : nil)
+          Spacer().frame(width: 12)
+          if lib.shelf == .trash {
+            Button(L("empty")) { show(.emptyTrash) }.buttonStyle(QuietButtonStyle(warning: true)).accessibilityIdentifier("empty-trash")
+          } else {
+            if !lib.shown.isEmpty {
+              Button(L("select")) { picked = [] }.buttonStyle(QuietButtonStyle()).accessibilityIdentifier("select")
+              Spacer().frame(width: 8)
+            }
+            AddButton(open: $addCardOpen)
+          }
         }
+        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 10)).animation(Ease.outStrong(duration: 0.22).delay(0.06)), removal: .opacity.animation(.easeOut(duration: 0.12))))
       }
-      .transition(.opacity.combined(with: .offset(y: 8)))
     }
+    .animation(Ease.outStrong(duration: 0.22), value: picked == nil)
   }
 
   @ViewBuilder private func content(phone: Bool) -> some View {
     let items = lib.shown
-    let folders: [Folder] = lib.search.isEmpty ? lib.subfoldersOfOpenFolder : []
-    if items.isEmpty && folders.isEmpty {
-      EmptyShelf(shelf: lib.shelf, searching: !lib.search.isEmpty, search: lib.search) { creating = true }
-        .frame(maxWidth: .infinity).padding(.top, 30)
+    let open = lib.openFolder
+    let subfolders: [Folder] = open == nil || !lib.search.isEmpty ? [] : lib.folders.filter { $0.parentId == open?.id }
+    if lib.notebooks.isEmpty && lib.shelf != .trash && lib.folders.isEmpty {
+      EmptyLibrary { show(.newNotebook) }
+    } else if items.isEmpty && !lib.search.isEmpty {
+      Text(L("no_notebooks_match_n", lib.search)).font(TaliType.bodyLarge).foregroundStyle(c.inkMuted)
+    } else if items.isEmpty && lib.shelf == .starred {
+      EmptyStarred()
+    } else if items.isEmpty && subfolders.isEmpty, let open {
+      EmptyFolder(onCreate: { show(.newNotebook) }, onNewFolder: { show(.newFolder(parent: open.id)) })
+    } else if items.isEmpty && subfolders.isEmpty {
+      EmptyLibrary { show(.newNotebook) }
     } else {
       let columns = [GridItem(.adaptive(minimum: phone ? 150 : 210), spacing: 24, alignment: .top)]
       LazyVGrid(columns: columns, alignment: .leading, spacing: 28) {
-        if !folders.isEmpty {
+        if let open, lib.search.isEmpty {
           Section {
-            ForEach(folders) { f in
-              FolderTile(folder: f, count: lib.notebooks.filter { $0.folderId == f.id }.count, inner: lib.folders.filter { $0.parentId == f.id }.count)
-                .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { lib.shelf = .folder(f.id) } }
-                .contextMenu { Button(role: .destructive) { lib.deleteFolder(f.id) } label: { Label(L("delete_folder"), systemImage: "trash") } }
+            ForEach(subfolders) { f in
+              FolderTile(folder: f, count: lib.count(in: f.id), inner: lib.folders.filter { $0.parentId == f.id }.count)
+                .onTapGesture { lib.shelf = .folder(f.id) }
+                .contextMenu {
+                  FolderMenu(
+                    folder: f, onNewFolder: { show(.newFolder(parent: f.id)) }, onRename: { show(.renameFolder(f)) }, onMove: { show(.moveFolder(f)) },
+                    onRecolor: { lib.recolorFolder(f.id, $0) }, onDelete: { show(.deleteFolder(f)) })
+                }
+                .puffBox(leaving: vanishing.contains(f.id), appearing: fresh.contains(f.id))
             }
+            NewFolderTile { show(.newFolder(parent: open.id)) }
           } header: {
             SectionLabel(text: L("folders"))
           }
@@ -301,13 +482,19 @@ struct LibraryView: View {
                 if let chosen = picked {
                   togglePick(n.id, in: chosen)
                 } else if lib.shelf == .trash {
-                  restoring = n
+                  show(.trash(n))
                 } else {
                   onOpen(n)
                 }
               }
+              // Only while picking or in Recently deleted: otherwise holding opens its menu.
+              .gesture(
+                LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                  if let chosen = picked { togglePick(n.id, in: chosen) } else { show(.trash(n)) }
+                }, including: picked != nil || lib.shelf == .trash ? .all : .subviews
+              )
               .contextMenu { if lib.shelf != .trash && picked == nil { menu(for: n) } }
-                .transition(.opacity.combined(with: .scale(scale: 0.93)).combined(with: .offset(y: -10)))
+              .puffBox(leaving: vanishing.contains(n.id))
             }
           } header: {
             SectionLabel(text: sectionTitle)
@@ -335,28 +522,57 @@ struct LibraryView: View {
     }
   }
 
+  /// A notebook's hold menu, in Android's order.
   @ViewBuilder private func menu(for n: NotebookMeta) -> some View {
-    Button { withAnimation(.easeOut(duration: 0.2)) { picked = [n.id] } } label: { Label(L("select"), systemImage: "checkmark.circle") }
+    Button { picked = [n.id] } label: { Label(L("select"), systemImage: "checkmark.circle") }
     Button { lib.toggleStar(n.id) } label: {
       Label(L(lib.starred.contains(n.id) ? "remove_star" : "star"), systemImage: lib.starred.contains(n.id) ? "star.fill" : "star")
     }
-    Button { renaming = n } label: { Label(L("rename"), systemImage: "pencil") }
+    Button { show(.rename(n)) } label: { Label(L("rename"), systemImage: "pencil") }
     Button { lib.duplicate(n.id) } label: { Label(L("duplicate"), systemImage: "doc.on.doc") }
-    Button { moving = n } label: { Label(L("move_to_folder"), systemImage: "folder") }
+    Menu {
+      MoveTargets(folders: lib.folders, here: n.folderId) { lib.move(n.id, to: $0) }
+    } label: {
+      Label(L("move_to_folder"), systemImage: "folder")
+    }
+    // Only a notebook has a cover (its spine).
+    if n.kind == .notebook { ColourPalette(current: n.cover) { lib.setCover(n.id, $0) } }
     Divider()
-    Button(role: .destructive) { deleting = n } label: { Label(L("delete"), systemImage: "trash") }
+    Button(role: .destructive) { show(.delete(n)) } label: { Label(L("delete"), systemImage: "trash") }
   }
 
   @ViewBuilder private var drawerLayer: some View {
     if drawer {
       c.scrim.ignoresSafeArea()
-        .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { drawer = false } }
+        .onTapGesture { closeDrawer(true) }
         .transition(.opacity)
       sidebar(phone: true)
-        .frame(width: 290)
+        .frame(width: 268)
         .frame(maxHeight: .infinity)
-        .background(LinearGradient(colors: [c.background, c.sidebarEnd], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .background(
+          UnevenRoundedRectangle(bottomTrailingRadius: 24, topTrailingRadius: 24)
+            .fill(LinearGradient(colors: [c.background, c.sidebarEnd], startPoint: .top, endPoint: .bottom)).ignoresSafeArea()
+        )
         .transition(.move(edge: .leading))
+    }
+  }
+}
+
+/// "No folder", then every folder in tree order, in a hold menu (Android's move list).
+struct MoveTargets: View {
+  var folders: [Folder]
+  var here: String?
+  var onMove: (String?) -> Void
+
+  var body: some View {
+    Section(L("move_to")) {
+      Button { onMove(nil) } label: { Label(L("no_folder"), systemImage: "book.pages") }
+      ForEach(FolderTree.ordered(folders), id: \.folder.id) { f, depth in
+        Button { onMove(f.id) } label: {
+          Label(String(repeating: "    ", count: depth) + (f.id == here ? L("n_here", f.name) : f.name), systemImage: "folder")
+        }
+      }
+      if folders.isEmpty { Text(L("no_folders_yet_add_one_from")) }
     }
   }
 }
@@ -375,24 +591,40 @@ struct PickBar: View {
   @Environment(\.tali) private var c
 
   var body: some View {
+    // On one line when it fits; on a phone the actions go under the count rather than cut it short.
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 0) {
+        counted
+        Spacer().frame(width: 10)
+        actions
+      }
+      VStack(alignment: .leading, spacing: 10) {
+        counted
+        actions
+      }
+    }
+  }
+
+  private var counted: some View {
     HStack(spacing: 0) {
-      Text(count == 1 ? L("t_1_selected") : L("n_selected", count)).font(TaliType.titleMedium).foregroundStyle(c.ink).lineLimit(1)
+      Text(count == 1 ? L("t_1_selected") : L("n_selected", count)).font(TaliType.titleMedium).foregroundStyle(c.ink).lineLimit(1).fixedSize()
       Spacer().frame(width: 12)
       Button(allPicked ? L("select_none") : L("select_all"), action: onAll).buttonStyle(QuietButtonStyle())
-      Spacer().frame(width: 10)
+    }
+  }
+
+  private var actions: some View {
+    HStack(spacing: 0) {
       HStack(spacing: 0) {
         Menu {
-          Section(L("move_to")) {
-            Button(L("no_folder")) { onMove(nil) }
-            ForEach(folders) { f in Button(f.name) { onMove(f.id) } }
-          }
+          MoveTargets(folders: folders, here: nil, onMove: onMove)
         } label: {
           Image(systemName: "folder").font(.system(size: 19)).foregroundStyle(count > 0 ? c.ink : c.inkFaint.opacity(0.5)).frame(width: 44, height: 44)
         }
         .disabled(count == 0)
         .accessibilityLabel(L("move_to_folder"))
         ToolIcon(system: "doc.on.doc", label: L("duplicate"), enabled: count > 0, action: onDuplicate)
-        ToolIcon(system: "trash", label: L("delete"), enabled: count > 0, action: onDelete)
+        ToolIcon(system: "trash", label: L("delete"), enabled: count > 0, action: onDelete).accessibilityIdentifier("pick-delete")
       }
       .padding(.horizontal, 4)
       .background(RoundedRectangle(cornerRadius: 16).fill(c.surface.opacity(0.72)))
@@ -451,10 +683,12 @@ struct SortButton: View {
           } label: {
             if lib.sort == s {
               Label(label(s), systemImage: lib.sortReversed ? "arrow.up" : "arrow.down")
+              Text(L("n_tap_again_to_turn_it", way(s)))
             } else {
               Text(label(s))
             }
           }
+          .accessibilityIdentifier("sort-\(s.rawValue)")
         }
       }
     } label: {
@@ -463,7 +697,16 @@ struct SortButton: View {
         .background(RoundedRectangle(cornerRadius: 16).fill(c.surface))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(c.line, lineWidth: 1))
     }
+    // Staying open after a tap shows the list re-sort behind it, and lets her turn it round.
+    .menuActionDismissBehavior(.disabled)
     .accessibilityLabel(L("sort_notebooks"))
+    .accessibilityIdentifier("sort")
+  }
+
+  /// Which way round the sort in use goes, as its menu says it.
+  private func way(_ s: LibrarySort) -> String {
+    if s == .NAME { return lib.sortReversed ? L("z_to_a") : L("a_to_z") }
+    return lib.sortReversed ? L("oldest_first") : L("newest_first")
   }
 
   private func label(_ s: LibrarySort) -> String {
@@ -473,52 +716,6 @@ struct SortButton: View {
     case .CREATED: return L("sort_created")
     case .NAME: return L("sort_name")
     }
-  }
-}
-
-/// The + (Android's `AddButton` and its card): a system menu with Notebook (the new-notebook card)
-/// and File (PDFs and pictures from her files). A native menu on iOS rather than Android's card.
-struct AddMenu: View {
-  var onNotebook: () -> Void
-  var onFile: () -> Void
-  var onPhoto: () -> Void
-  var onCamera: (() -> Void)? = nil
-  @Environment(\.tali) private var c
-
-  var body: some View {
-    Menu {
-      Button(action: onNotebook) { Label(L("notebook"), systemImage: "book.closed") }
-        .accessibilityIdentifier("add-notebook")
-      Button(action: onFile) { Label(L("add_file"), systemImage: "doc.badge.plus") }
-        .accessibilityIdentifier("add-file")
-      if let onCamera {
-        Button(action: onCamera) { Label(L("add_camera"), systemImage: "camera") }
-          .accessibilityIdentifier("add-camera")
-      }
-      Button(action: onPhoto) { Label(L("add_photo"), systemImage: "photo.on.rectangle") }
-        .accessibilityIdentifier("add-photo")
-    } label: {
-      Image(systemName: "plus").font(.system(size: 22, weight: .medium)).foregroundStyle(c.onAccent)
-        .frame(width: 48, height: 48)
-        .background(RoundedRectangle(cornerRadius: 16).fill(c.accentGradient))
-    }
-    .accessibilityLabel(L("add"))
-    .accessibilityIdentifier("add")
-  }
-}
-
-/// The + : a 48 pt rounded square in the violet-to-blue gradient.
-struct AddButton: View {
-  var action: () -> Void
-  @Environment(\.tali) private var c
-  var body: some View {
-    Button(action: action) {
-      Image(systemName: "plus").font(.system(size: 22, weight: .medium)).foregroundStyle(c.onAccent)
-        .frame(width: 48, height: 48)
-        .background(RoundedRectangle(cornerRadius: 16).fill(c.accentGradient))
-    }
-    .buttonStyle(PressStyle(scale: 0.94))
-    .accessibilityLabel(L("add"))
   }
 }
 
@@ -565,45 +762,84 @@ struct SectionLabel: View {
   }
 }
 
-struct RenameField: View {
-  var initial: String
-  var onDone: (String) -> Void
-  @State private var text = ""
-  var body: some View {
-    TextField("", text: $text).onAppear { text = initial }
-    Button(L("cancel"), role: .cancel) {}
-    Button(L("done")) { onDone(text) }
-  }
-}
-
-struct EmptyShelf: View {
-  var shelf: Shelf
-  var searching: Bool
-  var search: String
+/// Nothing in the library yet (Android's `EmptyLibrary`): an empty engineering page between two
+/// clouds, and New notebook.
+struct EmptyLibrary: View {
   var onCreate: () -> Void
   @Environment(\.tali) private var c
 
   var body: some View {
-    VStack(spacing: 14) {
-      if searching {
-        Text(L("no_notebooks_match_n", search)).font(TaliType.bodyLarge).foregroundStyle(c.inkMuted)
-      } else {
-        switch shelf {
-        case .trash: EmptyView()
-        case .starred:
-          Text(L("no_starred_notebooks_yet")).font(TaliType.titleLarge).foregroundStyle(c.ink)
-          Text(L("hold_a_notebook_and_choose_star")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted)
-        case .folder:
-          Text(L("this_folder_is_empty")).font(TaliType.titleLarge).foregroundStyle(c.ink)
-          Button(L("new_notebook"), action: onCreate).buttonStyle(PrimaryButtonStyle())
-        case .all:
-          PaperPreview(style: .ENGINEERING, zoom: 2.2).frame(width: 220, height: 150).clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(color: c.glow.opacity(0.15), radius: 14, y: 6)
-          Text(L("start_your_first_notebook")).font(TaliType.titleLarge).foregroundStyle(c.ink)
-          Button(L("new_notebook"), action: onCreate).buttonStyle(PrimaryButtonStyle())
-        }
+    VStack(spacing: 0) {
+      ZStack {
+        RoundedRectangle(cornerRadius: 18).fill(LinearGradient(colors: [c.accentSoft, c.sky], startPoint: .topLeading, endPoint: .bottomTrailing))
+          .opacity(c.isDark ? 0.15 : 1)
+          .overlay(PaperPreview(style: .ENGINEERING, zoom: 1).padding(14))
+          .frame(width: 200, height: 150)
+          .clipShape(RoundedRectangle(cornerRadius: 18))
+        DriftingCloud(width: 96, variant: 1, drift: 8).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).offset(y: 6)
+        DriftingCloud(width: 110, variant: 0, drift: 10, period: 12)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).offset(y: -4)
+        Sparkle(size: 12, color: c.blue.opacity(0.6)).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).offset(x: -30, y: 18)
+      }
+      .frame(width: 320, height: 190)
+      Spacer().frame(height: 20)
+      Text(L("start_your_first_notebook")).font(TaliType.headlineMedium).foregroundStyle(c.ink)
+      Spacer().frame(height: 8)
+      Text(L("a4_pages_that_keep_coming_as")).font(TaliType.bodyLarge).foregroundStyle(c.inkMuted)
+      Spacer().frame(height: 24)
+      Button(action: onCreate) { Label(L("new_notebook"), systemImage: "plus") }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("empty-new")
+    }
+    .multilineTextAlignment(.center)
+    .frame(maxWidth: .infinity)
+    .padding(.top, 50)
+  }
+}
+
+/// Nothing starred yet (Android's `EmptyStarred`).
+struct EmptyStarred: View {
+  @Environment(\.tali) private var c
+
+  var body: some View {
+    VStack(spacing: 0) {
+      ZStack {
+        Image(systemName: "star").font(.system(size: 52)).foregroundStyle(starGold).frame(width: 64, height: 64).offset(y: 18)
+        DriftingCloud(width: 72, variant: 2, drift: 6).offset(x: 34, y: -22)
+      }
+      Spacer().frame(height: 16)
+      Text(L("no_starred_notebooks_yet")).font(TaliType.headlineMedium).foregroundStyle(c.ink)
+      Spacer().frame(height: 8)
+      Text(L("hold_a_notebook_and_choose_star")).font(TaliType.bodyLarge).foregroundStyle(c.inkMuted)
+    }
+    .multilineTextAlignment(.center)
+    .frame(maxWidth: .infinity)
+    .padding(.top, 60)
+  }
+}
+
+/// An empty folder (Android's `EmptyFolder`): a folder inside, or a new notebook.
+struct EmptyFolder: View {
+  var onCreate: () -> Void
+  var onNewFolder: () -> Void
+  @Environment(\.tali) private var c
+
+  var body: some View {
+    VStack(spacing: 0) {
+      ZStack {
+        FolderGlyph(open: true).fill(c.blue.opacity(0.6), style: FillStyle(eoFill: true)).frame(width: 64, height: 64).offset(y: 18)
+        DriftingCloud(width: 72, variant: 2, drift: 6).offset(x: 34, y: -22)
+      }
+      Spacer().frame(height: 16)
+      Text(L("this_folder_is_empty")).font(TaliType.headlineMedium).foregroundStyle(c.ink)
+      Spacer().frame(height: 8)
+      Text(L("create_a_notebook_here_or_move")).font(TaliType.bodyLarge).foregroundStyle(c.inkMuted)
+      Spacer().frame(height: 24)
+      HStack(spacing: 10) {
+        Button(L("folder_inside"), action: onNewFolder).buttonStyle(QuietButtonStyle()).accessibilityIdentifier("empty-folder-inside")
+        Button(action: onCreate) { Label(L("new_notebook"), systemImage: "plus") }.buttonStyle(PrimaryButtonStyle())
       }
     }
     .multilineTextAlignment(.center)
+    .frame(maxWidth: .infinity)
+    .padding(.top, 60)
   }
 }

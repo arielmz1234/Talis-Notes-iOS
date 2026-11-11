@@ -39,6 +39,7 @@ final class Library {
     starred = Set(d.stringArray(forKey: "starredNotebooks") ?? [])
     opened = d.stringArray(forKey: "recentNotebooks") ?? []
     reload()
+    separateNames()
     sweepTrash()
   }
 
@@ -64,6 +65,7 @@ final class Library {
     notebooks = all.filter { $0.deleted == nil && !$0.draft }
     trash = all.filter { $0.deleted != nil }.sorted { ($0.deleted ?? 0) > ($1.deleted ?? 0) }
     folders = (try? db.folders()) ?? []
+    if shelf == .trash && trash.isEmpty { shelf = .all }
   }
 
   /// What the main area shows for the current shelf, search and sort.
@@ -83,15 +85,6 @@ final class Library {
     return q.isEmpty ? list : list.filter { $0.title.localizedCaseInsensitiveContains(q) }
   }
 
-  /// Folders inside the folder being looked at (top-level ones under All notebooks).
-  var subfolders: [Folder] {
-    switch shelf {
-    case .all: return search.isEmpty ? folders.filter { $0.parentId == nil } : []
-    case .folder(let id): return folders.filter { $0.parentId == id }
-    default: return []
-    }
-  }
-
   /// Folders inside the open folder (at the top level, folders are only in the sidebar, as on Android).
   var subfoldersOfOpenFolder: [Folder] {
     if case .folder(let id) = shelf { return folders.filter { $0.parentId == id } }
@@ -99,6 +92,35 @@ final class Library {
   }
 
   func folder(_ id: String?) -> Folder? { folders.first { $0.id == id } }
+
+  /// The folder being looked at, if any.
+  var openFolder: Folder? {
+    if case .folder(let id) = shelf { return folder(id) }
+    return nil
+  }
+
+  /// Notebooks in [folder], and with [deep] in the folders inside it too (the sidebar's count).
+  func count(in folder: String, deep: Bool = false) -> Int {
+    let inside = deep ? FolderTree.descendants(of: folder, in: folders) : []
+    return notebooks.filter { $0.folderId == folder || $0.folderId.map(inside.contains) == true }.count
+  }
+
+  /// What a new notebook is called when she leaves the name empty: "New notebook", or the next
+  /// free one among the notebooks in the folder it goes into.
+  var freeNotebookName: String { Names.numbered(English.newNotebook, taken: takenTitles(in: openFolder?.id)) }
+
+  /// The same for a new folder, among the folders beside it.
+  func freeFolderName(in parent: String?) -> String {
+    Names.numbered(English.newFolder, taken: folders.filter { $0.parentId == parent }.map(\.name))
+  }
+
+  /// The cover the next notebook gets unless she picks another.
+  var nextCover: UInt32 { Covers.soft[notebooks.count % Covers.soft.count] }
+
+  /// The colour a new folder in [parent] starts with: its parent's, or the next cover colour.
+  func nextFolderColor(in parent: String?) -> UInt32 {
+    folder(parent)?.color ?? Covers.soft[folders.count % Covers.soft.count]
+  }
 
   /// Names already used beside a notebook going into [folder] (names are kept apart per place).
   private func takenTitles(in folder: String?, except id: String? = nil) -> [String] {
@@ -162,6 +184,7 @@ final class Library {
   }
 
   func emptyTrash() {
+    shelf = .all
     for n in trash { try? db.erase(n.id) }
     reload()
   }
@@ -174,25 +197,59 @@ final class Library {
     reload()
   }
 
+  func setCover(_ id: String, _ color: UInt32) {
+    try? db.setCover(id, color, at: nowMillis())
+    reload()
+  }
+
   func toggleStar(_ id: String) {
     if starred.contains(id) { starred.remove(id) } else { starred.insert(id) }
   }
 
+  /// Makes a folder inside [parent] (or at the top level). A top-level folder opens straight away;
+  /// one made inside a folder appears among that folder's folders, so she can make several.
   @discardableResult
   func createFolder(name: String, color: UInt32, parent: String?) -> Folder {
-    let taken = folders.filter { $0.parentId == parent }.map(\.name)
     let f = Folder(
-      id: newId(), name: Names.numbered(name.isEmpty ? English.newFolder : name, taken: taken), color: color,
+      id: newId(), name: Names.numbered(name.isEmpty ? freeFolderName(in: parent) : name, taken: siblingNames(in: parent)), color: color,
       position: (folders.map(\.position).max() ?? -1) + 1, parentId: parent, created: nowMillis())
     try? db.insert(f)
     reload()
+    if parent == nil { shelf = .folder(f.id) }
     return f
+  }
+
+  private func siblingNames(in parent: String?, except id: String? = nil) -> [String] {
+    folders.filter { $0.parentId == parent && $0.id != id }.map(\.name)
+  }
+
+  func renameFolder(_ id: String, to name: String) {
+    guard var f = folder(id) else { return }
+    f.name = Names.numbered(name.trimmingCharacters(in: .whitespaces).isEmpty ? L("folder") : name, taken: siblingNames(in: f.parentId, except: id))
+    try? db.insert(f)
+    reload()
+  }
+
+  func recolorFolder(_ id: String, _ color: UInt32) {
+    guard var f = folder(id) else { return }
+    f.color = color
+    try? db.insert(f)
+    reload()
+  }
+
+  /// Moves a folder into [parent], or to the top level; never inside itself or its own folders.
+  func moveFolder(_ id: String, to parent: String?) {
+    guard var f = folder(id), FolderTree.canMove(id, into: parent, in: folders) else { return }
+    f.parentId = parent
+    f.name = Names.numbered(f.name, taken: siblingNames(in: parent, except: id))
+    try? db.insert(f)
+    reload()
   }
 
   func deleteFolder(_ id: String) {
     // Nothing inside is deleted: its notebooks and folders move up a level, as on Android.
     let parent = folder(id)?.parentId
-    for n in notebooks where n.folderId == id { try? db.setFolder(n.id, parent) }
+    for n in notebooks + trash where n.folderId == id { try? db.setFolder(n.id, parent) }
     for var f in folders where f.parentId == id {
       f.parentId = parent
       try? db.insert(f)
@@ -200,6 +257,27 @@ final class Library {
     try? db.deleteFolder(id)
     if shelf == .folder(id) { shelf = parent.map(Shelf.folder) ?? .all }
     reload()
+    // What moved up may share a name with what was already there.
+    separateNames()
+  }
+
+  /// Numbers any notebooks and folders that share a name with an older one in the same place (at
+  /// start-up and after a folder is deleted). The older one keeps the plain name.
+  private func separateNames() {
+    let byAge: (Int64, String, Int64, String) -> Bool = { a, ida, b, idb in a != b ? a < b : ida < idb }
+    let books = notebooks.sorted { byAge($0.created, $0.id, $1.created, $1.id) }
+    let changed = Names.apart(books.map { (id: $0.id, name: $0.title, place: $0.folderId) })
+    for (id, name) in changed {
+      if let n = notebooks.first(where: { $0.id == id }) { try? db.setTitle(id, name, at: n.updated) }
+    }
+    let shelves = folders.sorted { byAge($0.created, $0.id, $1.created, $1.id) }
+    let renamed = Names.apart(shelves.map { (id: $0.id, name: $0.name, place: $0.parentId) })
+    for (id, name) in renamed {
+      guard var f = folder(id) else { continue }
+      f.name = name
+      try? db.insert(f)
+    }
+    if !changed.isEmpty || !renamed.isEmpty { reload() }
   }
 
   func noteOpened(_ id: String) {

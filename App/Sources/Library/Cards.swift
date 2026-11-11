@@ -4,38 +4,51 @@ import TaliCore
 let starGold = Color(argb: 0xFFF5_B83D)
 
 /// The library's left side, as Android's `Sidebar`: no panel of its own (it shares the sky and page),
-/// the wordmark, All notebooks and Starred, then folders, Recently deleted (only when something's
-/// in it), Settings and the backup status.
+/// the wordmark, All notebooks and Starred, then the folder tree, Recently deleted (only when
+/// something's in it), Settings and the backup status. One highlight glides between the rows,
+/// taking on each folder's own colour.
 struct Sidebar: View {
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
-  var onNewFolder: () -> Void
+  var onNewFolder: (String?) -> Void
+  var onRenameFolder: (Folder) -> Void
+  var onMoveFolder: (Folder) -> Void
+  var onDeleteFolder: (Folder) -> Void
   var onPicked: () -> Void
   var onBackups: () -> Void = {}
   var onSettings: () -> Void = {}
+  var vanishing: Set<String> = []
+  var fresh: Set<String> = []
   @AppStorage("minimal") private var minimal = false
+  @State private var collapsed: Set<String> = []
+  @Namespace private var nav
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Spacer().frame(height: minimal ? 44 : 120)
       Wordmark().padding(.leading, 8)
       Spacer().frame(height: 30)
-      NavRow(
-        icon: "book.pages", iconTint: lib.shelf == .all ? c.blue : c.inkMuted, label: L("all_notebooks"), count: lib.notebooks.count,
-        selected: lib.shelf == .all
-      ) { pick(.all) }
+      NavRow(label: L("all_notebooks"), count: lib.notebooks.count, selected: lib.shelf == .all, nav: nav, key: Shelf.all) {
+        Image(systemName: "book.pages").font(.system(size: 17)).foregroundStyle(lib.shelf == .all ? c.blue : c.inkMuted)
+      } action: { pick(.all) }
+      .accessibilityIdentifier("shelf-all")
       Spacer().frame(height: 4)
       NavRow(
-        icon: lib.shelf == .starred ? "star.fill" : "star", iconTint: lib.shelf == .starred ? starGold : c.inkMuted, label: L("starred_notebooks"),
-        count: lib.notebooks.filter { lib.starred.contains($0.id) }.count, selected: lib.shelf == .starred
-      ) { pick(.starred) }
+        label: L("starred_notebooks"), count: lib.notebooks.filter { lib.starred.contains($0.id) }.count, selected: lib.shelf == .starred, nav: nav,
+        key: Shelf.starred
+      ) {
+        Image(systemName: lib.shelf == .starred ? "star.fill" : "star").font(.system(size: 17)).foregroundStyle(lib.shelf == .starred ? starGold : c.inkMuted)
+      } action: { pick(.starred) }
+      .accessibilityIdentifier("shelf-starred")
       Spacer().frame(height: 22)
-      HStack {
+      HStack(spacing: 0) {
         SectionLabel(text: L("folders"))
-        Button(action: onNewFolder) {
+        Button { onNewFolder(nil) } label: {
           Image(systemName: "plus").font(.system(size: 15)).foregroundStyle(c.inkMuted).frame(width: 30, height: 30).contentShape(Circle())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(L("new_folder"))
+        .accessibilityIdentifier("sidebar-new-folder")
       }
       .padding(.leading, 10)
       Spacer().frame(height: 6)
@@ -44,23 +57,19 @@ struct Sidebar: View {
           if lib.folders.isEmpty {
             Text(L("make_a_folder_for_each_course")).font(TaliType.bodySmall).foregroundStyle(c.inkFaint)
               .padding(.horizontal, 10).padding(.vertical, 6)
-            Button(L("new_folder"), action: onNewFolder).font(TaliType.labelLarge).foregroundStyle(c.accent)
+            Button(L("new_folder")) { onNewFolder(nil) }.font(TaliType.labelLarge).foregroundStyle(c.accent)
               .padding(.horizontal, 10).padding(.vertical, 6)
           }
-          ForEach(tree, id: \.0.id) { f, depth in
-            NavRow(
-              icon: "folder", iconTint: Color(argb: f.color), label: f.name,
-              count: lib.notebooks.filter { $0.folderId == f.id }.count, selected: lib.shelf == .folder(f.id), wash: folderWash(Color(argb: f.color))
-            ) { pick(.folder(f.id)) }
-            .padding(.leading, CGFloat(depth) * 16)
-          }
+          ForEach(tree, id: \.folder.id) { f, depth in folderRow(f).padding(.leading, CGFloat(depth) * 16) }
         }
       }
       .scrollIndicators(.hidden)
+      .slidingClip(in: nav)
       if !lib.trash.isEmpty {
-        NavRow(icon: "trash", iconTint: lib.shelf == .trash ? c.blue : c.inkMuted, label: L("recently_deleted"), count: lib.trash.count, selected: lib.shelf == .trash) {
-          pick(.trash)
-        }
+        NavRow(label: L("recently_deleted"), count: lib.trash.count, selected: lib.shelf == .trash, nav: nav, key: Shelf.trash) {
+          Image(systemName: "trash").font(.system(size: 16)).foregroundStyle(lib.shelf == .trash ? c.blue : c.inkMuted)
+        } action: { pick(.trash) }
+        .accessibilityIdentifier("shelf-trash")
         Spacer().frame(height: 4)
       }
       Button {
@@ -68,11 +77,11 @@ struct Sidebar: View {
         onSettings()
       } label: {
         HStack(spacing: 10) {
-          Image(systemName: "gearshape").font(.system(size: 16)).foregroundStyle(c.inkMuted)
+          Image(systemName: "gearshape").font(.system(size: 16)).foregroundStyle(c.inkMuted).frame(width: 18)
           Text(L("settings")).font(TaliType.labelLarge).foregroundStyle(c.inkMuted)
           Spacer()
         }
-        .padding(10).contentShape(Rectangle())
+        .padding(10).contentShape(RoundedRectangle(cornerRadius: 14))
       }
       .buttonStyle(.plain)
       .accessibilityIdentifier("settings")
@@ -96,31 +105,64 @@ struct Sidebar: View {
       .padding(.bottom, 10)
     }
     .padding(.horizontal, 18)
+    .slidingHighlight(nav, selected: lib.shelf, fill: .across([c.lilac, c.sky]), corner: 14)
   }
 
+  private func folderRow(_ f: Folder) -> some View {
+    let selected = lib.shelf == .folder(f.id)
+    let tint = Color(argb: f.color)
+    let hasChildren = lib.folders.contains { $0.parentId == f.id }
+    let expanded = !collapsed.contains(f.id) || openPath.contains(f.id)
+    return NavRow(
+      label: f.name, count: lib.count(in: f.id, deep: true), selected: selected, nav: nav, key: Shelf.folder(f.id),
+      fill: .across(folderWashColors(tint, dark: c.isDark)), clipped: true, trailing: hasChildren
+    ) {
+      FolderGlyph(open: selected).fill(tint, style: FillStyle(eoFill: true)).frame(width: 20, height: 20)
+    } action: {
+      pick(.folder(f.id))
+    } more: {
+      Button {
+        withAnimation(Ease.outStrong(duration: 0.24)) {
+          if collapsed.contains(f.id) { collapsed.remove(f.id) } else { collapsed.insert(f.id) }
+        }
+      } label: {
+        Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold)).foregroundStyle(c.inkFaint)
+          .rotationEffect(.degrees(expanded ? 0 : -90))
+          .environment(\.layoutDirection, .leftToRight)
+          .scaleEffect(x: rtl && !expanded ? -1 : 1)
+          .frame(width: 28, height: 28).contentShape(Circle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(expanded ? L("fold") : L("unfold"))
+    }
+    .contextMenu {
+      FolderMenu(
+        folder: f, onNewFolder: { onNewFolder(f.id) }, onRename: { onRenameFolder(f) }, onMove: { onMoveFolder(f) },
+        onRecolor: { lib.recolorFolder(f.id, $0) }, onDelete: { onDeleteFolder(f) })
+    }
+    .puffBox(leaving: vanishing.contains(f.id), appearing: fresh.contains(f.id))
+    .accessibilityIdentifier("sidebar-folder-\(f.name)")
+  }
+
+  @Environment(\.layoutDirection) private var direction
+  private var rtl: Bool { direction == .rightToLeft }
+
   private func pick(_ s: Shelf) {
-    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { lib.shelf = s }
+    lib.shelf = s
     onPicked()
   }
 
-  /// Folders in order, each followed by the ones inside it.
-  private var tree: [(Folder, Int)] {
-    var out: [(Folder, Int)] = []
-    func add(_ parent: String?, _ depth: Int) {
-      for f in lib.folders where f.parentId == parent {
-        out.append((f, depth))
-        if depth < 8 { add(f.id, depth + 1) }
-      }
-    }
-    add(nil, 0)
-    return out
+  private var openPath: Set<String> {
+    guard case .folder(let id) = lib.shelf else { return [] }
+    return Set(FolderTree.path(to: id, in: lib.folders).map(\.id))
   }
 
-  /// The soft gradient behind a selected folder, in its own colour.
-  private func folderWash(_ color: Color) -> LinearGradient {
-    let from = c.isDark ? color.opacity(0.42) : mix(.white, color, 0.42)
-    let to = c.isDark ? color.opacity(0.14) : mix(.white, color, 0.14)
-    return LinearGradient(colors: [from, to], startPoint: .leading, endPoint: .trailing)
+  /// Folders in tree order; ones inside a folded folder are hidden, unless the open folder is there.
+  private var tree: [(folder: Folder, depth: Int)] {
+    let path = openPath
+    return FolderTree.ordered(lib.folders).filter { f, _ in
+      !FolderTree.path(to: f.parentId, in: lib.folders).contains { collapsed.contains($0.id) && !path.contains($0.id) }
+    }
   }
 }
 
@@ -162,36 +204,49 @@ struct Wordmark: View {
   }
 }
 
-/// A sidebar row: icon, label, count; the one picked sits on a soft lilac-to-sky wash.
-struct NavRow: View {
-  var icon: String
-  var iconTint: Color
+/// A sidebar row (Android's `NavRow`): icon, label, count, and a fold arrow for a folder with
+/// folders inside. It has no background of its own: the sidebar's gliding highlight sits under the
+/// one picked.
+struct NavRow<Icon: View, More: View>: View {
   var label: String
   var count: Int
   var selected: Bool
-  var wash: LinearGradient? = nil
+  var nav: Namespace.ID
+  var key: Shelf
+  var fill: SlideFill? = nil
+  var clipped = false
+  var trailing = false
+  @ViewBuilder var icon: Icon
   var action: () -> Void
+  @ViewBuilder var more: More
   @Environment(\.tali) private var c
 
   var body: some View {
-    Button(action: action) {
-      HStack(spacing: 12) {
-        Image(systemName: icon).font(.system(size: 17)).foregroundStyle(iconTint).frame(width: 20)
-        Text(label).font(TaliType.titleSmall).foregroundStyle(selected ? c.ink : c.inkMuted).lineLimit(1)
-        Spacer(minLength: 4)
-        Text("\(count)").font(TaliType.labelMedium).foregroundStyle(c.inkFaint)
+    HStack(spacing: 0) {
+      icon.frame(width: 20, height: 20)
+      Spacer().frame(width: 12)
+      Text(label).font(TaliType.titleSmall).foregroundStyle(selected ? c.ink : c.inkMuted).lineLimit(1)
+        .animation(.easeOut(duration: 0.22), value: selected)
+      Spacer(minLength: 4)
+      Text("\(count)").font(TaliType.labelMedium).foregroundStyle(c.inkFaint)
+      if trailing {
+        Spacer().frame(width: 2)
+        more
       }
-      .padding(.horizontal, 12)
-      .frame(height: 44)
-      .background {
-        if selected {
-          RoundedRectangle(cornerRadius: 14).fill(wash ?? LinearGradient(colors: [c.lilac, c.sky], startPoint: .leading, endPoint: .trailing))
-            .transition(.opacity)
-        }
-      }
-      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .padding(.leading, 12).padding(.trailing, trailing ? 4 : 12)
+    .frame(height: 44)
+    .contentShape(RoundedRectangle(cornerRadius: 14))
+    .onTapGesture(perform: action)
+    .slidingOption(key, in: nav, fill: fill, clipped: clipped)
+    .accessibilityElement(children: .contain)
+    .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+  }
+}
+
+extension NavRow where More == EmptyView {
+  init(label: String, count: Int, selected: Bool, nav: Namespace.ID, key: Shelf, @ViewBuilder icon: () -> Icon, action: @escaping () -> Void) {
+    self.init(label: label, count: count, selected: selected, nav: nav, key: key, icon: icon, action: action, more: { EmptyView() })
   }
 }
 
@@ -206,7 +261,13 @@ struct NotebookCard: View {
   var picked = false
   @Environment(\.tali) private var c
 
+  @Environment(\.layoutDirection) private var direction
+
   var body: some View {
+    let document = notebook.kind != .notebook
+    let rtl = direction == .rightToLeft
+    // A PDF, picture or scan is a sheet with a folded corner; a notebook has a spine.
+    let shape = document ? AnyShape(DogEarShape(radius: 18, fold: dogEar, rtl: rtl)) : AnyShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     VStack(alignment: .leading, spacing: 0) {
       ZStack(alignment: .topLeading) {
         if let thumb = ThumbnailCache.shared.image(id: notebook.id, version: notebook.thumbVersion) {
@@ -215,7 +276,28 @@ struct NotebookCard: View {
         } else {
           PaperPreview(style: notebook.paper, landscape: notebook.landscape, dark: notebook.dark, zoom: 1)
         }
-        if notebook.kind == .notebook {
+        if document {
+          // The folded-over corner, and what it is (PDF, picture, scan) in a small badge.
+          Canvas { ctx, size in
+            let w = size.width
+            var flap = Path()
+            if rtl {
+              flap.move(to: CGPoint(x: w, y: 0))
+              flap.addLine(to: CGPoint(x: w, y: w))
+              flap.addLine(to: CGPoint(x: 0, y: w))
+            } else {
+              flap.move(to: .zero)
+              flap.addLine(to: CGPoint(x: 0, y: w))
+              flap.addLine(to: CGPoint(x: w, y: w))
+            }
+            flap.closeSubpath()
+            ctx.fill(flap, with: .color(c.sunken))
+            ctx.stroke(flap, with: .color(c.line), lineWidth: 1)
+          }
+          .frame(width: dogEar, height: dogEar)
+          .frame(maxWidth: .infinity, alignment: .topTrailing)
+          KindBadge(kind: notebook.kind).padding(8)
+        } else {
           Rectangle().fill(Color(argb: notebook.cover)).frame(width: 9)
           Canvas { ctx, size in
             var y: CGFloat = 6
@@ -225,15 +307,13 @@ struct NotebookCard: View {
             }
           }
           .frame(width: 9)
-        } else {
-          KindBadge(kind: notebook.kind).padding(8)
         }
       }
       .frame(maxWidth: .infinity)
       .aspectRatio(1.32, contentMode: .fit)
       .background(c.paper)
-      .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-      .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(picked ? c.accent : c.line, lineWidth: picked ? 2.5 : 1))
+      .clipShape(shape)
+      .overlay(shape.stroke(picked ? c.accent : c.line, lineWidth: picked ? 2.5 : 1))
       .overlay(alignment: .topTrailing) {
         if picking {
           ZStack {
@@ -247,28 +327,61 @@ struct NotebookCard: View {
           .transition(.scale(scale: 0.7).combined(with: .opacity))
         }
       }
+      .animation(Ease.outStrong(duration: 0.2), value: picking)
       .overlay(alignment: .bottomTrailing) {
         if starred && !inTrash {
           Image(systemName: "star.fill").font(.system(size: 13)).foregroundStyle(starGold)
             .frame(width: 26, height: 26).background(Circle().fill(c.surface.opacity(0.92)).shadow(color: .black.opacity(0.12), radius: 2, y: 1))
             .padding(8)
+            .transition(.scale(scale: 0.6).combined(with: .opacity))
         }
       }
+      .animation(.spring(response: 0.3, dampingFraction: 0.5), value: starred)
       .shadow(color: c.accent.opacity(0.2), radius: 12, x: 0, y: 6)
       .scaleEffect(picked ? 0.955 : 1)
       Spacer().frame(height: 10)
       Text(notebook.title).font(TaliType.titleMedium).foregroundStyle(c.ink).lineLimit(1).padding(.leading, 2)
-      Text(subtitle).font(TaliType.bodySmall).foregroundStyle(c.inkFaint).lineLimit(1).padding(.leading, 2)
+      // A PDF, picture or scan says what it is first: "PDF · Edited 3 h ago".
+      Text(document ? L("n_n_2", KindBadge.label(notebook.kind), subtitle) : subtitle).font(TaliType.bodySmall).foregroundStyle(c.inkFaint).lineLimit(1)
+        .padding(.leading, 2)
     }
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("notebook-\(notebook.title)")
   }
 
+  /// How far a PDF's, picture's or scan's corner is folded over.
+  private let dogEar: CGFloat = 24
+
   private var subtitle: String {
     let millis = inTrash ? (notebook.deleted ?? notebook.updated) : notebook.updated
     let word = relativeTime(millis)
     return (inTrash ? L("deleted") : L("edited")) + word.prefix(1).lowercased() + word.dropFirst()
+  }
+}
+
+/// A card's outline with rounded corners, except the top one at the end (right, or left in Hebrew
+/// and Arabic), which is cut off where the corner is folded over (Android's `DogEarShape`).
+struct DogEarShape: Shape {
+  var radius: CGFloat
+  var fold: CGFloat
+  var rtl = false
+
+  func path(in rect: CGRect) -> Path {
+    let r = radius, f = fold, w = rect.width, h = rect.height
+    var p = Path()
+    p.move(to: CGPoint(x: r, y: 0))
+    p.addLine(to: CGPoint(x: w - f, y: 0))
+    p.addLine(to: CGPoint(x: w, y: f))
+    p.addLine(to: CGPoint(x: w, y: h - r))
+    p.addQuadCurve(to: CGPoint(x: w - r, y: h), control: CGPoint(x: w, y: h))
+    p.addLine(to: CGPoint(x: r, y: h))
+    p.addQuadCurve(to: CGPoint(x: 0, y: h - r), control: CGPoint(x: 0, y: h))
+    p.addLine(to: CGPoint(x: 0, y: r))
+    p.addQuadCurve(to: CGPoint(x: r, y: 0), control: .zero)
+    p.closeSubpath()
+    let mirrored = rtl ? p.applying(CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -w, y: 0)) : p
+    return mirrored.offsetBy(dx: rect.minX, dy: rect.minY)
   }
 }
 
@@ -285,37 +398,6 @@ func relativeTime(_ millis: Int64) -> String {
   return Date(timeIntervalSince1970: TimeInterval(millis) / 1000).formatted(.dateTime.day().month(.abbreviated))
 }
 
-/// A folder inside the open folder (Android's `FolderTile`): a 76 pt row tinted with its colour.
-struct FolderTile: View {
-  var folder: Folder
-  var count: Int
-  var inner: Int
-  @Environment(\.tali) private var c
-
-  var body: some View {
-    let tint = Color(argb: folder.color)
-    let notebooks = count == 1 ? L("t_1_notebook") : L("n_notebooks", count)
-    let folders: String? = inner == 0 ? nil : (inner == 1 ? L("t_1_folder_2") : L("n_folders_2", inner))
-    HStack(spacing: 12) {
-      Image(systemName: "folder").font(.system(size: 26)).foregroundStyle(tint)
-      VStack(alignment: .leading, spacing: 0) {
-        Text(folder.name).font(TaliType.titleMedium).foregroundStyle(c.ink).lineLimit(1)
-        Text([notebooks, folders].compactMap { $0 }.joined(separator: " · ")).font(TaliType.bodySmall).foregroundStyle(c.inkFaint)
-      }
-      Spacer(minLength: 0)
-    }
-    .padding(.horizontal, 16)
-    .frame(height: 76)
-    .background(
-      RoundedRectangle(cornerRadius: 18).fill(c.surface)
-        .overlay(RoundedRectangle(cornerRadius: 18).fill(LinearGradient(colors: [tint.opacity(0.22), tint.opacity(0.06)], startPoint: .leading, endPoint: .trailing)))
-    )
-    .overlay(RoundedRectangle(cornerRadius: 18).stroke(c.line, lineWidth: 1))
-    .shadow(color: c.accent.opacity(0.16), radius: 8, y: 4)
-    .contentShape(Rectangle())
-  }
-}
-
 /// Presses in a little, quickly.
 struct PressStyle: ButtonStyle {
   var scale: CGFloat = 0.96
@@ -329,7 +411,7 @@ struct PressStyle: ButtonStyle {
 struct PrimaryButtonStyle: ButtonStyle {
   @Environment(\.tali) private var c
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label.font(TaliType.labelLarge).foregroundStyle(c.onAccent)
+    configuration.label.font(TaliType.labelLarge).foregroundStyle(c.onAccent).lineLimit(1).fixedSize(horizontal: true, vertical: false)
       .padding(.horizontal, 20).frame(minHeight: 48)
       .background(RoundedRectangle(cornerRadius: 16).fill(c.accentGradient))
       .scaleEffect(configuration.isPressed ? 0.96 : 1)
@@ -344,7 +426,7 @@ struct QuietButtonStyle: ButtonStyle {
   @Environment(\.tali) private var c
   func makeBody(configuration: Configuration) -> some View {
     let wash = warning ? c.danger.opacity(c.isDark ? 0.12 : 0.15) : (c.isDark ? c.accentSoft : mix(c.accentSoft, c.accent, 0.12))
-    configuration.label.font(TaliType.labelLarge).foregroundStyle(warning ? c.danger : c.accent)
+    configuration.label.font(TaliType.labelLarge).foregroundStyle(warning ? c.danger : c.accent).lineLimit(1).fixedSize(horizontal: true, vertical: false)
       .padding(.horizontal, 18).frame(minHeight: 44)
       .background(RoundedRectangle(cornerRadius: 14).fill(wash))
       .scaleEffect(configuration.isPressed ? 0.96 : 1)
@@ -367,7 +449,7 @@ struct KindBadge: View {
     }
   }
 
-  private var label: String {
+  static func label(_ kind: DocKind) -> String {
     switch kind {
     case .notebook: L("notebook")
     case .pdf: "PDF"
@@ -389,7 +471,7 @@ struct KindBadge: View {
     let tint = KindBadge.tint(kind, dark: c.isDark)
     HStack(spacing: 4) {
       Image(systemName: icon).font(.system(size: 11, weight: .semibold))
-      Text(label).font(TaliType.labelMedium)
+      Text(KindBadge.label(kind)).font(TaliType.labelMedium)
     }
     .foregroundStyle(tint)
     .padding(.leading, 6).padding(.trailing, 8).padding(.vertical, 3)

@@ -119,6 +119,10 @@ public final class NotesDb: @unchecked Sendable {
     try run("UPDATE notebooks SET title=?, updated=? WHERE id=?", [.text(title), .int(now), .text(id)])
   }
 
+  public func setCover(_ id: String, _ cover: UInt32, at now: Int64) throws {
+    try run("UPDATE notebooks SET cover=?, updated=? WHERE id=?", [.int(Int64(Int32(bitPattern: cover))), .int(now), .text(id)])
+  }
+
   public func setDeleted(_ id: String, _ when: Int64?) throws {
     try run("UPDATE notebooks SET deleted=? WHERE id=?", [when.map(Value.int) ?? .null, .text(id)])
   }
