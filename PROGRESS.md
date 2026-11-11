@@ -257,3 +257,16 @@ Next:
   "live … | loaded …" numbers in `5b-reopened` to confirm.
 - The lasso's menu stayed up after switching tools: `clearSelection` from inside `updateUIView`
   changed SwiftUI state mid-update. It's now deferred.
+- PDF and picture import (`Data/Imports.swift`, the + is now a system menu: Notebook / File;
+  `KindBadge` on cards). Seen in run 43011336605: the menu (`2b-add-menu`), and a seeded two-slide
+  PDF opening just for looking with Write (`5c-pdf`). On a tablet a PDF/picture opens for looking
+  until its first Write (`writeOn`, as Android). Found there: the slide wasn't fitted to the screen
+  (zoom 100%), and the page chip said 1 / 1. Both came from state changed during the canvas's first
+  update (`reportUndo`, first fit), now deferred. Not seen yet.
+- Ink width, measured (`5b-reopened` hint): a monoline tool of width 2.4 gives live points 4.40
+  wide (1.83×); reloaded strokes use 2.4 exactly (Android's width), hence "thin after reopening". Now
+  the tool gets size ÷ factor (`InkWidth`, 1.83 for monoline at first, learned per ink from strokes
+  without pressure), so live and reloaded match Android. Not seen yet. Pressure inks (fountain,
+  pencil, calligraphy) keep factor 1 until measured.
+- Not done for PDFs yet: sharp pages at zoom (`SharpPdf`), the Adding… pill, Photo and Camera in
+  the + menu, Save-as-draft PDFs from other apps.
