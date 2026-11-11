@@ -499,12 +499,18 @@ struct NoteCanvas: UIViewRepresentable {
           growPages(for: s)
           rebuilt.append(pk)
           next.append((key, s))
-        } else if isSnappedStroke(pk) {
-          // The stroke that became a shape (hold-to-shape): it isn't kept.
+        } else if isSnappedStroke(pk) || parent.tool == .lasso {
+          // The stroke that became a shape (hold-to-shape), or one PencilKit drew while the lasso was
+          // on (in clear ink): neither is kept.
           needsRebuild = true
         } else {
           // A new stroke from the pen.
           let s = InkStroke.from(pk, pen: pen, id: newId(), z: z)
+          if ProcessInfo.processInfo.arguments.contains("-uitest"), pk.path.count > 0 {
+            let mid = pk.path[pk.path.count / 2]
+            let sizes = pk.path.map { $0.size.width }
+            parent.onHint("ink tool \(pen.size) point \(String(format: "%.2f", mid.size.width)) max \(String(format: "%.2f", sizes.max() ?? 0)) n \(pk.path.count)")
+          }
           z += 1
           changed.append(s)
           growPages(for: s)
