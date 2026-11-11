@@ -449,6 +449,10 @@ struct NoteCanvas: UIViewRepresentable {
           guard let self, let canvas = self.canvas, let pages = self.pages else { return }
           let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
           canvas.setZoomScale(fit, animated: false)
+          if ProcessInfo.processInfo.arguments.contains("-uitest"), abs(canvas.zoomScale - fit) > 0.01 {
+            let note = "fit \(String(format: "%.2f", fit)) got \(String(format: "%.2f", canvas.zoomScale)) w \(Int(canvas.bounds.width)) world \(Int(pages.worldSize.width)) min \(canvas.minimumZoomScale) zoomView \(canvas.delegate?.viewForZooming?(in: canvas) != nil)"
+            self.parent.onHint(note)
+          }
           self.updateContent()
           // Start at the top of the first page, below the toolbars.
           canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)

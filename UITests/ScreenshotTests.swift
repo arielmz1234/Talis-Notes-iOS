@@ -144,6 +144,11 @@ final class ScreenshotTests: XCTestCase {
       pdf.tap()
       settle()
       shot("5c-pdf")
+      if app.buttons["zoom-chip"].exists {
+        app.buttons["zoom-chip"].firstMatch.tap()
+        settle()
+        shot("5d-pdf-fit")
+      }
       app.buttons["back"].firstMatch.tap()
       settle()
     }

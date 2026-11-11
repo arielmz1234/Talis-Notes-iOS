@@ -506,5 +506,6 @@ struct ZoomChip: View {
     }
     .buttonStyle(PressStyle())
     .accessibilityLabel(L("reset_zoom"))
+    .accessibilityIdentifier("zoom-chip")
   }
 }
