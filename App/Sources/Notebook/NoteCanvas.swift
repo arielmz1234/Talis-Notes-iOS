@@ -220,7 +220,7 @@ struct NoteCanvas: UIViewRepresentable {
   var bridge: CanvasBridge? = nil
   var eraser = EraserSettings()
   /// The shape the Shapes tool draws.
-  var shapeKind: ShapeKind = .RECTANGLE
+  var shape: ShapeSource = .kind(.LINE)
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
   /// Where what the lasso picked up is on screen (window coordinates), or nil; for the selection menu.

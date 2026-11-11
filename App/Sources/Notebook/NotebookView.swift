@@ -25,9 +25,13 @@ struct NotebookView: View {
   @State private var tool: Tool = .pen(PenStore.load().first?.id ?? "p1")
   @State private var pens: [PenSlot] = PenStore.load()
   @State private var panel: PanelKind?
-  /// The Shapes tool's shape (Android's `lastShape`).
-  @AppStorage("lastShape") private var shapeKindRaw = ShapeKind.RECTANGLE.rawValue
-  private var shapeKind: ShapeKind { ShapeKind(rawValue: shapeKindRaw) ?? .RECTANGLE }
+  /// What the Shapes tool draws (Android's `lastShape`), and the standard shape last chosen.
+  @AppStorage(ShapeSettings.Key.lastShape) private var lastShape = ShapeKind.LINE.rawValue
+  @State private var lastKind = ShapeChoice.kind(UserDefaults.standard.string(forKey: ShapeSettings.Key.lastShape) ?? "")
+  @AppStorage(ShapeSettings.Key.customShapes) private var customShapesJSON = "[]"
+  /// The pen last written with, which the Shapes tool can follow.
+  @State private var lastPenId: String?
+  @State private var browsingShapes = false
   @AppStorage("eraserPrecise") private var eraserPrecise = false
   @AppStorage("eraserSize") private var eraserSize: Double = 20
   @State private var canUndo = false
@@ -72,7 +76,7 @@ struct NotebookView: View {
           settings: CanvasSettings(paper: paper, dark: dark, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between),
           bridge: bridge,
           eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize)),
-          shapeKind: shapeKind,
+          shape: shapeSource,
           onUndoState: { u, r in
             canUndo = u
             canRedo = r
@@ -147,12 +151,12 @@ struct NotebookView: View {
               case .eraser:
                 EraserPanel(precise: $eraserPrecise, size: Binding(get: { Float(eraserSize) }, set: { eraserSize = Double($0) }))
               case .shapes:
-                ShapesPanel(kind: Binding(get: { shapeKind }, set: { shapeKindRaw = $0.rawValue })) {
-                  // Choosing a shape closes the panel so she can draw it straight away.
-                  withAnimation(.easeOut(duration: 0.12)) { panel = nil }
+                ShapesPanel(picker: shapePicker, pen: shapePen, compact: geo.size.width < 660) {
+                  withAnimation(Ease.outStrong(duration: 0.24)) { browsingShapes = true }
                 }
               }
             }
+            .environment(\.panelRoom, geo.size.height - (narrow ? 266 : 196))
             .transition(
               .asymmetric(
                 insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)).combined(with: .offset(y: -6)),
@@ -181,6 +185,12 @@ struct NotebookView: View {
               onDelete: { command = .deletePage($0) },
               onClose: { withAnimation(.easeOut(duration: 0.16)) { showPages = false } }
             )
+          }
+          .transition(.opacity)
+        }
+        if browsingShapes {
+          DialogOverlay(onClose: { withAnimation(.easeOut(duration: 0.16)) { browsingShapes = false } }) {
+            ShapePacksCard(picker: shapePicker, size: geo.size) { withAnimation(.easeOut(duration: 0.16)) { browsingShapes = false } }
           }
           .transition(.opacity)
         }
@@ -223,6 +233,7 @@ struct NotebookView: View {
       }
     }
     .onChange(of: pens) { _, new in PenStore.save(new) }
+    .onChange(of: tool) { old, _ in if case .pen(let id) = old { lastPenId = id } }
     .onChange(of: paper) { _, p in try? lib.db.run("UPDATE notebooks SET paper=? WHERE id=?", [.text(p.rawValue), .text(notebook.id)]) }
     .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
     .statusBarHidden(fullScreen)
@@ -246,7 +257,26 @@ struct NotebookView: View {
   }
 
   private func mainToolbar(showColors: Bool) -> some View {
-    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shapeKind: shapeKind, onKeyboard: { panel = nil; command = .newText }, showColors: showColors, compactTools: PhoneWriting.onPhone)
+    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shape: shapeSource, onKeyboard: { panel = nil; command = .newText }, showColors: showColors, compactTools: PhoneWriting.onPhone)
+  }
+
+  private var shapeSource: ShapeSource {
+    ShapeChoice(stored: lastShape).source(custom: ShapeSettings.shapes(from: customShapesJSON), kind: lastKind)
+  }
+
+  /// Choosing a shape switches to the Shapes tool and closes what it was chosen from, so she can draw it straight away.
+  private var shapePicker: ShapePicker {
+    ShapePicker(stored: $lastShape, kind: $lastKind, toolOn: tool == .shape) {
+      tool = .shape
+      withAnimation(.easeOut(duration: 0.12)) {
+        panel = nil
+        browsingShapes = false
+      }
+    }
+  }
+
+  private var shapePen: PenSlot {
+    ShapeSettings.shapeSlot(active: activePenIndex.map { pens[$0] } ?? pens.first { $0.id == lastPenId }, pens: pens)
   }
 
   private var fingerDraws: Bool? { fingerDrawsRaw < 0 ? nil : fingerDrawsRaw == 1 }

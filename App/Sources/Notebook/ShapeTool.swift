@@ -12,6 +12,8 @@ struct ShapeToolState {
   var drawing = false
   var preview: ShapeRow?
   let layer = CAShapeLayer()
+  /// The dotted line across a rectangle that's exactly square, or an ellipse that's exactly round.
+  let squareHint = CAShapeLayer()
 }
 
 extension NoteCanvas.Coordinator {
@@ -34,6 +36,12 @@ extension NoteCanvas.Coordinator {
     shapeTool.layer.lineJoin = .round
     shapeTool.layer.zPosition = 9
     v.layer.addSublayer(shapeTool.layer)
+    shapeTool.squareHint.strokeColor = UIColor(argb: Int32(bitPattern: 0xC87A_4ED6)).cgColor
+    shapeTool.squareHint.lineWidth = 2.4
+    shapeTool.squareHint.lineCap = .round
+    shapeTool.squareHint.lineDashPattern = [0.1, 6]
+    shapeTool.squareHint.zPosition = 9
+    v.layer.addSublayer(shapeTool.squareHint)
   }
 
   /// The pen draws shapes; a finger only where fingers draw.
@@ -47,10 +55,13 @@ extension NoteCanvas.Coordinator {
     }
   }
 
-  /// The look shapes are drawn with: the pen last used (Android's "Like the pen", until a shape style is set).
+  /// The pen last used (a new text box takes its colour).
   var shapePen: PenSlot {
     parent.pens.first { $0.id == lastPenId } ?? parent.pens.first ?? PenSlot.defaults[0]
   }
+
+  /// How shapes are drawn (Android's `shapeLook`): the tool's own style, or like the pen last used.
+  var shapeLook: ShapeLook { ShapeSettings.look(active: parent.pens.first { $0.id == lastPenId }, pens: parent.pens) }
 
   private func shapeBegan(_ t: UITouch) {
     guard let canvas else { return }
@@ -70,8 +81,7 @@ extension NoteCanvas.Coordinator {
       shapeTool.drawing = true
     }
     let p = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
-    let pen = shapePen
-    shapeTool.preview = ShapeRow(geometry: parent.shapeKind.drawn(start, p), pen: pen.type == .HIGHLIGHTER ? "FINELINER" : pen.type.rawValue, color: pen.color | Int32(bitPattern: 0xFF00_0000), size: pen.type == .HIGHLIGHTER ? 2.5 : pen.size)
+    shapeTool.preview = shapeLook.row(parent.shape.drawn(start, p))
     drawShapePreview()
   }
 
@@ -90,9 +100,13 @@ extension NoteCanvas.Coordinator {
     defer { CATransaction.commit() }
     guard let canvas, let s = shapeTool.preview else {
       shapeTool.layer.path = nil
+      shapeTool.squareHint.path = nil
       return
     }
     let z = canvas.zoomScale
+    let hint = CGMutablePath()
+    if let (a, b) = s.geometry.squareHint { hint.addLines(between: [a, b].map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) }) }
+    shapeTool.squareHint.path = hint
     let path = CGMutablePath()
     for line in s.geometry.paths(s.size) where line.count > 1 {
       path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
@@ -100,5 +114,7 @@ extension NoteCanvas.Coordinator {
     shapeTool.layer.path = path
     shapeTool.layer.strokeColor = UIColor(argb: s.color).cgColor
     shapeTool.layer.lineWidth = CGFloat(s.size) * z
+    shapeTool.layer.fillColor = (s.geometry.closed ? s.fill.map { UIColor(argb: $0).cgColor } : nil) ?? UIColor.clear.cgColor
+    shapeTool.layer.lineDashPattern = LineDash.pattern(s.line, width: CGFloat(s.size) * z)?.map { NSNumber(value: Double($0)) }
   }
 }

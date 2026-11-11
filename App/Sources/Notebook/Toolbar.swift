@@ -150,7 +150,7 @@ struct MainToolbar: View {
   @Binding var pens: [PenSlot]
   @Binding var tool: Tool
   @Binding var panel: PanelKind?
-  var shapeKind: ShapeKind = .RECTANGLE
+  var shape: ShapeSource = .kind(.LINE)
   /// The keyboard: a new text box to type in.
   var onKeyboard: () -> Void = {}
   var showColors = true
@@ -221,7 +221,7 @@ struct MainToolbar: View {
         } label: {
           Group {
             if tool == .shape {
-              ShapeIcon(kind: shapeKind, color: c.blue, size: 24)
+              ShapeChoiceIcon(source: shape, color: c.blue, size: 24)
             } else {
               Image(systemName: currentToolIcon).font(.system(size: 19)).foregroundStyle(isPen ? c.ink : c.blue)
             }
@@ -307,7 +307,7 @@ struct MainToolbar: View {
       Group {
         // While on, the Shapes tool shows the shape it draws.
         if t == .shape && on {
-          ShapeIcon(kind: shapeKind, color: c.blue, size: 24)
+          ShapeChoiceIcon(source: shape, color: c.blue, size: 24)
         } else {
           Image(systemName: icon).font(.system(size: 19)).foregroundStyle(on ? c.blue : c.ink)
         }
