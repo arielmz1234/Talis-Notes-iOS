@@ -14,7 +14,7 @@ struct InsertButton: View {
   var body: some View {
     Menu {
       row(.picture, "photo", L("picture"), L("from_your_photos_or_files"))
-      if CameraPicker.available || ProcessInfo.processInfo.arguments.contains("-uitest") {
+      if CameraScreen.available || ProcessInfo.processInfo.arguments.contains("-cameraPicture") {
         row(.photo, "camera", L("take_a_photo"), L("the_board_a_textbook_page_a"))
       }
       row(.pdf, "doc.richtext", L("pdf_pages"), L("lecture_slides_or_a_problem_sheet"))
@@ -59,20 +59,16 @@ struct InsertFlow: ViewModifier {
         }
       }
       .fullScreenCover(isPresented: shows(.photo)) {
-        CameraPicker(
-          onPhoto: { image in
-            let upright = UIGraphicsImageRenderer(size: image.size).image { _ in image.draw(at: .zero) }
-            guard let data = upright.jpegData(compressionQuality: 0.9), let src = CGImageSourceCreateWithData(data as CFData, nil),
-              let page = Library.savePicture(src)
-            else {
+        CameraScreen(onClose: { request = nil }) { photos in
+          request = nil
+          for data in photos {
+            guard let src = CGImageSourceCreateWithData(data as CFData, nil), let page = Library.savePicture(src) else {
               hint(L("that_photo_couldn_t_be_opened"))
-              return
+              continue
             }
             bridge.coordinator?.insertPicture(page)
-          },
-          onClose: { request = nil }
-        )
-        .ignoresSafeArea()
+          }
+        }
       }
       .fileImporter(isPresented: shows(.pdf), allowedContentTypes: [.pdf]) { result in
         guard case .success(let url) = result else { return }

@@ -88,16 +88,10 @@ struct LibraryView: View {
       }
     }
     .fullScreenCover(isPresented: $camera) {
-      CameraPicker(
-        onPhoto: { image in
-          // A photo comes out the way the camera holds it; drawn upright before it's kept.
-          let upright = UIGraphicsImageRenderer(size: image.size).image { _ in image.draw(at: .zero) }
-          guard let data = upright.jpegData(compressionQuality: 0.9) else { return }
-          Task { @MainActor in _ = await lib.importPictures(data: [data]) }
-        },
-        onClose: { camera = false }
-      )
-      .ignoresSafeArea()
+      CameraScreen(onClose: { camera = false }) { photos in
+        camera = false
+        Task { @MainActor in _ = await lib.importPictures(data: photos) }
+      }
     }
     .alert(importNote ?? "", isPresented: Binding(get: { importNote != nil }, set: { if !$0 { importNote = nil } })) {
       Button(L("close")) { importNote = nil }
@@ -281,7 +275,7 @@ struct LibraryView: View {
             onNotebook: { withAnimation(Ease.outStrong(duration: 0.24)) { creating = true } },
             onFile: { importing = true },
             onPhoto: { pickingPhotos = true },
-            onCamera: CameraPicker.available ? { camera = true } : nil)
+            onCamera: CameraScreen.available || ProcessInfo.processInfo.arguments.contains("-cameraPicture") ? { camera = true } : nil)
         }
       }
       .transition(.opacity.combined(with: .offset(y: 8)))

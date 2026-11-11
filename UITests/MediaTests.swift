@@ -146,6 +146,60 @@ extension MediaTests {
   }
 }
 
+extension MediaTests {
+  /// The camera with a drawn photo of a tilted page (-cameraPicture; the simulator has no camera):
+  /// the look step, Crop with the corners dragged onto the page (held, for the magnifier), Next,
+  /// Document, then Save puts it on the page.
+  func testCamera() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
+    let app = launch(["-cameraPicture"])
+    settle()
+    open(app, "Exam revision")
+    showTool(app, "tool-insert")
+    app.buttons["tool-insert"].firstMatch.tap()
+    settle()
+    app.buttons["insert-photo"].firstMatch.tap()
+    settle()
+    shot("c1-look")
+    app.buttons["cam-Crop"].firstMatch.tap()
+    settle()
+    let tl = app.otherElements["corner-0"].firstMatch, br = app.otherElements["corner-2"].firstMatch
+    XCTAssertTrue(tl.waitForExistence(timeout: 3), "the crop corners show")
+    let a = tl.frame.center, b = br.frame.center
+    func at(_ x: CGFloat, _ y: CGFloat) -> XCUICoordinate {
+      app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: a.x + (b.x - a.x) * x, dy: a.y + (b.y - a.y) * y))
+    }
+    shot("c2-crop")
+    let page: [(CGFloat, CGFloat)] = [(0.26, 0.113), (0.78, 0.167), (0.74, 0.92), (0.21, 0.86)]
+    for (i, corner) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].enumerated() {
+      at(corner.0, corner.1).press(forDuration: 0.2, thenDragTo: at(page[i].0, page[i].1), withVelocity: .slow, thenHoldForDuration: i == 0 ? 4 : 0.1)
+    }
+    settle()
+    shot("c4-cropped")
+    app.buttons["cam-next"].firstMatch.tap()
+    settle()
+    app.descendants(matching: .any)["look-DOCUMENT"].firstMatch.tap()
+    settle()
+    settle()
+    shot("c5-document")
+    app.descendants(matching: .any)["look-BLACK_WHITE"].firstMatch.tap()
+    settle()
+    settle()
+    shot("c6-bw")
+    app.descendants(matching: .any)["look-DOCUMENT"].firstMatch.tap()
+    settle()
+    app.buttons["cam-save"].firstMatch.tap()
+    settle()
+    settle()
+    shot("c7-on-page")
+  }
+}
+
+extension CGRect {
+  var center: CGPoint { CGPoint(x: midX, y: midY) }
+}
+
 /// English labels the tests tap.
 enum L10n {
   static let exportPDF = "Export PDF"
