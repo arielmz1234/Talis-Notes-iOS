@@ -151,8 +151,7 @@ Decisions:
 - World units = points at zoom 1 (Android's dp).
 
 Known problems:
-- The lasso UI test picks nothing up (run 42930179315). Unknown whether the app or XCUITest's drag
-  is at fault; worth a log line from `lassoPan` in the test build.
+- The lasso pan is allowed to begin but never begins (run 42989992216; see Session 2's "Found").
 - Shapes (from Android or hold-to-shape) can't be erased or lassoed yet.
 - After a lasso move, the moved strokes are swapped for their stored form, so the lasso selection
   ends (PencilKit's lasso). Our own lasso will replace it.
@@ -201,9 +200,26 @@ Decisions:
 - Not done from Android's hold-to-shape: snapping a line's start/end to other shapes (`Snap`),
   custom and subject-pack shapes, the measuring badge, the square/circle diagonal hint.
 
+Verified (run 42989992216, green):
+- All 73 TaliCore tests pass, the ported `ShapeRecognizerTests` included. (The first run,
+  42989607121, failed: Swift couldn't type-check a `max { }` closure in `fitCurve` in time; it's now
+  plain loops.)
+- Hold-to-shape in the app: in `ipad-he-4-notebook` the sloping line held at its end came out
+  exactly level, drawn by the page layer. On the iPhone the same drag is ~7° off level (narrow
+  screen), past the 6° snap, so it stays at its angle but is a clean shape (thin, straight).
+- Only ipad-he and iPhone screenshots came out: the ipad-light run couldn't find its simulator, and
+  ipad-dark timed out setting the orientation. CI flakiness; rerun before reading anything into it.
+
+Found:
+- A shape draws thinner than PencilKit's ink at the same pen size (PencilKit's monoline widens the
+  width it's given). Android draws both with the same brush. Match them, e.g. scale PencilKit
+  widths, or draw shapes with the factor PencilKit uses. Check against Android shots.
+- Lasso: the test build now shows `gestureRecognizerShouldBegin` returning true for the lasso pan
+  ("lasso should begin"), but the pan's `.began` never arrives ("lasso began" never shows). So
+  another recogniser wins after it's allowed to start, probably one inside PKCanvasView. Try:
+  `canvas.gestureRecognizers?.forEach { if $0 !== lasso.pan { $0.require(toFail:) … } }` for
+  PencilKit's own ones while the lasso is on, or watch raw touches like `StrokeWatcher` does.
+
 Next:
-- Check run 42989607121 (or later): core tests (ShapeRecognizerTests), and the level held line in
-  `4-notebook`. If the recogniser tests fail on the seeded wobble, compare with Android's thresholds
-  before loosening anything.
 - Lasso UI test picking nothing up (see above).
 - Eraser and lasso for shapes; the Shapes tool and panel; snapping.
