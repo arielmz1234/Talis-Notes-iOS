@@ -1,4 +1,5 @@
 import ImageIO
+import PDFKit
 import PencilKit
 import SwiftUI
 import TaliCore
@@ -17,6 +18,8 @@ enum Tool: Equatable {
 struct UnderItems: @unchecked Sendable {
   var shapes: [ShapeRow] = []
   var pictures: [(rect: CGRect, image: CGImage)] = []
+  /// Pages of an imported PDF, drawn from the PDF itself (sharp at any zoom) instead of their pictures.
+  var pdfPages: [(rect: CGRect, page: SharpPage)] = []
 }
 
 /// Paper, pictures and shapes for the page column, drawn in tiles off the main thread so they stay
@@ -40,6 +43,7 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
       guard page.intersects(rect) else { continue }
       PaperPainter.draw(paper, page: page, in: cg, scale: scale, dark: dark)
     }
+    for p in under.pdfPages where p.rect.intersects(rect) { p.page.draw(in: p.rect, cg) }
     for pic in under.pictures where pic.rect.intersects(rect) {
       cg.saveGState()
       cg.translateBy(x: pic.rect.minX, y: pic.rect.maxY)
@@ -268,6 +272,10 @@ struct NoteCanvas: UIViewRepresentable {
         if let shape = ShapeRow(row) {
           under.shapes.append(shape)
           shapeZ = max(shapeZ, row.z)
+          continue
+        }
+        if row.kind == 2, let sharp = SharpPage.of(row) {
+          under.pdfPages.append(sharp)
           continue
         }
         if row.kind == 2, let pic = picture(from: row) {
@@ -696,4 +704,64 @@ func picture(from row: ItemRow) -> (rect: CGRect, image: CGImage)? {
   ]
   guard let image = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
   return (rect, image)
+}
+
+
+/// An imported PDF's page drawn from the PDF kept beside its picture (Android's `SharpPdf` draws
+/// patches at screen resolution; here the tiled page layer simply draws the page as vectors at every
+/// zoom). The picture's name says which PDF and page it is: `pdf-<pdf>-p<page>-<uuid>.jpg`.
+final class SharpPage: @unchecked Sendable {
+  private let page: PDFPage
+  /// PDFKit isn't safe to draw from several tile threads at once.
+  private static let lock = NSLock()
+  nonisolated(unsafe) private static var docs: [String: PDFDocument] = [:]
+
+  private init(_ page: PDFPage) { self.page = page }
+
+  /// The page a picture item shows, when it's an imported PDF page whose PDF is here.
+  static func of(_ row: ItemRow) -> (rect: CGRect, page: SharpPage)? {
+    guard let obj = try? JSONSerialization.jsonObject(with: row.payload) as? [String: Any], let file = obj["file"] as? String,
+      file.hasPrefix("pdf-"), let r = obj["rect"] as? [String: Any], obj["crop"] == nil
+    else { return nil }
+    // pdf-<36-char id>-p<page>-<uuid>.jpg
+    let rest = file.dropFirst(4)
+    guard rest.count > 38 else { return nil }
+    let id = String(rest.prefix(36))
+    let after = rest.dropFirst(36)
+    guard after.hasPrefix("-p"), let dash = after.dropFirst(2).firstIndex(of: "-"), let index = Int(after[after.index(after.startIndex, offsetBy: 2)..<dash]) else { return nil }
+    lock.lock()
+    defer { lock.unlock() }
+    let doc: PDFDocument
+    if let d = docs[id] {
+      doc = d
+    } else {
+      guard let d = PDFDocument(url: AppFiles.folders.images.appendingPathComponent("pdf-\(id).pdf")) else { return nil }
+      docs[id] = d
+      doc = d
+    }
+    guard let page = doc.page(at: index) else { return nil }
+    func n(_ k: String) -> CGFloat { CGFloat((r[k] as? NSNumber)?.doubleValue ?? 0) }
+    let rect = CGRect(x: n("left"), y: n("top"), width: n("right") - n("left"), height: n("bottom") - n("top"))
+    guard rect.width > 0, rect.height > 0 else { return nil }
+    return (rect, SharpPage(page))
+  }
+
+  /// Draws the page filling [rect] (world units, y down) on white.
+  func draw(in rect: CGRect, _ cg: CGContext) {
+    Self.lock.lock()
+    defer { Self.lock.unlock() }
+    let box = page.bounds(for: .mediaBox)
+    let turned = page.rotation % 180 != 0
+    let w = turned ? box.height : box.width
+    guard w > 0 else { return }
+    cg.saveGState()
+    cg.setFillColor(UIColor.white.cgColor)
+    cg.fill(rect)
+    cg.clip(to: rect)
+    let s = rect.width / w
+    cg.translateBy(x: rect.minX, y: rect.maxY)
+    cg.scaleBy(x: s, y: -s)
+    page.draw(with: .mediaBox, to: cg)
+    cg.restoreGState()
+  }
 }
