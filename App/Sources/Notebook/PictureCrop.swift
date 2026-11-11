@@ -117,7 +117,6 @@ struct CropLayer: View {
             }
             ctx.stroke(thirds, with: .color(.white.opacity(0.5)), lineWidth: 1)
           }
-          // Thick marks at the corners and the middle of each side, just inside the frame: the accent on a white edge.
           let len = min(18, min(f.width, f.height) / 3), i: CGFloat = 1.5
           let l = f.minX + i, t = f.minY + i, r = f.maxX - i, b = f.maxY - i
           var marks = Path()

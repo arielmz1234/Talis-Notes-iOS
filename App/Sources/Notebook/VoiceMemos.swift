@@ -306,7 +306,6 @@ private struct MemoBubble: View {
 
   var body: some View {
     let centre = drag.map { CGPoint(x: dragX, y: $0.y) } ?? CGPoint(x: CGFloat(home.x), y: CGFloat(home.y))
-    // It opens to the right when the whole bar fits there, otherwise to the left.
     let toLeft = centre.x - size / 2 + full > width - MemoSize.gap
     let w = open ? full : size
     let left = toLeft ? centre.x + size / 2 - w : centre.x - size / 2
@@ -676,7 +675,6 @@ private struct RecordingRow<Trash: View>: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      // Done: a red circle with a soft halo breathing out from it while it records.
       ZStack {
         TimelineView(.animation) { tl in
           let pulse = CGFloat(tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.1) / 1.1)

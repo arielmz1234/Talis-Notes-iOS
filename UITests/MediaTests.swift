@@ -208,7 +208,7 @@ extension MediaTests {
     let app = launch(["-cameraPicture"])
     settle()
     app.buttons["add"].firstMatch.tap()
-    settle()
+    XCTAssertTrue(app.buttons["add-camera"].waitForExistence(timeout: 8), "the + menu offers Camera")
     app.buttons["add-camera"].firstMatch.tap()
     settle()
     app.buttons["cam-save"].firstMatch.tap()

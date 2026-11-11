@@ -61,7 +61,6 @@ struct RootView: View {
       }
     }
     .overlay(alignment: .bottom) { OpeningPill(text: incoming.opening) }
-    // A PDF or picture opened with the app from another one opens as itself, on top of what was open.
     .onOpenURL { url in
       incoming.open(url, into: lib) { n in
         lib.noteOpened(n.id)

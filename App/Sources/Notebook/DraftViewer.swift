@@ -29,10 +29,10 @@ struct DraftBar: View {
         .padding(.horizontal, 10)
       }
       .frame(maxWidth: 380, alignment: .leading)
-      .fixedSize(horizontal: true, vertical: false)
+      .layoutPriority(-1)
       .arrive(1, shown)
-      Spacer(minLength: 10)
-      Button(action: onSave) { Label(L("save"), systemImage: "square.and.arrow.down").font(TaliType.labelLarge) }
+      Spacer(minLength: 10).layoutPriority(-2)
+      Button(action: onSave) { Label(L("save"), systemImage: "square.and.arrow.down").font(TaliType.labelLarge).fixedSize() }
         .buttonStyle(PrimaryButtonStyle())
         .frame(height: 52)
         .accessibilityIdentifier("draft-save")
@@ -135,16 +135,32 @@ struct LeaveDraftCard: View {
       Spacer().frame(height: 8)
       Text(L("n_isn_t_in_your_notebooks", title)).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted)
       Spacer().frame(height: 24)
-      HStack(spacing: 8) {
-        Button(L("keep_looking"), action: onStay).buttonStyle(QuietButtonStyle())
-        Spacer()
-        Button(action: onLeave) { Text(L("leave_without_saving_2")).foregroundStyle(c.danger) }.buttonStyle(QuietButtonStyle())
-          .accessibilityIdentifier("draft-leave")
-        Button(L("save"), action: onSave).buttonStyle(PrimaryButtonStyle())
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 8) {
+          stay
+          Spacer()
+          leave
+          save
+        }
+        VStack(alignment: .trailing, spacing: 8) {
+          HStack(spacing: 8) {
+            leave
+            save
+          }
+          stay
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
       }
     }
     .padding(28)
     .frame(maxWidth: 560)
     .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
   }
+
+  private var stay: some View { Button(action: onStay) { Text(L("keep_looking")).fixedSize() }.buttonStyle(QuietButtonStyle()) }
+  private var leave: some View {
+    Button(action: onLeave) { Text(L("leave_without_saving_2")).foregroundStyle(c.danger).fixedSize() }.buttonStyle(QuietButtonStyle())
+      .accessibilityIdentifier("draft-leave")
+  }
+  private var save: some View { Button(action: onSave) { Text(L("save")).fixedSize() }.buttonStyle(PrimaryButtonStyle()) }
 }
