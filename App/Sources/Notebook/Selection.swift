@@ -39,6 +39,12 @@ struct LassoState {
   var handleGrab = Pt(0, 0)
   /// Moving: how far it has been carried (snapped), and what of it snaps.
   var moveShift: CGPoint = .zero
+  /// Resizing with the chip (`SelectionChips.swift`).
+  var scaling = false
+  var scaleBy: Float = 1
+  var scaleBounds: CGRect?
+  let chipLayer = CAShapeLayer()
+  let chipArrow = CAShapeLayer()
   var snapMoving: SnapFeatures?
   var snapTargets: [SnapFeatures] = []
   /// The dot drag's snapping and its guides.
@@ -95,6 +101,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     lasso.shapeLayer.zPosition = 9
     v.layer.addSublayer(lasso.shapeLayer)
     installShapeDots(on: v)
+    installResizeChip(on: v)
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
@@ -141,13 +148,18 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       if phase == .changed { dragDot(to: p) } else if phase != .began { endDotDrag() }
       return
     }
+    if lasso.scaling {
+      if phase == .changed { resize(to: p) } else if phase != .began { endResize() }
+      return
+    }
     switch phase {
     case .began:
-      if beginDotDrag(at: p) { return }
+      if beginDotDrag(at: p) || beginResize(at: p) { return }
       let pad = 8 / canvas.zoomScale
       if let b = lasso.bounds, b.insetBy(dx: -pad, dy: -pad).contains(p) {
         lasso.moving = true
         lasso.dotsLayer.path = nil
+        drawResizeChip(nil)
         lasso.moveStart = p
         lasso.moveShift = .zero
         lasso.before = canvas.drawing
@@ -276,6 +288,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     lasso.loopLayer.path = nil
     lasso.frameLayer.path = nil
     drawShapeDots()
+    drawResizeChip(nil)
     parent.onSelection(nil)
   }
 
@@ -297,9 +310,12 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     lasso.frameLayer.path = UIBezierPath(roundedRect: r, cornerRadius: 6).cgPath
   }
 
+  func redrawFrameOnly(_ b: CGRect) { drawFrame(b) }
+
   func redrawSelection() {
     if !lasso.loop.isEmpty { drawLoop() }
     drawShapeDots()
+    drawResizeChip(lasso.bounds)
     guard let b = lasso.bounds else {
       lasso.frameLayer.path = nil
       return
