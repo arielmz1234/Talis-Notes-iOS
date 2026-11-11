@@ -29,8 +29,8 @@ final class StrokeWatcher: UIGestureRecognizer {
       }
       tracked = t
       began(t, event)
-    } else if tracked != nil {
-      // A second finger: a pinch or scroll, not writing.
+    } else if let t = tracked, t.type != .pencil {
+      // A second finger: a pinch or scroll, not writing. The pencil carries on: what lands beside it is the hand.
       tracked = nil
       ended(true)
       state = .failed
@@ -50,10 +50,13 @@ final class StrokeWatcher: UIGestureRecognizer {
   }
 
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
-    if tracked != nil {
-      tracked = nil
-      ended(true)
+    // Only when it's the touch being followed: the system also cancels a palm it has recognised.
+    guard let t = tracked, touches.contains(t) else {
+      if tracked == nil { state = .failed }
+      return
     }
+    tracked = nil
+    ended(true)
     state = .failed
   }
 

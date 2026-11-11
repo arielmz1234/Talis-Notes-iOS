@@ -7,7 +7,7 @@ import TaliCore
 // the pen's settings, her first few colours, her three thicknesses, then the tools.
 
 /// Which panel hangs under the toolbar.
-enum PanelKind { case pen, eraser, shapes }
+enum PanelKind { case pen, eraser, lasso, shapes }
 
 /// A pen drawn like a real tool standing in a tray (Android's `PenGlyph`): neutral body, a coloured
 /// band, and a tip shaped by its style. 26 × 56 pt, the tip pointing up.
@@ -257,6 +257,7 @@ struct MainToolbar: View {
     return Button {
       if tool == t {
         if t == .eraser { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .eraser ? nil : .eraser } }
+        if t == .lasso { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .lasso ? nil : .lasso } }
         if t == .shape { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .shapes ? nil : .shapes } }
       } else {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { tool = t }
@@ -543,10 +544,11 @@ struct StrokePreview: View {
   }
 }
 
-/// The eraser's settings (Android's `EraserPanel`): whole strokes or precise, and its size.
+/// The eraser's settings (Android's `EraserPanel`): whole strokes or precise, its size, and which pens it erases.
 struct EraserPanel: View {
   @Binding var precise: Bool
   @Binding var size: Float
+  @Binding var affects: PenFilter
   @Environment(\.tali) private var c
 
   var body: some View {
@@ -557,10 +559,14 @@ struct EraserPanel: View {
       Spacer().frame(height: 14)
       HStack(spacing: 0) {
         Text(L("size")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).frame(width: 44, alignment: .leading)
-        StepSlider(value: $size, range: 6...64, step: 1, lessLabel: L("size"), moreLabel: L("size"))
+        StepSlider(value: $size, range: 6...64, step: 1)
         Circle().fill(c.sunken).overlay(Circle().stroke(c.inkFaint, lineWidth: 1))
           .frame(width: CGFloat(min(size, 40)), height: CGFloat(min(size, 40))).frame(width: 44, height: 44)
       }
+      Spacer().frame(height: 10)
+      SectionLabel(text: L("erases"))
+      Spacer().frame(height: 8)
+      PenFilterChips(filter: $affects, images: nil)
     }
   }
 }

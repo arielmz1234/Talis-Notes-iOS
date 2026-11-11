@@ -29,7 +29,9 @@ struct NotebookView: View {
   @AppStorage("lastShape") private var shapeKindRaw = ShapeKind.RECTANGLE.rawValue
   private var shapeKind: ShapeKind { ShapeKind(rawValue: shapeKindRaw) ?? .RECTANGLE }
   @AppStorage("eraserPrecise") private var eraserPrecise = false
-  @AppStorage("eraserSize") private var eraserSize: Double = 20
+  @AppStorage("eraserSize") private var eraserSize: Double = 16
+  @State private var eraserAffects = PenFilters.load("eraserAffects")
+  @State private var lassoPicks = LassoSettings(affects: PenFilters.load("lassoAffects"), images: UserDefaults.standard.object(forKey: "lassoSelectsImages") as? Bool ?? true)
   @State private var canUndo = false
   @State private var canRedo = false
   @State private var pageCount = 1
@@ -71,7 +73,8 @@ struct NotebookView: View {
           topClearance: narrow ? 164 : 104,
           settings: CanvasSettings(paper: paper, dark: dark, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between),
           bridge: bridge,
-          eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize)),
+          eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize), affects: eraserAffects),
+          lassoPicks: lassoPicks,
           shapeKind: shapeKind,
           onUndoState: { u, r in
             canUndo = u
@@ -141,7 +144,9 @@ struct NotebookView: View {
               case .pen:
                 if let i = activePenIndex { PenPanel(pen: $pens[i], onAddPen: addPen, onRemovePen: pens.count > 1 ? { removePen(pens[i].id) } : nil) }
               case .eraser:
-                EraserPanel(precise: $eraserPrecise, size: Binding(get: { Float(eraserSize) }, set: { eraserSize = Double($0) }))
+                EraserPanel(precise: $eraserPrecise, size: Binding(get: { Float(eraserSize) }, set: { eraserSize = Double($0) }), affects: $eraserAffects)
+              case .lasso:
+                LassoPanel(settings: $lassoPicks)
               case .shapes:
                 ShapesPanel(kind: Binding(get: { shapeKind }, set: { shapeKindRaw = $0.rawValue })) {
                   // Choosing a shape closes the panel so she can draw it straight away.
@@ -222,6 +227,11 @@ struct NotebookView: View {
     }
     .onChange(of: pens) { _, new in PenStore.save(new) }
     .onChange(of: tool) { _, new in if case .pen(let id) = new { PenStore.activePen = id } }
+    .onChange(of: eraserAffects) { _, new in PenFilters.save(new, "eraserAffects") }
+    .onChange(of: lassoPicks) { _, new in
+      PenFilters.save(new.affects, "lassoAffects")
+      UserDefaults.standard.set(new.images, forKey: "lassoSelectsImages")
+    }
     .onChange(of: paper) { _, p in try? lib.db.run("UPDATE notebooks SET paper=? WHERE id=?", [.text(p.rawValue), .text(notebook.id)]) }
     .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
     .statusBarHidden(fullScreen)

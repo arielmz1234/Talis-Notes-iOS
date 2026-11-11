@@ -137,7 +137,7 @@ extension NoteCanvas.Coordinator {
     let p = worldPoint(of: t)
     let lean = t.type == .pencil ? t.azimuthAngle(in: canvas) : 0
     return InkInput(
-      x: p.x, y: p.y, t: Float(max(t.timestamp - own.startTime, 0)), pressure: Float(min(max(t.force / 2, 0), 1)),
+      x: p.x, y: p.y, t: Float(max(t.timestamp - own.startTime, 0)), pressure: t.type == .pencil ? Float(min(max(t.force / 2, 0), 1)) : 0.5,
       tilt: Float(max(0, .pi / 2 - t.altitudeAngle)), orientation: Float(lean < 0 ? lean + 2 * .pi : lean))
   }
 

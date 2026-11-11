@@ -134,10 +134,13 @@ struct InkStroke {
   /// A stroke PencilKit just drew, in world units (the canvas's drawing is kept at zoom 1).
   static func from(_ s: PKStroke, pen: PenSlot, id: String, z: Int64, tags: [String]? = nil) -> InkStroke {
     let t = s.transform
+    // A finger has no pressure: its force reads 0, and stored as the lightest touch a fountain pen's
+    // stroke came back as a hairline, here and on Android. It's kept as a medium touch instead.
+    let finger = !s.path.contains { $0.force > 0 }
     let pts = s.path.map { p -> InkInput in
       let at = p.location.applying(t)
       // Android's pressure is 0...1; half of Apple Pencil's force (which runs to about 4) reads the same.
-      let pressure = Float(min(max(p.force / 2, 0), 1))
+      let pressure = finger ? 0.5 : Float(min(max(p.force / 2, 0), 1))
       return InkInput(
         x: Float(at.x), y: Float(at.y), t: Float(p.timeOffset), pressure: pressure, tilt: Float(max(0, .pi / 2 - p.altitude)),
         orientation: Float(p.azimuth.truncatingRemainder(dividingBy: 2 * .pi) + (p.azimuth < 0 ? 2 * .pi : 0)))

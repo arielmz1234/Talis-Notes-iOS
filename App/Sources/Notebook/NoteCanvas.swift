@@ -198,6 +198,7 @@ struct NoteCanvas: UIViewRepresentable {
   /// Lets the notebook screen ask for page pictures.
   var bridge: CanvasBridge? = nil
   var eraser = EraserSettings()
+  var lassoPicks = LassoSettings()
   /// The shape the Shapes tool draws.
   var shapeKind: ShapeKind = .RECTANGLE
   var onUndoState: (Bool, Bool) -> Void
@@ -235,7 +236,7 @@ struct NoteCanvas: UIViewRepresentable {
     c.applied = settings
     c.installSelection(on: v)
     c.installHoldToShape(on: v)
-    c.installShapeEraser(on: v)
+    c.installEraser(on: v)
     c.installShapeTool(on: v)
     c.installTextBoxes(on: v)
     c.installOwnInk(on: v)
@@ -387,8 +388,8 @@ struct NoteCanvas: UIViewRepresentable {
     var lasso = LassoState()
     /// Hold-to-shape (see HoldToShape.swift).
     var hold = HoldState()
-    /// The eraser on shapes (see ShapeSelection.swift).
-    var shapeEraser = ShapeEraser()
+    /// The eraser (see Eraser.swift).
+    var erasing = EraserState()
     /// The Shapes tool (see ShapeTool.swift), and the pen last used (shapes take its look).
     var shapeTool = ShapeToolState()
     /// Typing in a text box (see TextBoxes.swift).
@@ -457,21 +458,14 @@ struct NoteCanvas: UIViewRepresentable {
         lastPenId = id
         let pen = parent.pens.first { $0.id == id } ?? PenSlot.defaults[0]
         canvas.tool = PKInkingTool(pen.type.ink, color: UIColor(argb: pen.inkColor), width: InkWidth.toolWidth(pen.size, pen.type.ink))
-      case .eraser:
-        // Whole strokes, or precise (rubs out just what it passes over), at her size.
-        if parent.eraser.precise {
-          canvas.tool = PKEraserTool(.bitmap, width: CGFloat(parent.eraser.size))
-        } else {
-          canvas.tool = PKEraserTool(.vector, width: CGFloat(parent.eraser.size))
-        }
-      case .lasso, .shape, .laser:
-        // Our own lasso, Shapes tool and laser (Android's): the canvas doesn't draw while they're in use.
+      case .eraser, .lasso, .shape, .laser:
+        // Our own eraser, lasso, Shapes tool and laser (Android's): the canvas doesn't draw while they're in use.
         canvas.tool = PKInkingTool(.monoline, color: .clear, width: 1)
       }
       // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso and the ink the
       // notebook draws itself take the touch instead. After the tool is set: setting it switches
       // PencilKit's drawing back on (it then drew its own stroke under ours until the pen lifted).
-      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape && ownInk == nil
+      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .eraser && parent.tool != .lasso && parent.tool != .shape && ownInk == nil
     }
 
     func run(_ cmd: CanvasCommand) {
@@ -646,11 +640,13 @@ struct NoteCanvas: UIViewRepresentable {
             rebuilt.append(pk)
             next.append((key, s))
           }
-        } else if let given = pending.removeValue(forKey: key) ?? archive[key] {
-          // A copy we put there ourselves (duplicate, paste, a box): it keeps its own pen.
-          var s = given
-          s.z = z
-          z += 1
+        } else if var s = pending.removeValue(forKey: key) ?? archive[key] {
+          // Put there by the app (a copy, a box, an eraser's piece) or brought back by undo: it keeps
+          // its own pen, and its place in the stack when it has one (a new stroke goes on top).
+          if s.z == 0 {
+            s.z = z
+            z += 1
+          }
           changed.append(s)
           growPages(for: s)
           rebuilt.append(pk)
@@ -783,12 +779,6 @@ enum CanvasCommand: Equatable {
   case recolourSelection(UInt32), thickenSelection(Float), mirrorSelection(Bool), arrangeSelection(Bool)
   case deletePage(Int)
   case goToPage(Int)
-}
-
-/// The eraser as she set it in its panel.
-struct EraserSettings: Equatable {
-  var precise = false
-  var size: Float = 20
 }
 
 /// A plain log of things that went wrong, kept on the device (Android's CrashLog, simplified).

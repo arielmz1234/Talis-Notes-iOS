@@ -197,7 +197,8 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     guard loop.count > 2 else { return }
     var picked = Set<String>()
     var bounds: CGRect?
-    for (_, s) in stored {
+    let picks = parent.lassoPicks
+    for (_, s) in stored where !s.locked && picks.affects.hits(s.pen) {
       let pts = s.inputs.points.map { Pt($0.x, $0.y) }
       guard let r = s.inputs.bounds, Rect.around(loop).map({ $0.outset(s.size).intersects(r) }) ?? false else { continue }
       if Lasso.touchesPath(pts, loop) {
@@ -208,7 +209,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     }
     var pickedShapes = Set<String>()
     let loopBox = Rect.around(loop)
-    for sh in shapes where !sh.locked {
+    for sh in shapes where !sh.locked && picks.affects.hits(PenType(rawValue: sh.pen) ?? .FINELINER) {
       guard let r = sh.geometry.bounds(sh.size), loopBox.map({ $0.intersects(r) }) ?? false else { continue }
       if sh.geometry.paths(sh.size).contains(where: { $0.count > 1 && Lasso.touchesPath($0, loop) }) {
         pickedShapes.insert(sh.id)
@@ -217,7 +218,8 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       }
     }
     var pickedTexts = Set<String>()
-    for t in texts where !t.locked {
+    // Android's `lassoHits`: whatever wasn't written with a pen goes by the Images switch.
+    for t in texts where !t.locked && picks.images {
       let f = TextLook.frame(t)
       let r = Rect(Float(f.minX), Float(f.minY), Float(f.maxX), Float(f.maxY))
       if Lasso.touchesRect(r, loop) {
@@ -368,6 +370,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     for s in strokes {
       var c = s
       c.id = newId()
+      c.z = 0
       c.inputs.points = s.inputs.points.map { var p = $0; p.x += Float(offset.x); p.y += Float(offset.y); return p }
       let pk = c.pkStroke(mask: mask(for: c))
       pending[StrokeKey(pk)] = c
