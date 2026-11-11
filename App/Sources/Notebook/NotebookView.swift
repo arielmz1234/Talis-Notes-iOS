@@ -105,6 +105,7 @@ struct NotebookView: View {
           if panel != nil { withAnimation(.easeOut(duration: 0.1)) { panel = nil } }
           if memos.openMemo != nil { memos.openMemo = nil }
         })
+        .modifier(DropOnPage(enabled: !viewing, bridge: bridge, hint: show))
         .overlay { MemoLayer(memos: memos, hint: show) }
         VStack(spacing: narrow ? 18 : 0) {
           if viewing && draft {

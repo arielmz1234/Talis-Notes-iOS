@@ -130,3 +130,30 @@ extension NoteCanvas.Coordinator {
     persistPages()
   }
 }
+
+extension NoteCanvas.Coordinator {
+  /// A point on the canvas view (as a drop reports it) in the canvas's content.
+  func contentPoint(_ p: CGPoint) -> CGPoint {
+    guard let canvas else { return p }
+    return CGPoint(x: p.x + canvas.contentOffset.x, y: p.y + canvas.contentOffset.y)
+  }
+
+  /// Text dropped from another app: a text box centred where it landed, half the view wide at most,
+  /// in the pen's colour, on the page (Android's `insertText`). One undo step.
+  func insertText(_ text: String, at: CGPoint) {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, let canvas else { return }
+    let z = Float(max(canvas.zoomScale, 0.01))
+    let w = min(visibleWorld.width * 0.5, 700)
+    var t = TextRow(id: newId(), z: nextZ(), text: trimmed, x: Float(at.x) / z - w / 2, y: Float(at.y) / z, width: w, fontSize: TextRow.defaultSize, color: currentPen.color)
+    if paged {
+      let box = Rect(t.x, t.y, t.x + w, t.y + TextLook.textHeight(t))
+      let on = Placing.ontoPage(box, pages: layout, count: pageCount)
+      t.x += on.left - box.left
+      t.y += on.top - box.top
+    }
+    let before = texts
+    setTexts(before + [t])
+    registerTextsChange(from: before, to: before + [t])
+  }
+}

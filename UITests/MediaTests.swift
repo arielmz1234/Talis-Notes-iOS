@@ -250,6 +250,20 @@ extension MediaTests {
   }
 }
 
+extension MediaTests {
+  /// A picture and some text dropped on the page (-fakeDrop hands the canvas what a drag from another
+  /// app would): the picture lands where it was dropped, the text as a text box.
+  func testDrop() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
+    let app = launch(["-fakeDrop"])
+    settle()
+    open(app, "Truss problems")
+    Thread.sleep(forTimeInterval: 3)
+    shot("d1-dropped")
+  }
+}
+
 /// English labels the tests tap.
 enum L10n {
   static let exportPDF = "Export PDF"

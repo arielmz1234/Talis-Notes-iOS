@@ -117,3 +117,76 @@ struct InsertFlow: ViewModifier {
     }
   }
 }
+
+/// Pictures, PDFs and text dragged over from an app side by side (Android's `onDropped`): pictures
+/// land centred where they're dropped, PDFs as pages, text as a text box. Nothing lands while she's
+/// just looking.
+struct DropOnPage: ViewModifier {
+  var enabled: Bool
+  var bridge: CanvasBridge
+  var hint: (String) -> Void
+  @Environment(Library.self) private var lib
+
+  func body(content: Content) -> some View {
+    content
+      .onDrop(of: [.pdf, .image, .plainText], isTargeted: nil) { providers, location in
+        guard enabled else { return false }
+        Task { @MainActor in await take(providers, at: location) }
+        return true
+      }
+      .task {
+        guard ProcessInfo.processInfo.arguments.contains("-fakeDrop") else { return }
+        try? await Task.sleep(for: .seconds(2))
+        let picture = PageImaging.samplePhoto().scaled(maxSide: 900)
+        await take([NSItemProvider(object: picture)], at: CGPoint(x: 260, y: 360))
+        await take([NSItemProvider(object: "Dropped from another app" as NSString)], at: CGPoint(x: 560, y: 640))
+      }
+  }
+
+  @MainActor private func take(_ providers: [NSItemProvider], at location: CGPoint) async {
+    guard let c = bridge.coordinator else { return }
+    let at = c.contentPoint(location)
+    var index = 0
+    for p in providers {
+      if p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier), let url = await file(p, .pdf) {
+        do {
+          let pages = try await lib.renderPDF(url) { done, total in hint(L("adding_pages_n_of_n", done, total)) }
+          c.insertPages(pages)
+          hint(pages.count == 1 ? L("added_1_page_write_right_on") : L("added_n_pages_write_right_on", pages.count))
+        } catch Library.ImportError.message(let m) {
+          hint(m)
+        } catch {
+          hint(L("couldn_t_read_that_pdf"))
+        }
+      } else if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+        guard let data = await data(p, .image), let src = CGImageSourceCreateWithData(data as CFData, nil), let page = Library.savePicture(src) else {
+          hint(L("that_picture_couldn_t_be_opened_2"))
+          continue
+        }
+        c.insertPicture(page, at: at, index: index)
+        index += 1
+      } else if p.canLoadObject(ofClass: NSString.self), let text = await string(p) {
+        c.insertText(text, at: at)
+      }
+    }
+  }
+
+  private func data(_ p: NSItemProvider, _ type: UTType) async -> Data? {
+    await withCheckedContinuation { done in _ = p.loadDataRepresentation(for: type) { d, _ in done.resume(returning: d) } }
+  }
+
+  private func string(_ p: NSItemProvider) async -> String? {
+    await withCheckedContinuation { done in _ = p.loadObject(ofClass: NSString.self) { s, _ in done.resume(returning: (s as? NSString).map(String.init)) } }
+  }
+
+  /// The dropped file copied somewhere it stays while it's read.
+  private func file(_ p: NSItemProvider, _ type: UTType) async -> URL? {
+    await withCheckedContinuation { done in
+      _ = p.loadFileRepresentation(for: type, openInPlace: false) { url, _, _ in
+        guard let url else { return done.resume(returning: nil) }
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("drop-\(UUID().uuidString)-\(url.lastPathComponent)")
+        done.resume(returning: (try? FileManager.default.copyItem(at: url, to: copy)) != nil ? copy : nil)
+      }
+    }
+  }
+}
