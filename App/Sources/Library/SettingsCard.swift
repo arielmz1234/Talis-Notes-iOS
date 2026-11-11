@@ -5,6 +5,7 @@ import SwiftUI
 /// The language is iOS's own per-app setting, so its row opens the app's page in iOS Settings.
 struct SettingsCard: View {
   var onClose: () -> Void = {}
+  var onTour: () -> Void = {}
   @Environment(\.tali) private var c
   @Environment(\.openURL) private var openURL
   @Environment(\.colorScheme) private var scheme
@@ -14,43 +15,36 @@ struct SettingsCard: View {
   @Namespace private var ring
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
+    DialogCard(width: 600) {
       Text(L("settings")).font(TaliType.titleLarge).foregroundStyle(c.ink)
       Spacer().frame(height: 18)
-      SectionLabel(text: L("language"))
-      Spacer().frame(height: 8)
-      languageRow
-      Spacer().frame(height: 18)
-      SectionLabel(text: L("colours"))
-      Spacer().frame(height: 8)
-      colours
-      Spacer().frame(height: 18)
-      ViewThatFits(in: .horizontal) {
-        HStack(alignment: .top, spacing: 16) {
-          themeChoice.layoutPriority(1)
-          styleChoice
-        }
-        VStack(alignment: .leading, spacing: 14) {
+      CardBody {
+        SectionLabel(text: L("language"))
+        Spacer().frame(height: 8)
+        languageRow
+        Spacer().frame(height: 18)
+        SectionLabel(text: L("colours"))
+        Spacer().frame(height: 8)
+        colours
+        Spacer().frame(height: 18)
+        ThemeBesideStyle {
           themeChoice
           styleChoice
         }
+        Spacer().frame(height: 6)
+        Text(minimal ? L("clean_edges_on_bars_and_cards") : L("soft_cloud_edges_on_bars_and"))
+          .font(TaliType.bodySmall).foregroundStyle(c.inkMuted)
       }
-      Spacer().frame(height: 6)
-      Text(minimal ? L("clean_edges_on_bars_and_cards") : L("soft_cloud_edges_on_bars_and"))
-        .font(TaliType.bodySmall).foregroundStyle(c.inkMuted)
       Spacer().frame(height: 22)
-      HStack {
-        Spacer()
+      HStack(spacing: 0) {
+        Button(L("take_the_tour"), action: onTour).buttonStyle(QuietButtonStyle()).accessibilityIdentifier("take-tour")
+        Spacer(minLength: 8)
         Button(L("done")) { onClose() }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("settings-done")
       }
       Spacer().frame(height: 14)
       Text(L("made_by_n", "Ariel M.") + " · " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
         .font(TaliType.labelSmall).foregroundStyle(c.inkFaint).frame(maxWidth: .infinity)
     }
-    .padding(28)
-    .frame(maxWidth: 600)
-    .cloudSurface(radius: 24, crown: .none, shadowDepth: 12)
-    .padding(16)
   }
 
   private var languageRow: some View {
@@ -77,7 +71,8 @@ struct SettingsCard: View {
       ForEach(ColorTheme.allCases) { f in
         let on = family == f.rawValue
         Button {
-          withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) { family = f.rawValue }
+          ThemeFade.beforeChange()
+          family = f.rawValue
         } label: {
           VStack(spacing: 6) {
             ThemePreview(p: scheme == .dark ? f.dark : f.light).frame(height: 78)
@@ -85,22 +80,22 @@ struct SettingsCard: View {
             Spacer().frame(height: 2)
           }
           .padding(5)
-          .background {
-            if on {
-              RoundedRectangle(cornerRadius: 20).stroke(c.accent, lineWidth: 2.5).matchedGeometryEffect(id: "ring", in: ring)
-            }
-          }
+          .contentShape(RoundedRectangle(cornerRadius: 20))
         }
         .buttonStyle(PressStyle(scale: 0.96))
         .frame(maxWidth: .infinity)
+        .slidingOption(f.rawValue, in: ring)
+        .accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityIdentifier("colours-\(f.rawValue)")
       }
     }
+    .slidingHighlight(ring, selected: family, fill: .color(c.accent), corner: 20, ring: 2.5)
   }
 
   private var themeChoice: some View {
     VStack(alignment: .leading, spacing: 8) {
       SectionLabel(text: L("theme"))
-      Segmented(options: ["SYSTEM", "LIGHT", "DARK"], selected: $themeMode) { mode in
+      Segmented(options: ["SYSTEM", "LIGHT", "DARK"], selected: faded($themeMode)) { mode in
         switch mode {
         case "SYSTEM": return L("system_default")
         case "DARK": return L("dark")
@@ -113,14 +108,49 @@ struct SettingsCard: View {
   private var styleChoice: some View {
     VStack(alignment: .leading, spacing: 8) {
       SectionLabel(text: L("style"))
-      Segmented(options: [false, true], selected: $minimal) { $0 ? L("minimal") : L("cloudy") }
+      Segmented(options: [false, true], selected: faded($minimal)) { $0 ? L("minimal") : L("cloudy") }
     }
+  }
+
+  /// A choice that changes the whole look, which fades over from the screen as it was.
+  private func faded<T>(_ value: Binding<T>) -> Binding<T> {
+    Binding(get: { value.wrappedValue }, set: { new in
+      ThemeFade.beforeChange()
+      value.wrappedValue = new
+    })
   }
 
   /// The app's language, named in itself.
   private var currentLanguage: String {
     let id = Bundle.main.preferredLocalizations.first ?? "en"
     return Locale(identifier: id).localizedString(forIdentifier: id)?.capitalized(with: Locale(identifier: id)) ?? id
+  }
+}
+
+/// Theme beside Style, sharing the width 1.6 to 1 as Android's weights do, or one under the other
+/// when narrower than 440 (side by side cut "System default" short on a phone).
+private struct ThemeBesideStyle: SwiftUI.Layout {
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let w = proposal.width ?? 600
+    return CGSize(width: w, height: frames(w, subviews).map(\.maxY).max() ?? 0)
+  }
+
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    for (view, f) in zip(subviews, frames(bounds.width, subviews)) {
+      view.place(at: CGPoint(x: bounds.minX + f.minX, y: bounds.minY + f.minY), proposal: ProposedViewSize(f.size))
+    }
+  }
+
+  private func frames(_ w: CGFloat, _ views: Subviews) -> [CGRect] {
+    guard views.count == 2 else { return [] }
+    func height(_ v: LayoutSubview, _ width: CGFloat) -> CGFloat { v.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
+    if w < 440 {
+      let top = height(views[0], w)
+      return [CGRect(x: 0, y: 0, width: w, height: top), CGRect(x: 0, y: top + 14, width: w, height: height(views[1], w))]
+    }
+    let first = (w - 16) * 1.6 / 2.6
+    let second = w - 16 - first
+    return [CGRect(x: 0, y: 0, width: first, height: height(views[0], first)), CGRect(x: first + 16, y: 0, width: second, height: height(views[1], second))]
   }
 }
 

@@ -140,6 +140,40 @@ final class LibraryTests: ShotCase {
     shot("lib-19-empty-trash")
   }
 
+  func testSettingsAndTour() {
+    let app = launch()
+    settle()
+    tapSidebar(app, "settings")
+    shot("lib-20-settings")
+    app.buttons["colours-PEACH"].firstMatch.tap()
+    Thread.sleep(forTimeInterval: 0.06)
+    shot("lib-21-ring-moving")
+    settle()
+    app.descendants(matching: .any)["option-DARK"].firstMatch.tap()
+    Thread.sleep(forTimeInterval: 0.06)
+    shot("lib-22-pill-moving")
+    settle()
+    shot("lib-23-settings-peach-dark")
+    app.buttons["colours-LILAC"].firstMatch.tap()
+    app.descendants(matching: .any)["option-LIGHT"].firstMatch.tap()
+    settle()
+    app.buttons["take-tour"].firstMatch.tap()
+    settle()
+    shot("lib-24-tour-1")
+    for i in 2...4 {
+      app.buttons["tour-next"].firstMatch.tap()
+      Thread.sleep(forTimeInterval: 1.5)
+      shot("lib-2\(3 + i)-tour-\(i)")
+    }
+    app.buttons["tour-next"].firstMatch.tap()
+    settle()
+    app.buttons["add"].firstMatch.tap()
+    settle()
+    app.buttons["add-notebook"].firstMatch.tap()
+    settle()
+    shot("lib-28-new-notebook")
+  }
+
   func testPortrait() throws {
     try XCTSkipUnless(isPad, "the phone is always upright")
     XCUIDevice.shared.orientation = .portrait

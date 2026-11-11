@@ -166,6 +166,9 @@ enum TaliType {
   /// The wordmark and dialog titles: Bricolage 600 at optical size 36, 28 pt.
   static let headlineMedium = TaliFont.heading(28, .semibold, opsz: 36)
   static let titleLarge = TaliFont.heading(20, .semibold, opsz: 24)
+  /// Material's own headlineSmall (Android leaves it as the system's 24 sp regular), in Heebo or
+  /// Vazirmatn for Hebrew and Arabic.
+  static var headlineSmall: Font { ["he", "ar"].contains(TaliFont.language) ? TaliFont.body(24) : .system(size: 24) }
   static let titleMedium = TaliFont.body(16, .semibold)
   static let titleSmall = TaliFont.body(14, .semibold)
   static let bodyLarge = TaliFont.body(16)

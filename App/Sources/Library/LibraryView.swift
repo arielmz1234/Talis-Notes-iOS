@@ -5,7 +5,7 @@ import TaliCore
 
 /// The one card over the library at a time.
 enum LibraryDialog: Equatable {
-  case newNotebook, backups, settings, emptyTrash
+  case newNotebook, backups, settings, tour, emptyTrash
   case rename(NotebookMeta)
   case delete(NotebookMeta)
   case deletePicked(Set<String>)
@@ -51,6 +51,7 @@ struct LibraryView: View {
   @State private var fresh: Set<String> = []
   @State private var knownFolders: Set<String>?
   @AppStorage("minimal") private var minimal = false
+  @AppStorage("tourSeen") private var tourSeen = false
 
   var body: some View {
     GeometryReader { geo in
@@ -131,6 +132,7 @@ struct LibraryView: View {
     // Changing folder or opening Recently deleted ends picking.
     .onChange(of: lib.shelf) { _, _ in picked = nil }
     .onChange(of: lib.folders.map(\.id), initial: true) { _, ids in noteNewFolder(Set(ids)) }
+    .onAppear(perform: welcome)
   }
 
   // MARK: Dialogs
@@ -153,7 +155,9 @@ struct LibraryView: View {
         onOpen(n)
       }
     case .backups: BackupCard(onClose: { close() })
-    case .settings: SettingsCard(onClose: { close() })
+    case .settings:
+      SettingsCard(onClose: { close() }, onTour: { show(.tour) })
+    case .tour: TourCard(onDone: { close() })
     case .rename(let n):
       NameCard(title: L("rename_notebook"), initial: n.title, placeholder: L("notebook_name"), confirm: L("rename"), onClose: { close() }) {
         lib.rename(n.id, to: $0)
@@ -245,6 +249,14 @@ struct LibraryView: View {
       }
     }
     knownFolders = ids
+  }
+
+  /// Someone new (nothing in the library yet) gets the tour once.
+  private func welcome() {
+    if !tourSeen && !ProcessInfo.processInfo.arguments.contains("-uitest") && lib.notebooks.isEmpty && lib.trash.isEmpty {
+      tourSeen = true
+      show(.tour)
+    }
   }
 
   // MARK: The + card
