@@ -223,8 +223,8 @@ struct NoteCanvas: UIViewRepresentable {
   var shapeKind: ShapeKind = .RECTANGLE
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
-  /// Where what the lasso picked up is on screen (window coordinates), or nil; for the selection menu.
-  var onSelection: (CGRect?) -> Void = { _ in }
+  /// Where what's picked up is on screen, or nil; for the selection menu.
+  var onSelection: (SelectionInfo?) -> Void = { _ in }
   /// A short message at the bottom ("Copied — hold anywhere to paste it").
   var onHint: (String) -> Void = { _ in }
   /// A hold on the page offering Paste there (window coordinates), or nil.
@@ -273,7 +273,10 @@ struct NoteCanvas: UIViewRepresentable {
     v.insertSubview(pages, at: 0)
     c.canvas = v
     c.pages = pages
-    v.onResize = { [weak c] in c?.updateContent() }
+    v.onResize = { [weak c] in
+      c?.updateContent()
+      c?.drawChrome()
+    }
     c.load()
     return v
   }
@@ -434,12 +437,14 @@ struct NoteCanvas: UIViewRepresentable {
 
     @objc func twoFingerTap() {
       guard parent.settings.smartUndo, !parent.viewOnly else { return }
+      clearSelection()
       canvas?.undoManager?.undo()
       reportUndo()
     }
 
     @objc func threeFingerTap() {
       guard parent.settings.smartUndo, !parent.viewOnly else { return }
+      clearSelection()
       canvas?.undoManager?.redo()
       reportUndo()
     }
@@ -450,6 +455,10 @@ struct NoteCanvas: UIViewRepresentable {
       if let last = lastTool, last != parent.tool, textEdit.view != nil {
         DispatchQueue.main.async { self.finishText() }
       }
+      // Another tool, or just looking, puts down what's picked up (after this update: it changes the screen's state).
+      if lastTool.map({ $0 != parent.tool }) ?? false || parent.viewOnly, lasso.bounds != nil || !lasso.loop.isEmpty {
+        DispatchQueue.main.async { self.clearSelection() }
+      }
       lastTool = parent.tool
       // Draw with finger: Auto follows iOS's own Apple Pencil setting.
       if !ProcessInfo.processInfo.arguments.contains("-uitest") {
@@ -459,14 +468,11 @@ struct NoteCanvas: UIViewRepresentable {
         case false?: canvas.drawingPolicy = .pencilOnly
         }
       }
-      // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own loop.
-      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape
-      lasso.pan?.isEnabled = !parent.viewOnly && parent.tool == .lasso
+      // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own
+      // loop, and a touch that's editing the selection doesn't write.
+      canvas.drawingGestureRecognizer.isEnabled = inkOn && lasso.drag == nil
+      lasso.pan?.isEnabled = !parent.viewOnly
       shapeTool.watcher?.isEnabled = !parent.viewOnly && parent.tool == .shape
-      // Another tool puts down what the lasso picked up (after this update: it changes the screen's state).
-      if parent.tool != .lasso, lasso.bounds != nil || !lasso.loop.isEmpty {
-        DispatchQueue.main.async { self.clearSelection() }
-      }
       switch parent.tool {
       case .pen(let id):
         lastPenId = id
@@ -485,11 +491,17 @@ struct NoteCanvas: UIViewRepresentable {
       }
     }
 
+    var inkOn: Bool { !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape }
+
     func run(_ cmd: CanvasCommand) {
       guard let canvas else { return }
       switch cmd {
-      case .undo: canvas.undoManager?.undo()
-      case .redo: canvas.undoManager?.redo()
+      case .undo:
+        clearSelection()
+        canvas.undoManager?.undo()
+      case .redo:
+        clearSelection()
+        canvas.undoManager?.redo()
       case .addPage:
         pageCount += 1
         updateContent()
@@ -615,6 +627,7 @@ struct NoteCanvas: UIViewRepresentable {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
       reportView()
+      if lasso.bounds != nil { drawChrome() }
       reportSelection()
     }
 

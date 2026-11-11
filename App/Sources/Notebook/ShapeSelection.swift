@@ -26,8 +26,22 @@ extension NoteCanvas.Coordinator {
       CrashNote.log("saving shapes: \(error)")
     }
     pages.pages.under.shapes = new
-    pages.layer.setNeedsDisplay()
+    let after = Dictionary(new.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    redrawPage(unionOf(old.filter { after[$0.id] != $0 } + new.filter { before[$0.id] != $0 }))
     touch()
+  }
+
+  /// Only there: redrawing every tile for one shape
+  /// left the page blank for a moment.
+  func redrawPage(_ area: CGRect?) {
+    guard let pages, let area else { return }
+    pages.layer.setNeedsDisplay(area.insetBy(dx: -4, dy: -4))
+  }
+
+  private var liftedArea: CGRect? {
+    var out = unionOf(pickedShapeRows)
+    for t in texts where lasso.pickedTexts.contains(t.id) { out = joined(out, TextLook.frame(t)) }
+    return out
   }
 
   /// [s] moved, scaled, turned or mirrored by [m]; a scaled shape's line scales with it (Android's `transformed`).
@@ -61,9 +75,11 @@ extension NoteCanvas.Coordinator {
   func liftShapes() {
     lasso.shapesBefore = shapes
     lasso.textsBefore = texts
+    let area = liftedArea
     let picked = pickedShapeRows
     let pickedTexts = texts.filter { lasso.pickedTexts.contains($0.id) }
     guard !picked.isEmpty || !pickedTexts.isEmpty, let canvas, let pages else { return }
+    lasso.overlayTicket += 1
     let z = canvas.zoomScale
     // Text boxes ride along as pictures of themselves at this zoom.
     let textLayers: [CALayer] = pickedTexts.map { t in
@@ -80,50 +96,77 @@ extension NoteCanvas.Coordinator {
       return l
     }
     pages.pages.under.texts = texts.filter { !lasso.pickedTexts.contains($0.id) }
-    lasso.shapeLayer.sublayers = textLayers + picked.map { (s: ShapeRow) -> CALayer in
-      let l = CAShapeLayer()
-      let path = CGMutablePath()
-      let lines = s.geometry.paths(s.size)
-      for line in lines where line.count > 1 {
-        path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
-      }
-      l.path = path
-      l.strokeColor = UIColor(argb: s.color).cgColor
-      l.lineWidth = CGFloat(s.size) * z
-      l.lineCap = .round
-      l.lineJoin = .round
-      if let fill = s.fill, s.geometry.closed { l.fillColor = UIColor(argb: fill).cgColor } else { l.fillColor = UIColor.clear.cgColor }
-      if let dash = LineDash.pattern(s.line, width: CGFloat(s.size) * z) { l.lineDashPattern = dash.map { NSNumber(value: Double($0)) } }
-      return l
-    }
+    // Without actions: left to animate, the lifted shapes faded in while the page's had already gone.
     CATransaction.begin()
     CATransaction.setDisableActions(true)
+    lasso.shapeLayer.sublayers = textLayers + picked.map { (s: ShapeRow) -> CALayer in
+      let l = CAShapeLayer()
+      l.lineCap = .round
+      l.lineJoin = .round
+      trace(s, on: l, zoom: z)
+      return l
+    }
     lasso.shapeLayer.setAffineTransform(.identity)
     CATransaction.commit()
     pages.pages.under.shapes = shapes.filter { !lasso.pickedShapes.contains($0.id) }
-    pages.layer.setNeedsDisplay()
+    redrawPage(area)
   }
 
-  /// The carried shapes follow the drag ([shift] in world units).
-  func carryShapes(_ shift: CGAffineTransform) {
+  /// Straight back on the page with nothing saved: a tap on a selection isn't an edit.
+  func restoreLifted() {
+    guard let pages, let shapesBefore = lasso.shapesBefore, let textsBefore = lasso.textsBefore else { return }
+    pages.pages.under.shapes = shapesBefore
+    pages.pages.under.texts = textsBefore
+    redrawPage(liftedArea)
+    carryShapes(.identity)
+    if let only = pickedShapeRows.first, lasso.pickedShapes.count == 1 { showLive(only) }
+  }
+
+  private func trace(_ s: ShapeRow, on l: CAShapeLayer, zoom z: CGFloat) {
+    let path = CGMutablePath()
+    for line in s.geometry.paths(s.size) where line.count > 1 {
+      path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
+    }
+    l.path = path
+    l.strokeColor = UIColor(argb: s.color).cgColor
+    l.lineWidth = CGFloat(s.size) * z
+    if let fill = s.fill, s.geometry.closed { l.fillColor = UIColor(argb: fill).cgColor } else { l.fillColor = UIColor.clear.cgColor }
+    l.lineDashPattern = LineDash.pattern(s.line, width: CGFloat(s.size) * z)?.map { NSNumber(value: Double($0)) }
+  }
+
+  /// The carried shapes and text boxes follow the drag: moved, resized or turned by [t] (world units).
+  func carryShapes(_ t: Affine) {
     guard let canvas, lasso.shapeLayer.sublayers?.isEmpty == false else { return }
-    // (Shapes and text boxes alike.)
     let z = canvas.zoomScale
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    lasso.shapeLayer.setAffineTransform(CGAffineTransform(translationX: shift.tx * z, y: shift.ty * z))
+    lasso.shapeLayer.setAffineTransform(CGAffineTransform(a: CGFloat(t.a), b: CGFloat(t.b), c: CGFloat(t.c), d: CGFloat(t.d), tx: CGFloat(t.tx) * z, ty: CGFloat(t.ty) * z))
     CATransaction.commit()
   }
 
-  /// The overlay goes once the shapes are back on the page.
+  func showLive(_ s: ShapeRow) {
+    guard let canvas, let l = lasso.shapeLayer.sublayers?.compactMap({ $0 as? CAShapeLayer }).first else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    trace(s, on: l, zoom: canvas.zoomScale)
+    CATransaction.commit()
+  }
+
+  /// The overlay goes once the shapes are back on the page: a moment later, when the page has drawn
+  /// them (taken away at once, there was a blink with nothing there).
   func dropShapes() {
     lasso.shapesBefore = nil
     lasso.textsBefore = nil
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    lasso.shapeLayer.sublayers = nil
-    lasso.shapeLayer.setAffineTransform(.identity)
-    CATransaction.commit()
+    lasso.overlayTicket += 1
+    let ticket = lasso.overlayTicket
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+      guard let self, self.lasso.overlayTicket == ticket else { return }
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      self.lasso.shapeLayer.sublayers = nil
+      self.lasso.shapeLayer.setAffineTransform(.identity)
+      CATransaction.commit()
+    }
   }
 }
 
@@ -150,14 +193,7 @@ extension NoteCanvas.Coordinator {
 
   private func eraseBegan(_ t: UITouch) {
     shapeEraser.before = nil
-    guard let canvas, parent.tool == .eraser, !parent.viewOnly else { return }
-    if t.type != .pencil {
-      switch canvas.drawingPolicy {
-      case .anyInput: break
-      case .pencilOnly: return
-      default: if UIPencilInteraction.prefersPencilOnlyDrawing { return }
-      }
-    }
+    guard parent.tool == .eraser, draws(t), claim(t) == nil else { return }
     shapeEraser.before = shapes
     eraseAt(t)
   }

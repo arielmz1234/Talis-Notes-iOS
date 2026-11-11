@@ -38,7 +38,13 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     guard !parent.viewOnly, parent.tool != .lasso else { return }
     let q = g.location(in: canvas)
     let p = CGPoint(x: q.x / canvas.zoomScale, y: q.y / canvas.zoomScale)
-    if let t = texts.last(where: { !$0.locked && TextLook.frame($0).insetBy(dx: -6, dy: -6).contains(p) }) { editText(t) }
+    if let t = texts.last(where: { !$0.locked && TextLook.frame($0).insetBy(dx: -6, dy: -6).contains(p) }) {
+      clearSelection()
+      editText(t)
+    } else if !fingersDraw, lasso.bounds != nil {
+      // A finger that doesn't write only lets go of what's picked up (a tap never picks things up by accident).
+      clearSelection()
+    }
   }
 
   /// A new box where typing would go (Android's `startText`).
@@ -227,7 +233,10 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
       CrashNote.log("saving text: \(error)")
     }
     pages.pages.under.texts = new
-    pages.layer.setNeedsDisplay()
+    let after = Dictionary(new.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    var area: CGRect?
+    for t in old.filter({ after[$0.id] != $0 }) + new.filter({ before[$0.id] != $0 }) { area = joined(area, TextLook.frame(t)) }
+    redrawPage(area)
     touch()
   }
 

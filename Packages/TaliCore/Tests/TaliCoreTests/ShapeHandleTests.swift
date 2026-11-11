@@ -381,6 +381,20 @@ struct ShapeDotTests {
     #expect(free == Pt(100, 80))
   }
 
+  @Test func aDraggedLineEndSettlesOnTidyAngles() {
+    let line = ShapeGeometry.line(a: Pt(0, 0), b: Pt(100, 40), arrowStart: false, arrowEnd: false, ticks: false)
+    // Nearly level: level. Its other end, and a slope well off the tidy angles, stay as dragged.
+    guard case let .line(a, b, _, _, _) = line.dragging(1, to: Pt(200, 8)) else { Issue.record("not a line"); return }
+    #expect(a == Pt(0, 0) && abs(b.y) < 0.01 && b.x > 199)
+    guard case let .line(_, free, _, _, _) = line.dragging(1, to: Pt(200, 70)) else { Issue.record("not a line"); return }
+    #expect(free == Pt(200, 70))
+    guard case let .line(start, end, _, _, _) = line.dragging(0, to: Pt(96, -100)) else { Issue.record("not a line"); return }
+    #expect(end == Pt(100, 40) && abs(start.x - 100) < 0.01)
+    // Other shapes' dots go where they're dragged.
+    let curve = ShapeKind.CURVE.create(Pt(0, 0), Pt(300, 0))
+    #expect(curve.dragging(2, to: Pt(150, 8)) == curve.withHandle(2, Pt(150, 8)))
+  }
+
   @Test func aLoadsEndsKeepItsArrowsSpacedAndItsMiddleDotSetsTheirLength() {
     let load = ShapeKind.DISTRIBUTED_LOAD.create(Pt(0, 0), Pt(140, 40))
     #expect(load.handles().count == 3)

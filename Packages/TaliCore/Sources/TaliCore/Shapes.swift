@@ -50,7 +50,6 @@ public enum Arrow {
   }
 }
 
-/// The basic shapes that keep their form (Android's `PolyForm`): only the dots that make sense for them.
 public enum PolyForm: String, Sendable {
   case DIAMOND, PARALLELOGRAM, TRAPEZOID, REGULAR
 }
@@ -360,6 +359,18 @@ public struct TextRow: Sendable, Equatable {
     self.init(
       id: row.id, z: row.z, text: text, x: f("x"), y: f("y"), width: max(f("width"), 1), height: f("height"), fontSize: row.size > 0 ? row.size : TextRow.defaultSize,
       color: row.color, locked: (o["locked"] as? Bool) ?? false)
+  }
+
+  public func transformed(_ m: Affine) -> TextRow {
+    let s = m.scaleFactor
+    let at = m.apply(Pt(x, y))
+    var t = self
+    t.x = at.x
+    t.y = at.y
+    t.width = max(width * s, 40)
+    t.fontSize = min(max(fontSize * s, 6), 400)
+    t.height = height * s
+    return t
   }
 
   /// The row Android's `ItemCodec` writes ([textHeight]: how tall the laid-out text is, for its bounds).

@@ -2,10 +2,12 @@ import PencilKit
 import TaliCore
 import UIKit
 
-/// What the lasso is doing and what it has picked up.
+/// What's picked up (by the lasso's loop, a tap on a shape, or a shape just drawn) and what the touch
+/// on it is doing.
+@MainActor
 struct LassoState {
-  /// The lasso's own touches (a watcher like hold-to-shape's: a pan recogniser was allowed to begin
-  /// on PKCanvasView but never began).
+  /// The touches that draw the lasso's loop or take hold of the selection (a watcher like
+  /// hold-to-shape's: a pan recogniser was allowed to begin on PKCanvasView but never began).
   var pan: StrokeWatcher?
   var hold: UILongPressGestureRecognizer?
   /// The loop being drawn, in world units.
@@ -20,16 +22,30 @@ struct LassoState {
   var textsBefore: [TextRow]?
   let shapeLayer = CALayer()
   var bounds: CGRect?
-  /// Moving what's picked up: where the drag began and the drawing before it.
-  var moving = false
-  var moveStart: CGPoint = .zero
+  /// The touch moving, resizing, turning or reshaping what's picked up, how far it has taken it, and
+  /// the drawing before it began.
+  var drag: SelectionDrag?
+  var transform = Affine.identity
   var before: PKDrawing?
+  /// The shape picked itself up when it was drawn: the pen still writes inside it (Android's `softSelection`).
+  var soft = false
+  /// The menu steps aside after an edit and comes back by itself; a newer ticket calls that off.
+  var menuClosed = false
+  var menuTicket = 0
+  /// Ink and arcs have no direction of their own: how far each was turned, so the next turn's badge carries on.
+  var turnedBy: [String: Float] = [:]
+  var claim: (touch: ObjectIdentifier, began: TimeInterval, grab: SelectionGrab?)?
+  /// PencilKit strokes begun after this belong to a touch that was editing the selection: dropped.
+  var editSince: Date?
+  var chipsBackAt: Date?
+  /// A newer ticket calls off taking the carried shapes' overlay away (see `dropShapes`).
+  var overlayTicket = 0
   /// Where a hold offered Paste (world units).
   var pasteAt: CGPoint?
   /// Where the lasso's touch last was (world units).
   var lastAt: CGPoint = .zero
   let loopLayer = CAShapeLayer()
-  let frameLayer = CAShapeLayer()
+  let chrome = SelectionChromeView()
 }
 
 /// Strokes copied or cut, carried across notebooks (Android's `Clipboard`), in world units.
@@ -42,8 +58,9 @@ enum InkClipboard {
 
 /// The lasso and the selection menu (Android's `NoteCanvasView` lasso, `finishLasso`, the selection
 /// menu's folded buttons and hold-to-paste): a dashed loop picks up whatever it touches, a dashed
-/// frame shows it, a drag inside the frame moves it, and the menu copies, cuts, duplicates, boxes
-/// or deletes it. Holding still on the page with something copied offers Paste there.
+/// frame shows it, and the menu copies, cuts, duplicates, boxes or deletes it. Moving, resizing and
+/// turning it are in SelectionEdit.swift. Holding still on the page with something copied offers
+/// Paste there.
 extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   static let pasteHold: TimeInterval = 0.6
   static let duplicateOffset: CGFloat = 24
@@ -52,15 +69,19 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   func installSelection(on v: PKCanvasView) {
     let pan = StrokeWatcher(target: nil, action: nil)
     pan.delegate = self
+    pan.accepts = { [weak self] t in self?.takes(t) ?? false }
     pan.began = { [weak self] t, _ in self?.lassoStep(.began, t) }
     pan.moved = { [weak self] t, e in
-      for s in e.coalescedTouches(for: t) ?? [t] { self?.lassoStep(.changed, s) }
+      // The loop takes every sample; a drag only where the touch is now (redrawing what's carried
+      // for each sample would fall behind the pen).
+      let samples = self?.lasso.drag == nil ? e.coalescedTouches(for: t) ?? [t] : [t]
+      for s in samples { self?.lassoStep(.changed, s) }
     }
     pan.ended = { [weak self] cancelled in self?.lassoStep(cancelled ? .cancelled : .ended, nil) }
     pan.isEnabled = false
     v.addGestureRecognizer(pan)
     lasso.pan = pan
-    // While the lasso is on, one finger or the pencil draws the loop; two fingers still scroll.
+    // A touch the watcher follows (the lasso's loop, a drag on the selection) doesn't scroll; two fingers still do.
     v.panGestureRecognizer.require(toFail: pan)
     let hold = UILongPressGestureRecognizer(target: self, action: #selector(pasteHold(_:)))
     hold.minimumPressDuration = Self.pasteHold
@@ -68,15 +89,14 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     hold.delegate = self
     v.addGestureRecognizer(hold)
     lasso.hold = hold
-    for layer in [lasso.loopLayer, lasso.frameLayer] {
-      layer.fillColor = UIColor.clear.cgColor
-      layer.lineWidth = 1.5
-      layer.lineDashPattern = layer === lasso.loopLayer ? [5, 5] : [6, 4]
-      layer.zPosition = 10
-      v.layer.addSublayer(layer)
-    }
+    lasso.loopLayer.fillColor = UIColor.clear.cgColor
+    lasso.loopLayer.lineWidth = 1.5
+    lasso.loopLayer.lineDashPattern = [5, 5]
+    lasso.loopLayer.zPosition = 10
+    v.layer.addSublayer(lasso.loopLayer)
     lasso.shapeLayer.zPosition = 9
     v.layer.addSublayer(lasso.shapeLayer)
+    v.addSubview(lasso.chrome)
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
@@ -93,6 +113,8 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     if g === textEdit.tap, let hit = touch.view {
       for own in [textEdit.view, textEdit.sizeBar].compactMap({ $0 }) where hit === own || hit.isDescendant(of: own) { return false }
     }
+    // A touch that took hold of the selection is the selection's alone: no tap on what's under it, no Paste.
+    if g === textEdit.tap || g === lasso.hold, claim(touch) != nil { return false }
     return true
   }
 
@@ -100,8 +122,6 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     if g === lasso.hold { return !InkClipboard.isEmpty && !parent.viewOnly }
     return true
   }
-
-  private var accent: UIColor { UIColor(argb: Int32(bitPattern: 0xFF7A_4ED6)) }
 
   private func world(_ g: UIGestureRecognizer) -> CGPoint {
     guard let canvas else { return .zero }
@@ -111,72 +131,33 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   // MARK: Drawing the loop and moving
 
-  /// One step of the lasso's touch: [t] is nil when it ends (it ends where it last was).
+  /// One step of the watcher's touch: [t] is nil when it ends (it ends where it last was). A touch
+  /// that took hold of the selection drags it; any other, with the lasso, draws the loop.
   func lassoStep(_ phase: UIGestureRecognizer.State, _ t: UITouch?) {
     guard let canvas else { return }
     if let t {
       let q = t.location(in: canvas)
       lasso.lastAt = CGPoint(x: q.x / canvas.zoomScale, y: q.y / canvas.zoomScale)
     }
-    let p = lasso.lastAt
+    let p = Pt(lasso.lastAt)
     switch phase {
     case .began:
-      let pad = 8 / canvas.zoomScale
-      if let b = lasso.bounds, b.insetBy(dx: -pad, dy: -pad).contains(p) {
-        lasso.moving = true
-        lasso.moveStart = p
-        lasso.before = canvas.drawing
-        liftShapes()
-        parent.onSelection(nil)
+      if let t, let grab = claim(t) {
+        beginDrag(grab, at: p)
       } else {
         clearSelection()
-        lasso.loop = [Pt(Float(p.x), Float(p.y))]
+        lasso.loop = [p]
       }
     case .changed:
-      if lasso.moving, let before = lasso.before {
-        let shift = CGAffineTransform(translationX: p.x - lasso.moveStart.x, y: p.y - lasso.moveStart.y)
-        loading = true
-        canvas.drawing = PKDrawing(strokes: before.strokes.enumerated().map { i, s in
-          guard i < stored.count, lasso.picked.contains(stored[i].stroke.id) else { return s }
-          var m = s
-          m.transform = s.transform.concatenating(shift)
-          return m
-        })
-        loading = false
-        if let b = lasso.bounds { drawFrame(b.applying(shift)) }
-        carryShapes(shift)
-      } else {
-        lasso.loop.append(Pt(Float(p.x), Float(p.y)))
+      if lasso.drag != nil {
+        continueDrag(to: p)
+      } else if !lasso.loop.isEmpty {
+        lasso.loop.append(p)
         drawLoop()
       }
     case .ended, .cancelled, .failed:
-      if lasso.moving {
-        lasso.moving = false
-        let dx = p.x - lasso.moveStart.x, dy = p.y - lasso.moveStart.y
-        let shapesBefore = lasso.shapesBefore ?? shapes
-        let textsBefore = lasso.textsBefore ?? texts
-        if let before = lasso.before, abs(dx) + abs(dy) > 0.5 {
-          let movedDrawing = canvas.drawing
-          record(before, shapes: shapesBefore, texts: textsBefore)
-          sync(movedDrawing)
-          let by = Affine.translate(Float(dx), Float(dy))
-          setShapes(shapesBefore.map { lasso.pickedShapes.contains($0.id) ? moved($0, by: by) : $0 })
-          setTexts(textsBefore.map { t in
-            guard lasso.pickedTexts.contains(t.id) else { return t }
-            var c = t
-            c.x += Float(dx)
-            c.y += Float(dy)
-            return c
-          })
-          lasso.bounds = lasso.bounds?.offsetBy(dx: dx, dy: dy)
-          reportUndo()
-        } else {
-          setShapes(shapesBefore)
-          setTexts(textsBefore)
-        }
-        dropShapes()
-        lasso.before = nil
-        redrawSelection()
+      if lasso.drag != nil {
+        endDrag(cancelled: phase != .ended)
       } else if phase == .cancelled {
         // A second finger came down: it's a pinch or scroll, not a loop.
         lasso.loop = []
@@ -194,6 +175,10 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     let loop = lasso.loop
     lasso.loop = []
     lasso.loopLayer.path = nil
+    if let end = loop.last, Geo.pathLength(loop) * zoom < 12 {
+      pick(at: end)
+      return
+    }
     guard loop.count > 2 else { return }
     var picked = Set<String>()
     var bounds: CGRect?
@@ -225,12 +210,8 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         bounds = bounds.map { $0.union(f) } ?? f
       }
     }
-    lasso.picked = picked
-    lasso.pickedShapes = pickedShapes
-    lasso.pickedTexts = pickedTexts
-    lasso.bounds = picked.isEmpty && pickedShapes.isEmpty && pickedTexts.isEmpty ? nil : bounds
-    if lasso.bounds != nil { UISelectionFeedbackGenerator().selectionChanged() }
-    redrawSelection()
+    if bounds != nil { UISelectionFeedbackGenerator().selectionChanged() }
+    setSelection(strokes: picked, shapes: pickedShapes, texts: pickedTexts, menu: true)
   }
 
   func clearSelection() {
@@ -240,7 +221,10 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     lasso.bounds = nil
     lasso.loop = []
     lasso.loopLayer.path = nil
-    lasso.frameLayer.path = nil
+    lasso.soft = false
+    lasso.menuClosed = false
+    lasso.menuTicket += 1
+    drawChrome()
     parent.onSelection(nil)
   }
 
@@ -250,43 +234,30 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     let path = CGMutablePath()
     path.move(to: CGPoint(x: CGFloat(first.x) * z, y: CGFloat(first.y) * z))
     for p in lasso.loop.dropFirst() { path.addLine(to: CGPoint(x: CGFloat(p.x) * z, y: CGFloat(p.y) * z)) }
-    lasso.loopLayer.strokeColor = accent.cgColor
+    lasso.loopLayer.strokeColor = SelectionChromeView.accent.cgColor
     lasso.loopLayer.path = path
-  }
-
-  private func drawFrame(_ b: CGRect) {
-    guard let canvas else { return }
-    let z = canvas.zoomScale
-    let r = CGRect(x: b.minX * z, y: b.minY * z, width: b.width * z, height: b.height * z).insetBy(dx: -8, dy: -8).integral.insetBy(dx: 0.5, dy: 0.5)
-    lasso.frameLayer.strokeColor = accent.cgColor
-    lasso.frameLayer.path = UIBezierPath(roundedRect: r, cornerRadius: 6).cgPath
   }
 
   func redrawSelection() {
     if !lasso.loop.isEmpty { drawLoop() }
-    guard let b = lasso.bounds else {
-      lasso.frameLayer.path = nil
-      return
-    }
-    drawFrame(b)
+    drawChrome()
     reportSelection()
   }
 
   func reportSelection() {
-    guard let canvas else { return }
-    guard let b = lasso.bounds, !lasso.moving else { return }
+    guard let canvas, let b = lasso.bounds, lasso.drag == nil, !lasso.menuClosed else { return }
     let z = canvas.zoomScale
     let content = CGRect(x: b.minX * z, y: b.minY * z, width: b.width * z, height: b.height * z).insetBy(dx: -8, dy: -8)
-    parent.onSelection(canvas.convert(content, to: nil))
+    parent.onSelection(SelectionInfo(rect: canvas.convert(content, to: nil), rotatable: canRotate))
   }
 
   // MARK: The menu's actions
 
-  private var pickedStrokes: [InkStroke] { stored.map(\.stroke).filter { lasso.picked.contains($0.id) } }
+  var pickedStrokes: [InkStroke] { stored.map(\.stroke).filter { lasso.picked.contains($0.id) } }
 
   /// Makes this change one undo step: going back restores [before].
   /// Shapes are part of the step too: [beforeShapes] (by default the shapes as they are now) come back with it.
-  private func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil, texts beforeTexts: [TextRow]? = nil) {
+  func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil, texts beforeTexts: [TextRow]? = nil) {
     let shapesThen = beforeShapes ?? shapes
     let textsThen = beforeTexts ?? texts
     canvas?.undoManager?.registerUndo(withTarget: self) { coord in
@@ -394,14 +365,11 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   }
 
   private func select(_ strokes: [InkStroke], shapes picked: [ShapeRow] = []) {
-    lasso.picked = Set(strokes.map(\.id))
-    lasso.pickedShapes = Set(picked.map(\.id))
-    lasso.bounds = joined(unionOf(strokes), unionOf(picked))
-    redrawSelection()
+    setSelection(strokes: Set(strokes.map(\.id)), shapes: Set(picked.map(\.id)), texts: [], menu: true)
   }
 
   /// The bounds of [strokes] together.
-  private func unionOf(_ strokes: [InkStroke]) -> CGRect? {
+  func unionOf(_ strokes: [InkStroke]) -> CGRect? {
     var out: CGRect?
     for s in strokes {
       let r = CGRect(s.bounds)

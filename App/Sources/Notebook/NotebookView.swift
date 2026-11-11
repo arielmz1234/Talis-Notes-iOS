@@ -48,7 +48,7 @@ struct NotebookView: View {
   @State private var dark: Bool
   @State private var moreOpen = false
   /// What the lasso picked up (window coordinates), a held spot offering Paste, and a hint line.
-  @State private var selection: CGRect?
+  @State private var selection: SelectionInfo?
   @State private var pasteOffer: CGPoint?
   @State private var hint: String?
   @State private var hintTask: Task<Void, Never>?
@@ -162,7 +162,7 @@ struct NotebookView: View {
         .padding(.horizontal, 16)
         .padding(.top, 20)
         if let sel = selection, !hidden, !viewing {
-          SelectionMenuLayer(selection: sel, narrow: narrow) { command = $0 }
+          SelectionMenuLayer(selection: sel.rect, rotatable: sel.rotatable, narrow: narrow) { command = $0 }
             .ignoresSafeArea()
         }
         if let at = pasteOffer {
@@ -268,8 +268,8 @@ struct NotebookView: View {
       }
       if !viewing {
         FloatingBar(crown: .softEdge) {
-          ToolIcon(system: "arrow.uturn.backward", label: L("undo"), enabled: canUndo) { command = .undo }
-          ToolIcon(system: "arrow.uturn.forward", label: L("redo"), enabled: canRedo) { command = .redo }
+          ToolIcon(system: "arrow.uturn.backward", label: L("undo"), enabled: canUndo) { command = .undo }.accessibilityIdentifier("undo")
+          ToolIcon(system: "arrow.uturn.forward", label: L("redo"), enabled: canRedo) { command = .redo }.accessibilityIdentifier("redo")
         }
       }
     }

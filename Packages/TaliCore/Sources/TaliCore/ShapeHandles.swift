@@ -2,7 +2,6 @@ import Foundation
 
 private let tau = Float.pi * 2
 private let minScale: Float = 0.05
-/// The smallest arc or part circle an end dot can make: one degree.
 private let minTurn = Float.pi / 180
 
 /// Java's `Math.round`: halves go up (Swift's `rounded()` sends -2.5 to -3, Java to -2).
@@ -10,27 +9,21 @@ func javaRound(_ x: Float) -> Float { (x + 0.5).rounded(.down) }
 
 private func degrees(_ radians: Float) -> Float { Float(Double(radians) * 180 / .pi) }
 
-/// An angle in (0, 2π]: how far round from one end to the other, going the positive way.
 func positiveTurn(_ a: Float) -> Float {
   var s = a.truncatingRemainder(dividingBy: tau)
   if s <= 0 { s += tau }
   return s
 }
 
-/// Gently onto whole 15° steps (30°, 45°, 90°...), so the usual angles are easy to hit.
 private func snapArc(_ s: Float) -> Float {
   let step = Float.pi / 12
   let snapped = javaRound(s / step) * step
   return snapped > 0 && abs(s - snapped) < 0.03 ? snapped : max(s, minTurn)
 }
 
-/// Android's `TriangleShape` companion: how a dragged corner locks on to the angles people use.
 public enum TriangleShape {
-  /// How close (in degrees) a right angle or two equal angles pull.
   private static let pull: Float = 3
 
-  /// One angle, locked to the nearest 15° within 2.5°, else to the nearest 5° within 1°, else to the
-  /// whole degree, so it moves a degree at a time between the angles it locks on to.
   public static func lockAngle(_ x: Float) -> Float {
     let fifteen = javaRound(x / 15) * 15
     if abs(x - fifteen) < 2.5 { return fifteen }
@@ -39,9 +32,6 @@ public enum TriangleShape {
     return javaRound(x)
   }
 
-  /// Where the corner dragged to [p] settles, with the other two corners at [fa] and [fb]: the angles
-  /// at those corners are locked (to a right angle, to make two angles equal, or with `lockAngle`),
-  /// and the corner goes where the two sides meet, on the side it was dragged.
   public static func snapCorner(_ fa: Pt, _ fb: Pt, _ p: Pt) -> Pt {
     let base = fb - fa
     let len = base.length()
@@ -82,16 +72,13 @@ public enum TriangleShape {
   }
 }
 
-/// Android's `SectorShape` companion: a part circle, and how its end dots snap.
 public enum SectorShape {
-  /// [fraction] of a circle centred on [center], reaching [toward] with its curved side facing that way.
   public static func of(_ center: Pt, _ toward: Pt, _ fraction: Float) -> ShapeGeometry {
     let sweep = tau * min(max(fraction, 0.01), 1)
     let dir = toward.dist(center) < 0.5 ? -Float.pi / 2 : (toward - center).angle()
     return .sector(center: center, radius: max(4, toward.dist(center)), start: dir - sweep / 2, sweep: sweep)
   }
 
-  /// Snaps to quarters (strongly) and to whole 5% steps, so 25%, 50% and 75% are easy to hit exactly.
   /// A whole circle only when really close: a wide catch there made it stick shut.
   public static func snapSweep(_ s: Float) -> Float {
     let f = s / tau
@@ -104,9 +91,6 @@ public enum SectorShape {
   }
 }
 
-/// The dots a picked-up shape shows and what dragging one does (Android's `handles` and `withHandle`
-/// in `model/Shapes.kt`). Resizing a whole shape is the resize chip's job, so dots sit only where they
-/// change the shape.
 extension ShapeGeometry {
   public func handles() -> [Pt] {
     switch self {
@@ -153,8 +137,7 @@ extension ShapeGeometry {
       return .poly(points: moved, closed: closed, smooth: smooth, rotation: rotation, form: form)
     case let .ellipse(center, rx, ry, rotation, stretchable):
       if isCircle {
-        // A circle's dot sets the radius and goes round with the pen, settling level, upright or
-        // diagonal when close, so its radius line reads tidily.
+        // Level, upright or diagonal when close, so its radius line reads tidily.
         let r = max(2, p.dist(center))
         var a = (p - center).angle()
         let step = Float.pi / 4
@@ -215,7 +198,6 @@ extension ShapeGeometry {
     case let .load(a, b, depth, count):
       let across = Self.across(a, b)
       if index == 2 {
-        // The arrows' length (dragged across the line, they hang the other way).
         let d = (p - (a + (b - a) * 0.5)).dot(across)
         return .load(a: a, b: b, depth: abs(d) < 6 ? (d < 0 ? -6 : 6) : d, count: count)
       }
@@ -228,12 +210,23 @@ extension ShapeGeometry {
     }
   }
 
+  /// Without snapping onto other shapes, which Android's `HANDLE_DRAG` does first (not ported).
+  public func dragging(_ index: Int, to p: Pt) -> ShapeGeometry {
+    func tidy(_ fixed: Pt, _ end: Pt) -> Pt {
+      if case let .line(_, b, _, _, _) = ShapeRecognizer.snappedLine(fixed, end) { return b }
+      return end
+    }
+    if case let .load(a, b, _, _) = self, index < 2 { return withHandle(index, tidy(index == 0 ? b : a, p)) }
+    let g = withHandle(index, p)
+    guard case let .line(a, b, arrowStart, arrowEnd, ticks) = g else { return g }
+    return .line(a: index == 1 ? a : tidy(b, a), b: index == 1 ? tidy(a, b) : b, arrowStart: arrowStart, arrowEnd: arrowEnd, ticks: ticks)
+  }
+
   private static func across(_ a: Pt, _ b: Pt) -> Pt {
     let d = (b - a).normalized()
     return Pt(-d.y, d.x)
   }
 
-  /// A closed four-cornered shape whose corners sit on the corners of its box in its own frame.
   public var isRect: Bool {
     guard case let .poly(points, true, _, rotation, _) = self, points.count == 4 else { return false }
     let c = Geo.centroid(points)
@@ -244,57 +237,47 @@ extension ShapeGeometry {
     return local.allSatisfy { abs(abs($0.x) - w / 2) < w * 0.02 && abs(abs($0.y) - h / 2) < h * 0.02 }
   }
 
-  /// A rectangle with equal sides.
   public var isSquare: Bool {
     guard isRect, case let .poly(points, _, _, _, _) = self else { return false }
     let a = points[0].dist(points[1]), b = points[1].dist(points[2])
     return abs(a - b) < max(a, b) * 0.005
   }
 
-  /// A perfectly round ellipse.
   public var round: Bool {
     guard case let .ellipse(_, rx, ry, _, _) = self else { return false }
     return abs(rx - ry) < max(rx, ry) * 0.01
   }
 
-  /// A circle from the Circle tool: one dot, on its edge, that sets the radius.
   public var isCircle: Bool {
     guard case let .ellipse(_, _, _, _, stretchable) = self else { return false }
     return round && !stretchable
   }
 
-  /// The point of an ellipse at [t] round from its own x axis.
   public func ellipsePoint(_ t: Float) -> Pt {
     guard case let .ellipse(center, rx, ry, rotation, _) = self else { return .zero }
     return center + Pt(rx * cosf(t), ry * sinf(t)).rotated(rotation)
   }
 
-  /// How far round an arc goes, in whole degrees (always positive).
   public var arcDegrees: Int {
     guard case let .arc(_, _, _, sweep, _) = self else { return 0 }
     return Int((Double(abs(sweep)) * 180 / .pi + 0.5).rounded(.down))
   }
 
-  /// How much of a full circle a part circle is, 0...1.
   public var sectorFraction: Float {
     guard case let .sector(_, _, _, sweep) = self else { return 0 }
     return min(max(abs(sweep) / tau, 0), 1)
   }
 
-  /// A triangle's angles at its three corners, in degrees.
   public var triangleAngles: [Float] {
     guard case let .triangle(a, b, c, _) = self else { return [] }
     return [degrees(Geo.interiorAngle(c, a, b)), degrees(Geo.interiorAngle(a, b, c)), degrees(Geo.interiorAngle(b, c, a))]
   }
 
-  /// The same polygon keeping its form: no dots, only the resize chip (pentagon, hexagon, star).
   var keepingForm: ShapeGeometry {
     guard case let .poly(points, closed, smooth, rotation, _) = self else { return self }
     return .poly(points: points, closed: closed, smooth: smooth, rotation: rotation, form: .REGULAR)
   }
 
-  /// A rectangle's side dot moves that side only (the opposite one stays put). Dragged on past the
-  /// opposite side it turns over and carries on growing that way. Close to square it snaps square.
   private func withSide(_ side: Int, _ p: Pt) -> ShapeGeometry {
     guard case let .poly(points, closed, smooth, theta, form) = self, (0..<4).contains(side) else { return self }
     let c = Geo.centroid(points)
@@ -326,9 +309,6 @@ extension ShapeGeometry {
     return .poly(points: out.map { c + $0.rotated(theta) }, closed: closed, smooth: smooth, rotation: theta, form: form)
   }
 
-  /// A basic shape's own dot, in its own frame: a diamond's right and bottom points stretch it evenly
-  /// about its middle (snapping to a square diamond); a parallelogram's top-left corner sets its slant
-  /// (the bottom side stays, snapping upright); a trapezoid's top-left corner sets how narrow its top is.
   private func withForm(_ index: Int, _ p: Pt) -> ShapeGeometry? {
     guard case let .poly(points, closed, smooth, rotation, form) = self, points.count == 4 else { return nil }
     let c = Geo.centroid(points)
