@@ -14,7 +14,7 @@ struct NotebookView: View {
     self.notebook = notebook
     self.onBack = onBack
     self.onSwitch = onSwitch
-    _viewing = State(initialValue: PhoneWriting.opensViewOnly(notebook.id))
+    _viewing = State(initialValue: PhoneWriting.opensViewOnly(notebook.id, kind: notebook.kind))
     _title = State(initialValue: notebook.title)
     _paper = State(initialValue: notebook.paper)
     _dark = State(initialValue: notebook.dark)
@@ -384,15 +384,19 @@ func penName(_ t: PenType) -> String {
 enum PhoneWriting {
   static var onPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
-  static func opensViewOnly(_ id: String) -> Bool {
+  /// On a phone everything opens for looking until Write; on a tablet a PDF, picture or scan does
+  /// until she first taps Write there (Android's `writeOn`), and anything set to View only.
+  static func opensViewOnly(_ id: String, kind: DocKind = .notebook) -> Bool {
     if onPhone { return !(UserDefaults.standard.stringArray(forKey: "phoneWriting") ?? []).contains(id) }
+    if kind != .notebook && !(UserDefaults.standard.stringArray(forKey: "writeOn") ?? []).contains(id) { return true }
     return ViewOnly.contains(id)
   }
 
   static func startWriting(_ id: String) {
-    var list = UserDefaults.standard.stringArray(forKey: "phoneWriting") ?? []
+    let key = onPhone ? "phoneWriting" : "writeOn"
+    var list = UserDefaults.standard.stringArray(forKey: key) ?? []
     if !list.contains(id) { list.append(id) }
-    UserDefaults.standard.set(list, forKey: "phoneWriting")
+    UserDefaults.standard.set(list, forKey: key)
   }
 }
 

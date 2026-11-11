@@ -225,6 +225,8 @@ struct NotebookCard: View {
             }
           }
           .frame(width: 9)
+        } else {
+          KindBadge(kind: notebook.kind).padding(8)
         }
       }
       .frame(maxWidth: .infinity)
@@ -347,5 +349,51 @@ struct QuietButtonStyle: ButtonStyle {
       .background(RoundedRectangle(cornerRadius: 14).fill(wash))
       .scaleEffect(configuration.isPressed ? 0.96 : 1)
       .animation(.easeOut(duration: configuration.isPressed ? 0.09 : 0.16), value: configuration.isPressed)
+  }
+}
+
+
+/// What a PDF, picture or scan is, on its card (Android's `KindBadge`, `kindTint`, `kindIcon`).
+struct KindBadge: View {
+  var kind: DocKind
+  @Environment(\.tali) private var c
+
+  static func tint(_ kind: DocKind, dark: Bool) -> Color {
+    switch kind {
+    case .notebook: Color(argb: 0xFF7A_4ED6)
+    case .pdf: Color(argb: dark ? 0xFFFF_8E8A : 0xFFD9_443F)
+    case .picture: Color(argb: dark ? 0xFFF2_A0C4 : 0xFFC9_3B7A)
+    case .scan: Color(argb: dark ? 0xFF6F_D3B5 : 0xFF1C_8466)
+    }
+  }
+
+  private var label: String {
+    switch kind {
+    case .notebook: L("notebook")
+    case .pdf: "PDF"
+    case .picture: L("picture")
+    case .scan: L("add_scan")
+    }
+  }
+
+  private var icon: String {
+    switch kind {
+    case .notebook: "book.closed"
+    case .pdf: "doc.richtext"
+    case .picture: "photo"
+    case .scan: "doc.viewfinder"
+    }
+  }
+
+  var body: some View {
+    let tint = KindBadge.tint(kind, dark: c.isDark)
+    HStack(spacing: 4) {
+      Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+      Text(label).font(TaliType.labelMedium)
+    }
+    .foregroundStyle(tint)
+    .padding(.leading, 6).padding(.trailing, 8).padding(.vertical, 3)
+    .background(RoundedRectangle(cornerRadius: 10).fill(c.surface.opacity(0.92)))
+    .overlay(RoundedRectangle(cornerRadius: 10).stroke(tint.opacity(0.25), lineWidth: 1))
   }
 }
