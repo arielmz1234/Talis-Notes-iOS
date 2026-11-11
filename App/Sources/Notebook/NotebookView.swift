@@ -87,6 +87,8 @@ struct NotebookView: View {
           command: $command
         )
         .ignoresSafeArea(edges: .bottom)
+        // The keyboard (typing in a text box) doesn't push the page up: the canvas scrolls the box into view.
+        .ignoresSafeArea(.keyboard)
         // A tap on the page closes an open panel, as on Android.
         .simultaneousGesture(TapGesture().onEnded { if panel != nil { withAnimation(.easeOut(duration: 0.1)) { panel = nil } } })
         VStack(spacing: narrow ? 18 : 0) {

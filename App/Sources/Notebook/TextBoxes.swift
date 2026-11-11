@@ -103,7 +103,11 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     layoutTextEditor()
     v.attributedText = NSAttributedString(string: t.text, attributes: editorAttributes(t))
     v.becomeFirstResponder()
-    canvas.scrollRectToVisible(v.frame.insetBy(dx: 0, dy: -80), animated: true)
+    // Comfortably below the toolbars and above the keyboard (Android's `showForTyping`).
+    let want = v.frame.minY - 160
+    if v.frame.minY < canvas.contentOffset.y + 140 || v.frame.minY > canvas.contentOffset.y + canvas.bounds.height * 0.4 {
+      canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: want), animated: true)
+    }
     // Once it's on screen: a text view added and focused in the same moment can miss the keyboard.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak v] in
       if let v, v.superview != nil, !v.isFirstResponder { v.becomeFirstResponder() }
