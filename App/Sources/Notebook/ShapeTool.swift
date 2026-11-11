@@ -3,8 +3,9 @@ import TaliCore
 import UIKit
 
 /// The Shapes tool (Android's `Tool.SHAPE`, `buildShape`): the pen (or a finger where fingers draw)
-/// drags out the chosen shape, shown live, kept on lift. A tap draws nothing: only a slide of
-/// `startSlide` (Android's `SHAPE_START_DP`). Shapes take the look of the pen last used.
+/// drags out the chosen shape, shown live, kept on lift and picked up at once. A tap draws nothing:
+/// only a slide of `startSlide` (Android's `SHAPE_START_DP`); a tap on a shape picks it up. Shapes
+/// take the look of the pen last used.
 struct ShapeToolState {
   var watcher: StrokeWatcher?
   var start: Pt?
@@ -23,7 +24,7 @@ extension NoteCanvas.Coordinator {
     let w = StrokeWatcher(target: nil, action: nil)
     w.delegate = self
     w.isEnabled = false
-    w.accepts = { [weak self] t in self?.drawsShapes(t) ?? false }
+    w.accepts = { [weak self] t in self.map { $0.parent.tool == .shape && $0.draws(t) && $0.claim(t) == nil } ?? false }
     w.began = { [weak self] t, _ in self?.shapeBegan(t) }
     w.moved = { [weak self] t, _ in self?.shapeMoved(t) }
     w.ended = { [weak self] cancelled in self?.shapeEnded(cancelled) }
@@ -44,17 +45,6 @@ extension NoteCanvas.Coordinator {
     v.layer.addSublayer(shapeTool.squareHint)
   }
 
-  /// The pen draws shapes; a finger only where fingers draw.
-  private func drawsShapes(_ t: UITouch) -> Bool {
-    guard let canvas, parent.tool == .shape, !parent.viewOnly else { return false }
-    if t.type == .pencil { return true }
-    switch canvas.drawingPolicy {
-    case .anyInput: return true
-    case .pencilOnly: return false
-    default: return !UIPencilInteraction.prefersPencilOnlyDrawing
-    }
-  }
-
   /// The pen last used (a new text box takes its colour).
   var shapePen: PenSlot {
     parent.pens.first { $0.id == lastPenId } ?? parent.pens.first ?? PenSlot.defaults[0]
@@ -65,7 +55,6 @@ extension NoteCanvas.Coordinator {
 
   private func shapeBegan(_ t: UITouch) {
     guard let canvas else { return }
-    clearSelection()
     let q = t.location(in: canvas)
     shapeTool.startScreen = q
     shapeTool.start = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
@@ -87,11 +76,16 @@ extension NoteCanvas.Coordinator {
 
   private func shapeEnded(_ cancelled: Bool) {
     let shape = shapeTool.drawing && !cancelled ? shapeTool.preview : nil
+    let tapped = shapeTool.drawing || cancelled ? nil : shapeTool.start
     shapeTool.start = nil
     shapeTool.drawing = false
     shapeTool.preview = nil
     drawShapePreview()
-    if let shape { addShape(shape) }
+    if let shape {
+      selectShape(addShape(shape), soft: true)
+    } else if let tapped, case let .shape(under)? = item(at: tapped) {
+      selectShape(under)
+    }
   }
 
   private func drawShapePreview() {

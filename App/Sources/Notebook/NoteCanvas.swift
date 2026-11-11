@@ -242,8 +242,8 @@ struct NoteCanvas: UIViewRepresentable {
   var shape: ShapeSource = .kind(.LINE)
   var onUndoState: (Bool, Bool) -> Void
   var onPageCount: (Int) -> Void
-  /// Where what the lasso picked up is on screen (window coordinates), or nil; for the selection menu.
-  var onSelection: (CGRect?) -> Void = { _ in }
+  /// Where what's picked up is on screen, or nil; for the selection menu.
+  var onSelection: (SelectionInfo?) -> Void = { _ in }
   /// A short message at the bottom ("Copied — hold anywhere to paste it").
   var onHint: (String) -> Void = { _ in }
   /// A hold on the page offering Paste there (window coordinates), or nil.
@@ -294,7 +294,10 @@ struct NoteCanvas: UIViewRepresentable {
     c.canvas = v
     c.pages = pages
     c.installPageChrome(on: v, above: pages)
-    v.onResize = { [weak c] in c?.updateContent() }
+    v.onResize = { [weak c] in
+      c?.updateContent()
+      c?.drawChrome()
+    }
     c.load()
     return v
   }
@@ -306,7 +309,8 @@ struct NoteCanvas: UIViewRepresentable {
     c.applyTool()
     if let cmd = command {
       DispatchQueue.main.async {
-        // Another update before this ran scheduled it again: run it once.
+        // Once only: the view can be updated again before this runs (two undos came of one tap), so
+        // the command is taken before it's carried out.
         guard command == cmd else { return }
         command = nil
         c.run(cmd)
@@ -465,12 +469,14 @@ struct NoteCanvas: UIViewRepresentable {
 
     @objc func twoFingerTap() {
       guard parent.settings.smartUndo, !parent.viewOnly else { return }
+      clearSelection()
       canvas?.undoManager?.undo()
       reportUndo()
     }
 
     @objc func threeFingerTap() {
       guard parent.settings.smartUndo, !parent.viewOnly else { return }
+      clearSelection()
       canvas?.undoManager?.redo()
       reportUndo()
     }
@@ -481,6 +487,10 @@ struct NoteCanvas: UIViewRepresentable {
       if let last = lastTool, last != parent.tool, textEdit.view != nil {
         DispatchQueue.main.async { self.finishText() }
       }
+      // Another tool, or just looking, puts down what's picked up (after this update: it changes the screen's state).
+      if lastTool.map({ $0 != parent.tool }) ?? false || parent.viewOnly, lasso.bounds != nil || !lasso.loop.isEmpty {
+        DispatchQueue.main.async { self.clearSelection() }
+      }
       lastTool = parent.tool
       // Draw with finger: Auto follows iOS's own Apple Pencil setting (fingers write in UI tests, which have no pencil).
       switch parent.settings.fingerDraws {
@@ -488,15 +498,12 @@ struct NoteCanvas: UIViewRepresentable {
       case true?: canvas.drawingPolicy = .anyInput
       case false?: canvas.drawingPolicy = .pencilOnly
       }
-      // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own loop.
-      canvas.drawingGestureRecognizer.isEnabled = !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape && parent.tool != .fill
+      // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own
+      // loop, and a touch that's editing the selection doesn't write.
+      canvas.drawingGestureRecognizer.isEnabled = inkOn && lasso.drag == nil
       applyFillTool()
-      lasso.pan?.isEnabled = !parent.viewOnly && parent.tool == .lasso
+      lasso.pan?.isEnabled = !parent.viewOnly
       shapeTool.watcher?.isEnabled = !parent.viewOnly && parent.tool == .shape
-      // Another tool puts down what the lasso picked up (after this update: it changes the screen's state).
-      if parent.tool != .lasso, lasso.bounds != nil || !lasso.loop.isEmpty {
-        DispatchQueue.main.async { self.clearSelection() }
-      }
       switch parent.tool {
       case .pen(let id):
         lastPenId = id
@@ -515,11 +522,17 @@ struct NoteCanvas: UIViewRepresentable {
       }
     }
 
+    var inkOn: Bool { !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape && parent.tool != .fill }
+
     func run(_ cmd: CanvasCommand) {
       guard let canvas else { return }
       switch cmd {
-      case .undo: canvas.undoManager?.undo()
-      case .redo: canvas.undoManager?.redo()
+      case .undo:
+        clearSelection()
+        canvas.undoManager?.undo()
+      case .redo:
+        clearSelection()
+        canvas.undoManager?.redo()
       case .addPage:
         pageCount += 1
         updateContent()
@@ -657,6 +670,7 @@ struct NoteCanvas: UIViewRepresentable {
       growEndless()
       updateChrome()
       reportView()
+      if lasso.bounds != nil { drawChrome() }
       reportSelection()
     }
 
@@ -687,7 +701,9 @@ struct NoteCanvas: UIViewRepresentable {
           var s = stored[i].stroke
           if pk.transform != .identity {
             // Moved or resized with the lasso: store the moved points, and draw it untransformed.
+            let tags = s.tags
             s = InkStroke.from(pk, pen: PenSlot(id: "", type: s.pen, color: s.color, size: s.size), id: s.id, z: s.z)
+            s.tags = tags
             s.size = Float(CGFloat(s.size) * sqrt(abs(pk.transform.a * pk.transform.d - pk.transform.b * pk.transform.c)))
             changed.append(s)
             let fresh = s.pkStroke(mask: mask(for: s))

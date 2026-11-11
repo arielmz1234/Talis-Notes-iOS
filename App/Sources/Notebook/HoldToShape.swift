@@ -109,15 +109,11 @@ extension NoteCanvas.Coordinator {
     v.layer.addSublayer(hold.layer)
   }
 
-  /// Whether this touch writes with the pen (not the eraser or lasso, not a finger that only scrolls).
+  /// Whether this touch writes with the pen (not the eraser or lasso, not a finger that only
+  /// scrolls, not a touch that took hold of the selection).
   private func writes(_ t: UITouch) -> Bool {
-    guard let canvas, case .pen = parent.tool, !parent.viewOnly, canvas.drawingGestureRecognizer.isEnabled else { return false }
-    if t.type == .pencil { return true }
-    switch canvas.drawingPolicy {
-    case .anyInput: return true
-    case .pencilOnly: return false
-    default: return !UIPencilInteraction.prefersPencilOnlyDrawing
-    }
+    guard case .pen = parent.tool else { return false }
+    return draws(t) && claim(t) == nil
   }
 
   private func worldPoint(_ t: UITouch) -> CGPoint {
@@ -168,9 +164,36 @@ extension NoteCanvas.Coordinator {
       hold.live = nil
       hold.base = nil
       hold.layer.path = nil
-      if !cancelled { addShape(shape) }
+      if !cancelled { selectShape(addShape(shape), soft: true) }
+    } else if !cancelled, let tapped = shapeTappedByPen() {
+      dropInk(since: hold.began.addingTimeInterval(-0.2))
+      selectShape(tapped)
     }
     hold.points = []
+  }
+
+  private func shapeTappedByPen() -> ShapeRow? {
+    guard let first = hold.points.first, Date().timeIntervalSince(hold.began) < Self.penTap else { return nil }
+    if hold.points.contains(where: { $0.dist(first) * zoom > 4 }) { return nil }
+    guard case let .shape(s)? = item(at: first, since: hold.began.addingTimeInterval(-0.2)) else { return nil }
+    return s
+  }
+
+  /// Takes back the ink PencilKit drew since [since] (the dot of a tap): it lets go of a stroke still
+  /// in hand, and one already handed in is taken out again, without an undo step of its own.
+  private func dropInk(since: Date) {
+    guard let canvas else { return }
+    hold.dropSince = since
+    canvas.drawingGestureRecognizer.isEnabled = false
+    canvas.drawingGestureRecognizer.isEnabled = inkOn
+    let kept = canvas.drawing.strokes.filter { $0.path.creationDate < since }
+    if kept.count == canvas.drawing.strokes.count { return }
+    loading = true
+    canvas.undoManager?.disableUndoRegistration()
+    canvas.drawing = PKDrawing(strokes: kept)
+    canvas.undoManager?.enableUndoRegistration()
+    loading = false
+    sync(canvas.drawing)
   }
 
   private func scheduleHold() {
@@ -217,7 +240,7 @@ extension NoteCanvas.Coordinator {
       if !hold.following && pen.dist(hold.liveAnchor) * z < 10 { return }
       hold.following = true
       let c: Pt
-      if case let .ellipse(center, _, _, _) = base.geometry {
+      if case let .ellipse(center, _, _, _, _) = base.geometry {
         c = center
       } else {
         c = base.geometry.bounds(0)?.center ?? hold.liveAnchor
@@ -250,19 +273,23 @@ extension NoteCanvas.Coordinator {
   }
 
   /// Keeps a finished shape: stored as Android stores it, drawn with the page, one undo step.
-  func addShape(_ shape: ShapeRow) {
+  @discardableResult
+  func addShape(_ shape: ShapeRow) -> ShapeRow {
     var s = shape
     s.id = newId()
     let z = max(stored.map(\.stroke.z).max() ?? 0, shapeZ) + 1
     shapeZ = z
+    s.z = z
     putShape(s, z: z)
     registerShapeUndo(s, z: z)
+    return s
   }
 
   /// Undo takes the shape away; redo puts it back (and can be undone again).
   private func registerShapeUndo(_ s: ShapeRow, z: Int64) {
     canvas?.undoManager?.registerUndo(withTarget: self) { c in
       MainActor.assumeIsolated {
+        c.clearSelection()
         c.removeShape(s.id)
         c.canvas?.undoManager?.registerUndo(withTarget: c) { c2 in
           MainActor.assumeIsolated {
@@ -303,9 +330,9 @@ extension NoteCanvas.Coordinator {
     reportUndo()
   }
 
-  /// Whether a new PencilKit stroke is the one that just became a shape (it's dropped).
+  /// Whether a new PencilKit stroke is one that isn't kept: the one that just became a shape, the dot
+  /// of a tap that picked a shape up, or one begun by a touch that was editing the selection.
   func isSnappedStroke(_ pk: PKStroke) -> Bool {
-    guard let since = hold.dropSince else { return false }
-    return pk.path.creationDate >= since
+    [hold.dropSince, lasso.editSince].contains { since in since.map { pk.path.creationDate >= $0 } ?? false }
   }
 }

@@ -174,8 +174,8 @@ public struct CustomShape: Sendable, Equatable, Identifiable {
   /// Open lines (from ink) drawn as smooth curves, inside groups too.
   public static func smoothInk(_ g: ShapeGeometry) -> ShapeGeometry {
     switch g {
-    case let .poly(points, false, false, rotation) where points.count > 2: .poly(points: points, closed: false, smooth: true, rotation: rotation)
-    case let .group(parts): .group(parts.map(smoothInk))
+    case let .poly(points, false, false, rotation, form) where points.count > 2: .poly(points: points, closed: false, smooth: true, rotation: rotation, form: form)
+    case let .group(parts, turn): .group(parts.map(smoothInk), turn: turn)
     default: g
     }
   }

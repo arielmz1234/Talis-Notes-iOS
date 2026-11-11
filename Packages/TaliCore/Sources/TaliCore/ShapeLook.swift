@@ -146,14 +146,14 @@ extension ShapeGeometry {
   /// it locked on (Android's `drawSquareHint`, `PolyShape.isSquare`, `EllipseShape.round`).
   public var squareHint: (Pt, Pt)? {
     switch self {
-    case let .poly(points, true, _, rotation) where points.count == 4:
+    case let .poly(points, true, _, rotation, _) where points.count == 4:
       let c = Geo.centroid(points)
       let local = points.map { ($0 - c).rotated(-rotation) }
       let w = local.map(\.x).max()! - local.map(\.x).min()!, h = local.map(\.y).max()! - local.map(\.y).min()!
       guard w >= 1e-3, h >= 1e-3, local.allSatisfy({ abs(abs($0.x) - w / 2) < w * 0.02 && abs(abs($0.y) - h / 2) < h * 0.02 }) else { return nil }
       let a = points[0].dist(points[1]), b = points[1].dist(points[2])
       return abs(a - b) < max(a, b) * 0.005 ? (points[0], points[2]) : nil
-    case let .ellipse(center, rx, ry, rotation) where abs(rx - ry) < max(rx, ry) * 0.01 && rx > 4:
+    case let .ellipse(center, rx, ry, rotation, _) where abs(rx - ry) < max(rx, ry) * 0.01 && rx > 4:
       func point(_ t: Float) -> Pt { center + Pt(rx * cosf(t), ry * sinf(t)).rotated(rotation) }
       return (point(0.75 * .pi), point(1.75 * .pi))
     default:

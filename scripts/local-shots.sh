@@ -21,6 +21,8 @@ xcrun simctl boot "$dev" 2>/dev/null || true
 xcrun simctl bootstatus "$dev" -b > /dev/null
 rm -f shots/"$tag"-*.png
 rm -rf build/"$tag".xcresult
+# A runner left alive by the last run (xcodebuild is stopped below) would run its old tests again.
+xcrun simctl terminate "$dev" com.tali.notes.uitests.xctrunner 2>/dev/null || true
 TEST_RUNNER_SHOT_DIR="$PWD/shots" TEST_RUNNER_SHOT_TAG="$tag" TEST_RUNNER_SHOT_DARK="$dark" TEST_RUNNER_SHOT_LANG="$lang" \
   xcodebuild test-without-building -project TalisNotes.xcodeproj -scheme TalisNotes \
   -destination "id=$dev" -derivedDataPath build/dd -resultBundlePath "build/$tag.xcresult" \

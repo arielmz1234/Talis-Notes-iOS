@@ -96,6 +96,8 @@ struct SelectionMenu: View {
 /// above it if there's room under the toolbars, else below it, else just inside its top edge.
 struct SelectionMenuLayer: View {
   var selection: CGRect
+  /// The rotate handle hangs under the selection: the menu, when it goes below, leaves room for it.
+  var rotatable = false
   var narrow: Bool
   var onSaveShape: (() -> Void)? = nil
   var onCommand: (CanvasCommand) -> Void
@@ -109,7 +111,7 @@ struct SelectionMenuLayer: View {
       let topLimit: CGFloat = narrow ? 196 : 128
       let bottomLimit = geo.size.height - size.height - gap
       let above = rect.minY - size.height - gap
-      let below = rect.maxY + gap
+      let below = rect.maxY + gap + (rotatable ? 48 : 0)
       let y = above >= topLimit ? above : (below <= bottomLimit ? below : min(max(rect.minY + gap, topLimit), max(bottomLimit, topLimit)))
       let x = min(max(rect.midX - size.width / 2, gap), max(geo.size.width - size.width - gap, gap))
       SelectionMenu(onSaveShape: onSaveShape, onCommand: onCommand)

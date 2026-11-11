@@ -103,12 +103,12 @@ struct ShapeLookTests {
   }
 
   @Test func aRectangleNearlySquareSnapsSquare() {
-    guard case let .poly(points, _, _, _) = ShapeSource.kind(.RECTANGLE).drawn(Pt(0, 0), Pt(100, 97)) else {
+    guard case let .poly(points, _, _, _, _) = ShapeSource.kind(.RECTANGLE).drawn(Pt(0, 0), Pt(100, 97)) else {
       Issue.record("expected a rectangle")
       return
     }
     #expect(points[2] == Pt(100, 100))
-    guard case let .poly(wide, _, _, _) = ShapeSource.kind(.RECTANGLE).drawn(Pt(0, 0), Pt(100, 90)) else { return }
+    guard case let .poly(wide, _, _, _, _) = ShapeSource.kind(.RECTANGLE).drawn(Pt(0, 0), Pt(100, 90)) else { return }
     #expect(wide[2] == Pt(100, 90), "outside 4% it stays as dragged")
   }
 

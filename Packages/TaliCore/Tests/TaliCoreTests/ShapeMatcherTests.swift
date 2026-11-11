@@ -148,7 +148,7 @@ struct ShapeMatcherTests {
     let b = try #require(Rect.around(g.paths(CustomShape.referencePen).joined()))
     // (A smooth line is sampled afresh at each size, so its box is right to a fraction of a unit.)
     #expect(abs(b.left) < 0.1 && abs(b.top) < 0.1 && abs(max(b.width, b.height) - CustomShape.size) < 0.1, "\(b)")
-    guard case let .group(parts) = g, parts.count == 2, case .poly(_, true, false, _) = parts[0], case .poly(_, false, true, _) = parts[1] else {
+    guard case let .group(parts, _) = g, parts.count == 2, case .poly(_, true, false, _, _) = parts[0], case .poly(_, false, true, _, _) = parts[1] else {
       Issue.record("\(g)")
       return
     }

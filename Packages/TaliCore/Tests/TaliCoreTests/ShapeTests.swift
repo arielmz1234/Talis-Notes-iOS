@@ -51,6 +51,17 @@ struct ShapeTests {
 }
 
 struct TextRowTests {
+  @Test func resizingATextBoxGrowsItsText() {
+    let t = TextRow(text: "a", x: 100, y: 200, width: 300, height: 90, fontSize: 20, color: 0)
+    let twice = t.transformed(.scaleAround(Pt(100, 200), 2))
+    #expect(twice.x == 100 && twice.y == 200 && twice.width == 600 && twice.height == 180 && twice.fontSize == 40)
+    let moved = t.transformed(.translate(10, -20))
+    #expect(moved.x == 110 && moved.y == 180 && moved.width == 300 && moved.fontSize == 20)
+    // Never smaller than can be read or picked up again.
+    let tiny = t.transformed(.scaleAround(Pt(100, 200), 0.1))
+    #expect(tiny.width == 40 && tiny.fontSize == 6)
+  }
+
   @Test func readsAndWritesAndroidsTextPayload() throws {
     let json = #"{"text":"Σ M = 0\nשלום","x":120.5,"y":300,"width":800,"height":90}"#
     let row = ItemRow(id: "t", z: 4, kind: 3, pen: nil, color: -16_777_216, size: 26, payload: Data(json.utf8), l: 0, t: 0, r: 1, b: 1)

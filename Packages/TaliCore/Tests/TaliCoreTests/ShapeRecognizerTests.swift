@@ -42,8 +42,8 @@ struct ShapeRecognizerTests {
 
   private func polyPoints(_ g: ShapeGeometry?) -> [Pt]? {
     switch g {
-    case let .poly(p, _, _, _)?: return p
-    case let .triangle(a, b, c)?: return [a, b, c]
+    case let .poly(p, _, _, _, _)?: return p
+    case let .triangle(a, b, c, _)?: return [a, b, c]
     default: return nil
     }
   }
@@ -67,24 +67,24 @@ struct ShapeRecognizerTests {
 
   @Test func lShapeBecomesOpenPolyline() {
     let g = ShapeRecognizer.recognize(wobbly(Pt(0, 0), Pt(0, 200), Pt(250, 200)))
-    guard case let .poly(p, false, _, _)? = g, p.count == 3 else { Issue.record("got \(String(describing: g))"); return }
+    guard case let .poly(p, false, _, _, _)? = g, p.count == 3 else { Issue.record("got \(String(describing: g))"); return }
   }
 
   @Test func roundLoopBecomesCircle() {
-    guard case let .ellipse(_, rx, ry, _)? = ShapeRecognizer.recognize(wobblyEllipse(100, 100, 80, 76)) else { Issue.record("not an ellipse"); return }
+    guard case let .ellipse(_, rx, ry, _, _)? = ShapeRecognizer.recognize(wobblyEllipse(100, 100, 80, 76)) else { Issue.record("not an ellipse"); return }
     #expect(abs(rx - ry) < 0.01)
     #expect(abs(rx - 78) < 4)
   }
 
   @Test func flatLoopBecomesEllipse() {
-    guard case let .ellipse(_, rx, ry, _)? = ShapeRecognizer.recognize(wobblyEllipse(0, 0, 150, 60)) else { Issue.record("not an ellipse"); return }
+    guard case let .ellipse(_, rx, ry, _, _)? = ShapeRecognizer.recognize(wobblyEllipse(0, 0, 150, 60)) else { Issue.record("not an ellipse"); return }
     #expect(abs(max(rx, ry) - 150) < 6)
     #expect(abs(min(rx, ry) - 60) < 6)
   }
 
   @Test func wobblySquareBecomesExactSquare() {
     let g = ShapeRecognizer.recognize(wobbly(Pt(0, 0), Pt(200, 4), Pt(198, 205), Pt(-3, 200), Pt(2, 3)))
-    guard case let .poly(p, true, _, _)? = g, p.count == 4 else { Issue.record("got \(String(describing: g))"); return }
+    guard case let .poly(p, true, _, _, _)? = g, p.count == 4 else { Issue.record("got \(String(describing: g))"); return }
     let sides = p.indices.map { p[$0].dist(p[($0 + 1) % 4]) }
     for s in sides { #expect(abs(s - sides[0]) < 0.5) }
     #expect(abs(p[0].y - p[1].y) < 0.5 || abs(p[0].x - p[1].x) < 0.5)
@@ -128,10 +128,10 @@ struct ShapeRecognizerTests {
   @Test func aSideThatDriftsUpPartwayIsStillOneSide() {
     let step = wobbly(Pt(0, 0), Pt(150, 0), Pt(175, -22), Pt(320, -26), Pt(322, 160), Pt(-2, 162), Pt(0, 0))
     let a = ShapeRecognizer.recognize(step)
-    guard case let .poly(p, true, _, _)? = a, p.count == 4 else { Issue.record("got \(String(describing: a))"); return }
+    guard case let .poly(p, true, _, _, _)? = a, p.count == 4 else { Issue.record("got \(String(describing: a))"); return }
     let bump = wobbly(Pt(0, 0), Pt(300, 0), Pt(302, 80), Pt(322, 100), Pt(300, 120), Pt(300, 200), Pt(0, 200), Pt(0, 0))
     let b = ShapeRecognizer.recognize(bump)
-    guard case let .poly(q, true, _, _)? = b, q.count == 4 else { Issue.record("got \(String(describing: b))"); return }
+    guard case let .poly(q, true, _, _, _)? = b, q.count == 4 else { Issue.record("got \(String(describing: b))"); return }
   }
 
   @Test func aWaveBecomesACurve() {
@@ -157,7 +157,7 @@ struct ShapeRecognizerTests {
       return Pt(Float(100 * cos(a)), Float(100 * sin(a)))
     }
     let g = ShapeRecognizer.recognize(wobbly(corners, jitter: 2))
-    guard case let .poly(p, _, _, _)? = g, p.count == 5 else { Issue.record("got \(String(describing: g))"); return }
+    guard case let .poly(p, _, _, _, _)? = g, p.count == 5 else { Issue.record("got \(String(describing: g))"); return }
   }
 
   @Test func hexagonIsNotMistakenForCircle() {
@@ -166,7 +166,7 @@ struct ShapeRecognizerTests {
       return Pt(Float(100 * cos(a)), Float(100 * sin(a)))
     }
     let g = ShapeRecognizer.recognize(wobbly(corners, jitter: 2))
-    guard case let .poly(p, _, _, _)? = g, p.count == 6 else { Issue.record("got \(String(describing: g))"); return }
+    guard case let .poly(p, _, _, _, _)? = g, p.count == 6 else { Issue.record("got \(String(describing: g))"); return }
   }
 
   @Test func starIsRecognized() {
@@ -176,7 +176,7 @@ struct ShapeRecognizerTests {
       return Pt(Float(r * cos(a)), Float(r * sin(a)))
     }
     let g = ShapeRecognizer.recognize(wobbly(corners, jitter: 1.5))
-    guard case let .poly(p, _, _, _)? = g, p.count == 10 else { Issue.record("got \(String(describing: g))"); return }
+    guard case let .poly(p, _, _, _, _)? = g, p.count == 10 else { Issue.record("got \(String(describing: g))"); return }
   }
 
   private func arch(_ r: Float, _ sweepDeg: Double, hooks: Bool = false) -> [Pt] {
@@ -206,7 +206,7 @@ struct ShapeRecognizerTests {
     let zigzag = wobbly(Pt(0, 0), Pt(40, 80), Pt(80, 0), Pt(120, 80), Pt(160, 0), Pt(200, 80), Pt(240, 0), jitter: 1.5)
     #expect(ShapeRecognizer.recognize(zigzag) == nil)
     let lopsided = wobbly(Pt(0, 0), Pt(200, 10), Pt(230, 120), Pt(90, 200), Pt(-20, 90), Pt(0, 0), jitter: 1.5)
-    if case let .poly(p, _, _, _)? = ShapeRecognizer.recognize(lopsided) { #expect(p.count != 5) }
+    if case let .poly(p, _, _, _, _)? = ShapeRecognizer.recognize(lopsided) { #expect(p.count != 5) }
   }
 
   @Test func scribbleStaysInk() {

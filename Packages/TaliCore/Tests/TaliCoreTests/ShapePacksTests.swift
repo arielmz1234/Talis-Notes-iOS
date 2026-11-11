@@ -14,7 +14,7 @@ struct ShapePacksTests {
   }
 
   private func parts(_ g: ParamShape) -> [ShapeGeometry] {
-    if case let .group(parts) = g.drawn() { parts } else { [] }
+    if case let .group(parts, _) = g.drawn() { parts } else { [] }
   }
 
   /// Where a drawing connects to things, as Android's `snapFeatures` gives them: ends, corners,
@@ -22,12 +22,12 @@ struct ShapePacksTests {
   private func features(_ g: ShapeGeometry) -> [Pt] {
     switch g {
     case let .line(a, b, _, _, _): [a, b, (a + b) * 0.5]
-    case let .poly(points, closed, false, _):
+    case let .poly(points, closed, false, _, _):
       points + points.indices.dropLast(closed ? 0 : 1).map { (points[$0] + points[($0 + 1) % points.count]) * 0.5 }
-    case let .poly(points, _, true, _): [points[0], points[points.count - 1]]
-    case let .ellipse(center, _, _, _): [center]
+    case let .poly(points, _, true, _, _): [points[0], points[points.count - 1]]
+    case let .ellipse(center, _, _, _, _): [center]
     case let .arc(center, radius, start, sweep, _): [center, center + Pt.polar(radius, start), center + Pt.polar(radius, start + sweep)]
-    case let .group(parts): parts.flatMap(features)
+    case let .group(parts, _): parts.flatMap(features)
     case let .param(p): features(p.drawn())
     default: []
     }
@@ -105,7 +105,7 @@ struct ShapePacksTests {
   }
 
   private func cells(_ g: ParamShape) -> Int {
-    parts(g).count { if case .poly(_, true, _, _) = $0 { true } else { false } }
+    parts(g).count { if case .poly(_, true, _, _, _) = $0 { true } else { false } }
   }
 
   @Test func aLongerStackHasMoreCells() throws {

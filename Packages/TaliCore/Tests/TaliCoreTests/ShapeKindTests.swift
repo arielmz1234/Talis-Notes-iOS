@@ -5,9 +5,9 @@ import Testing
 /// The Shapes tool's kinds, as Android's `ShapeKind.create` / `buildShape` draw them.
 struct ShapeKindTests {
   @Test func aNearlySquareRectangleIsASquare() throws {
-    guard case let .poly(p, true, _, _) = ShapeKind.RECTANGLE.drawn(Pt(0, 0), Pt(100, 97)) else { Issue.record("not a poly"); return }
+    guard case let .poly(p, true, _, _, _) = ShapeKind.RECTANGLE.drawn(Pt(0, 0), Pt(100, 97)) else { Issue.record("not a poly"); return }
     #expect(abs(p[0].dist(p[1]) - p[1].dist(p[2])) < 0.01)
-    guard case let .poly(q, true, _, _) = ShapeKind.RECTANGLE.drawn(Pt(0, 0), Pt(100, 60)) else { Issue.record("not a poly"); return }
+    guard case let .poly(q, true, _, _, _) = ShapeKind.RECTANGLE.drawn(Pt(0, 0), Pt(100, 60)) else { Issue.record("not a poly"); return }
     #expect(abs(q[1].dist(q[2]) - 60) < 0.01)
   }
 
@@ -26,7 +26,7 @@ struct ShapeKindTests {
   }
 
   @Test func aCircleIsDrawnFromItsCentre() {
-    guard case let .ellipse(c, rx, ry, _) = ShapeKind.CIRCLE.drawn(Pt(10, 10), Pt(40, 50)) else { Issue.record("not a circle"); return }
+    guard case let .ellipse(c, rx, ry, _, _) = ShapeKind.CIRCLE.drawn(Pt(10, 10), Pt(40, 50)) else { Issue.record("not a circle"); return }
     #expect(c == Pt(10, 10) && rx == 50 && ry == 50)
   }
 
