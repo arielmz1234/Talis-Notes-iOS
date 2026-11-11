@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 import TaliCore
@@ -13,6 +14,9 @@ struct LibraryView: View {
   @State private var creating = false
   /// The + menu's File: the system file picker, then what was picked becomes an item of its own.
   @State private var importing = false
+  /// The + menu's Photo: the system photo picker (up to 30, as on Android).
+  @State private var pickingPhotos = false
+  @State private var photos: [PhotosPickerItem] = []
   @State private var importNote: String?
   @State private var drawer = false
   @State private var renaming: NotebookMeta?
@@ -67,6 +71,18 @@ struct LibraryView: View {
         }
         let pictures = urls.filter { $0.pathExtension.lowercased() != "pdf" }
         if !pictures.isEmpty, await lib.importPictures(pictures) == nil { importNote = L("couldn_t_open_that_file") }
+      }
+    }
+    .photosPicker(isPresented: $pickingPhotos, selection: $photos, maxSelectionCount: 30, matching: .images)
+    .onChange(of: photos) { _, items in
+      guard !items.isEmpty else { return }
+      photos = []
+      Task { @MainActor in
+        var data: [Data] = []
+        for item in items {
+          if let d = try? await item.loadTransferable(type: Data.self) { data.append(d) }
+        }
+        if await lib.importPictures(data: data) == nil { importNote = L("couldn_t_open_that_file") }
       }
     }
     .alert(importNote ?? "", isPresented: Binding(get: { importNote != nil }, set: { if !$0 { importNote = nil } })) {
@@ -249,7 +265,8 @@ struct LibraryView: View {
           }
           AddMenu(
             onNotebook: { withAnimation(Ease.outStrong(duration: 0.24)) { creating = true } },
-            onFile: { importing = true })
+            onFile: { importing = true },
+            onPhoto: { pickingPhotos = true })
         }
       }
       .transition(.opacity.combined(with: .offset(y: 8)))
@@ -467,6 +484,7 @@ struct SortButton: View {
 struct AddMenu: View {
   var onNotebook: () -> Void
   var onFile: () -> Void
+  var onPhoto: () -> Void
   @Environment(\.tali) private var c
 
   var body: some View {
@@ -475,6 +493,8 @@ struct AddMenu: View {
         .accessibilityIdentifier("add-notebook")
       Button(action: onFile) { Label(L("add_file"), systemImage: "doc.badge.plus") }
         .accessibilityIdentifier("add-file")
+      Button(action: onPhoto) { Label(L("add_photo"), systemImage: "photo.on.rectangle") }
+        .accessibilityIdentifier("add-photo")
     } label: {
       Image(systemName: "plus").font(.system(size: 22, weight: .medium)).foregroundStyle(c.onAccent)
         .frame(width: 48, height: 48)

@@ -61,11 +61,24 @@ extension Library {
   /// Pictures picked together: one item, a picture on each page (Android's `Imports.pictures`).
   @discardableResult
   func importPictures(_ urls: [URL]) async -> NotebookMeta? {
-    var pages: [ImportedPage] = []
+    var sources: [CGImageSource] = []
     for url in urls {
       let scoped = url.startAccessingSecurityScopedResource()
       defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-      guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { continue }
+      if let src = CGImageSourceCreateWithURL(url as CFURL, nil) { sources.append(src) }
+    }
+    return await importPictures(sources)
+  }
+
+  /// Photos from the photo picker (their data), as one Picture item.
+  @discardableResult
+  func importPictures(data: [Data]) async -> NotebookMeta? {
+    await importPictures(data.compactMap { CGImageSourceCreateWithData($0 as CFData, nil) })
+  }
+
+  private func importPictures(_ sources: [CGImageSource]) async -> NotebookMeta? {
+    var pages: [ImportedPage] = []
+    for src in sources {
       let opts: [CFString: Any] = [
         kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: Self.pdfRenderMaxSide,
         kCGImageSourceCreateThumbnailWithTransform: true,
