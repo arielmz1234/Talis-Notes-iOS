@@ -1,4 +1,5 @@
 import SwiftUI
+import TaliCore
 
 // The notebook's main toolbar and its panels, ported from Android's `ui/notebook/Toolbar.kt` and
 // `Panels.kt`: the pen tray (pens standing at the bottom edge, the active one lifted), the arrow to
