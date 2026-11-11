@@ -115,6 +115,18 @@ final class ScreenshotTests: XCTestCase {
       app.buttons["pen-p1"].firstMatch.tap()
       settle()
     }
+    // Typed text: the keyboard opens a box below what's written; the lasso tool puts it down.
+    if app.buttons["tool-keyboard"].exists {
+      app.buttons["tool-keyboard"].firstMatch.tap()
+      settle()
+      app.typeText("Sum of moments = 0\nReaction R = 12 kN")
+      shot("4g-typing")
+      if app.buttons["tool-lasso"].exists { app.buttons["tool-lasso"].firstMatch.tap() }
+      settle()
+      shot("4h-text")
+      app.buttons["pen-p1"].firstMatch.tap()
+      settle()
+    }
     if app.buttons["more"].exists {
       app.buttons["more"].firstMatch.tap()
       settle()

@@ -81,7 +81,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     // The hold runs alongside everything; the lasso alongside PencilKit's own recognisers (scrolling
     // waits for it to fail instead).
     // The hold and every touch watcher (hold-to-shape, the shape eraser) run alongside everything.
-    if g === lasso.hold || (g is StrokeWatcher && g !== lasso.pan) { return true }
+    if g === lasso.hold || g === textEdit.tap || (g is StrokeWatcher && g !== lasso.pan) { return true }
     if g === lasso.pan { return other !== canvas?.panGestureRecognizer }
     return false
   }

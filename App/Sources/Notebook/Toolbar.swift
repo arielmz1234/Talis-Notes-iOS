@@ -151,6 +151,8 @@ struct MainToolbar: View {
   @Binding var tool: Tool
   @Binding var panel: PanelKind?
   var shapeKind: ShapeKind = .RECTANGLE
+  /// The keyboard: a new text box to type in.
+  var onKeyboard: () -> Void = {}
   var showColors = true
   @Environment(\.tali) private var c
   @Namespace private var toolGlide
@@ -213,6 +215,12 @@ struct MainToolbar: View {
         toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
         toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
         toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
+        Button(action: onKeyboard) {
+          Image(systemName: "keyboard").font(.system(size: 19)).foregroundStyle(c.ink).frame(width: 44, height: 44)
+        }
+        .buttonStyle(PressStyle(scale: 0.9))
+        .accessibilityLabel(L("keyboard"))
+        .accessibilityIdentifier("tool-keyboard")
       }
       .padding(.trailing, 2)
     }

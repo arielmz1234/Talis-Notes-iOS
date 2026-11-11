@@ -309,3 +309,55 @@ extension ShapeRow {
   /// Its item row, with its own id and z.
   public var itemRow: ItemRow { row(id: id, z: z) }
 }
+
+/// A typed text box (Android's `TextItem`, item kind 3): its text, top-left, width it wraps in, its
+/// own height (0 = the text's), font size (the row's size) and colour.
+public struct TextRow: Sendable, Equatable {
+  public var id: String = ""
+  public var z: Int64 = 0
+  public var text: String
+  public var x: Float
+  public var y: Float
+  public var width: Float
+  public var height: Float = 0
+  public var fontSize: Float
+  public var color: Int32
+  public var locked = false
+
+  /// Line height as a multiple of the font size (Android's `TextItem.LINE`).
+  public static let line: Float = 1.3
+  /// The size new text boxes start at (Android's `TEXT_SIZE`).
+  public static let defaultSize: Float = 26
+
+  public init(id: String = "", z: Int64 = 0, text: String, x: Float, y: Float, width: Float, height: Float = 0, fontSize: Float, color: Int32, locked: Bool = false) {
+    self.id = id
+    self.z = z
+    self.text = text
+    self.x = x
+    self.y = y
+    self.width = width
+    self.height = height
+    self.fontSize = fontSize
+    self.color = color
+    self.locked = locked
+  }
+
+  public init?(_ row: ItemRow) {
+    guard row.kind == 3, let o = try? JSONSerialization.jsonObject(with: row.payload) as? [String: Any], let text = o["text"] as? String else { return nil }
+    func f(_ k: String) -> Float { (o[k] as? NSNumber)?.floatValue ?? 0 }
+    self.init(
+      id: row.id, z: row.z, text: text, x: f("x"), y: f("y"), width: max(f("width"), 1), height: f("height"), fontSize: row.size > 0 ? row.size : TextRow.defaultSize,
+      color: row.color, locked: (o["locked"] as? Bool) ?? false)
+  }
+
+  /// The row Android's `ItemCodec` writes ([textHeight]: how tall the laid-out text is, for its bounds).
+  public func row(textHeight: Float) -> ItemRow {
+    func n(_ v: Float) -> Double { Double("\(v)") ?? Double(v) }
+    var o: [String: Any] = ["text": text, "x": n(x), "y": n(y), "width": n(width)]
+    if locked { o["locked"] = true }
+    if height != 0 { o["height"] = n(height) }
+    let data = (try? JSONSerialization.data(withJSONObject: o)) ?? Data()
+    let h = max(textHeight, fontSize * TextRow.line, height)
+    return ItemRow(id: id, z: z, kind: 3, pen: nil, color: color, size: fontSize, payload: data, l: x, t: y, r: x + width, b: y + h)
+  }
+}

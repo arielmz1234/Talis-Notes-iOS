@@ -49,3 +49,18 @@ struct ShapeTests {
     #expect(ShapeRow(row(#"{"type":"hologram"}"#)) == nil)
   }
 }
+
+struct TextRowTests {
+  @Test func readsAndWritesAndroidsTextPayload() throws {
+    let json = #"{"text":"Σ M = 0\nשלום","x":120.5,"y":300,"width":800,"height":90}"#
+    let row = ItemRow(id: "t", z: 4, kind: 3, pen: nil, color: -16_777_216, size: 26, payload: Data(json.utf8), l: 0, t: 0, r: 1, b: 1)
+    let t = try #require(TextRow(row))
+    #expect(t.text == "Σ M = 0\nשלום" && t.x == 120.5 && t.width == 800 && t.height == 90 && t.fontSize == 26)
+    let back = t.row(textHeight: 60)
+    #expect(TextRow(back) == t)
+    #expect(back.b == 300 + 90)
+    let plain = TextRow(text: "a", x: 0, y: 0, width: 100, fontSize: 20, color: 0).row(textHeight: 10)
+    #expect(!String(decoding: plain.payload, as: UTF8.self).contains("height"))
+    #expect(abs(plain.b - 26) < 0.01)
+  }
+}

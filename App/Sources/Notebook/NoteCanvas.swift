@@ -20,6 +20,8 @@ struct UnderItems: @unchecked Sendable {
   var pictures: [(rect: CGRect, image: CGImage)] = []
   /// Pages of an imported PDF, drawn from the PDF itself (sharp at any zoom) instead of their pictures.
   var pdfPages: [(rect: CGRect, page: SharpPage)] = []
+  /// Typed text boxes (drawn as real text, sharp at any zoom).
+  var texts: [TextRow] = []
 }
 
 /// Paper, pictures and shapes for the page column, drawn in tiles off the main thread so they stay
@@ -76,6 +78,44 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
       if let dash = LineDash.pattern(s.line, width: CGFloat(s.size)) { cg.setLineDash(phase: 0, lengths: dash) } else { cg.setLineDash(phase: 0, lengths: []) }
       cg.strokePath()
     }
+    cg.setLineDash(phase: 0, lengths: [])
+    if !under.texts.isEmpty {
+      UIGraphicsPushContext(cg)
+      for t in under.texts {
+        let box = TextLook.frame(t)
+        guard box.intersects(rect) else { continue }
+        TextLook.attributed(t).draw(with: CGRect(x: box.minX, y: box.minY, width: box.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil)
+      }
+      UIGraphicsPopContext()
+    }
+  }
+}
+
+/// How a text box looks (Android's `TextItem.layoutFor`): the sans-serif system font at its size, lines
+/// 1.3 times the size apart, each paragraph running the way its first letters do (Hebrew from the right).
+enum TextLook {
+  static func attributed(_ t: TextRow) -> NSAttributedString {
+    NSAttributedString(string: t.text, attributes: attributes(size: CGFloat(t.fontSize), color: t.color))
+  }
+
+  static func attributes(size: CGFloat, color: Int32) -> [NSAttributedString.Key: Any] {
+    let p = NSMutableParagraphStyle()
+    p.minimumLineHeight = size * CGFloat(TextRow.line)
+    p.maximumLineHeight = size * CGFloat(TextRow.line)
+    p.alignment = .natural
+    p.baseWritingDirection = .natural
+    return [.font: UIFont.systemFont(ofSize: size), .foregroundColor: UIColor(argb: color), .paragraphStyle: p]
+  }
+
+  /// How tall the laid-out text is in world units.
+  static func textHeight(_ t: TextRow) -> Float {
+    Float(ceil(attributed(t).boundingRect(with: CGSize(width: CGFloat(t.width), height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil).height))
+  }
+
+  /// The box it fills: its width, and the taller of the text, a line and its own height.
+  static func frame(_ t: TextRow) -> CGRect {
+    let h = max(textHeight(t), t.fontSize * TextRow.line, t.height)
+    return CGRect(x: CGFloat(t.x), y: CGFloat(t.y), width: CGFloat(t.width), height: CGFloat(h))
   }
 }
 
@@ -168,6 +208,7 @@ struct NoteCanvas: UIViewRepresentable {
     c.installHoldToShape(on: v)
     c.installShapeEraser(on: v)
     c.installShapeTool(on: v)
+    c.installTextBoxes(on: v)
     bridge?.coordinator = c
     v.minimumZoomScale = 0.3
     v.maximumZoomScale = 6
@@ -269,6 +310,10 @@ struct NoteCanvas: UIViewRepresentable {
       shapeZ = 0
       var under = UnderItems()
       for row in rows {
+        if let text = TextRow(row) {
+          under.texts.append(text)
+          continue
+        }
         if let shape = ShapeRow(row) {
           under.shapes.append(shape)
           shapeZ = max(shapeZ, row.z)
@@ -313,6 +358,9 @@ struct NoteCanvas: UIViewRepresentable {
     var shapeEraser = ShapeEraser()
     /// The Shapes tool (see ShapeTool.swift), and the pen last used (shapes take its look).
     var shapeTool = ShapeToolState()
+    /// Typing in a text box (see TextBoxes.swift).
+    var textEdit = TextEditState()
+    var lastTool: Tool?
     var lastPenId: String?
 
     /// The settings the canvas was last given, to change only what changed.
@@ -350,6 +398,11 @@ struct NoteCanvas: UIViewRepresentable {
 
     func applyTool() {
       guard let canvas else { return }
+      // Choosing another tool puts down the text box being typed in.
+      if let last = lastTool, last != parent.tool, textEdit.view != nil {
+        DispatchQueue.main.async { self.finishText() }
+      }
+      lastTool = parent.tool
       // Draw with finger: Auto follows iOS's own Apple Pencil setting.
       if !ProcessInfo.processInfo.arguments.contains("-uitest") {
         switch parent.settings.fingerDraws {
@@ -393,6 +446,7 @@ struct NoteCanvas: UIViewRepresentable {
         pageCount += 1
         updateContent()
         persistPages()
+      case .newText: startNewText()
       case .copySelection: copySelection()
       case .cutSelection: cutSelection()
       case .duplicateSelection: duplicateSelection()
@@ -492,6 +546,7 @@ struct NoteCanvas: UIViewRepresentable {
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
       updateContent()
+      layoutTextEditor()
       redrawSelection()
       reportView()
     }
@@ -682,7 +737,7 @@ struct NoteCanvas: UIViewRepresentable {
 }
 
 enum CanvasCommand: Equatable {
-  case undo, redo, addPage, fitZoom
+  case undo, redo, addPage, fitZoom, newText
   case copySelection, cutSelection, duplicateSelection, deleteSelection, boxSelection, paste
   case recolourSelection(UInt32), thickenSelection(Float), mirrorSelection(Bool), arrangeSelection(Bool)
   case deletePage(Int)
