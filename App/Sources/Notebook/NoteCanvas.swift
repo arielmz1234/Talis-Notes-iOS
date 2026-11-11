@@ -292,7 +292,7 @@ struct NoteCanvas: UIViewRepresentable {
       if ProcessInfo.processInfo.arguments.contains("-uitest"), let first = strokes.first, first.path.count > 0 {
         let mid = first.path[first.path.count / 2]
         let live = UserDefaults.standard.string(forKey: "uitest-ink") ?? "-"
-        let note = "\(live) | loaded point \(String(format: "%.2f", mid.size.width)) force \(String(format: "%.2f", mid.force))"
+        let note = "\(live) | loaded point \(String(format: "%.2f", mid.size.width)) force \(String(format: "%.2f", mid.force)) sec \(String(format: "%.2f", mid.secondaryScale))"
         DispatchQueue.main.async { self.parent.onHint(note) }
       }
       loading = false
@@ -555,7 +555,7 @@ struct NoteCanvas: UIViewRepresentable {
           if ProcessInfo.processInfo.arguments.contains("-uitest"), pk.path.count > 0 {
             let mid = pk.path[pk.path.count / 2]
             let sizes = pk.path.map { $0.size.width }
-            let note = "live tool \(pen.size) point \(String(format: "%.2f", mid.size.width)) max \(String(format: "%.2f", sizes.max() ?? 0)) force \(String(format: "%.2f", mid.force))"
+            let note = "live tool \(pen.size) point \(String(format: "%.2f", mid.size.width)) max \(String(format: "%.2f", sizes.max() ?? 0)) force \(String(format: "%.2f", mid.force)) sec \(String(format: "%.2f", mid.secondaryScale)) ink \(pk.ink.inkType.rawValue.split(separator: ".").last ?? "")"
             UserDefaults.standard.set(note, forKey: "uitest-ink")
             parent.onHint(note)
           }
