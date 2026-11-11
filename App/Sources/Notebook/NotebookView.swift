@@ -420,7 +420,7 @@ enum PenStore {
     guard let d = UserDefaults.standard.data(forKey: "pens"), let p = try? JSONDecoder().decode([PenSlot].self, from: d), !p.isEmpty else {
       return PenSlot.defaults
     }
-    return p
+    return PenSlot.migrated(p)
   }
   static func save(_ p: [PenSlot]) {
     if let d = try? JSONEncoder().encode(p) { UserDefaults.standard.set(d, forKey: "pens") }

@@ -2,28 +2,8 @@ import PencilKit
 import TaliCore
 import UIKit
 
-/// The Android app's pen types (stored by name in the `pen` column).
-enum PenType: String, CaseIterable, Codable, Sendable {
-  case FINELINER, FOUNTAIN, PENCIL, CALLIGRAPHY, HIGHLIGHTER, DASHED
-
-  var defaultSize: Float {
-    switch self {
-    case .FINELINER, .PENCIL: 2.5
-    case .FOUNTAIN: 3
-    case .CALLIGRAPHY: 7
-    case .HIGHLIGHTER: 18
-    case .DASHED: 2.4
-    }
-  }
-  var maxSize: Float {
-    switch self {
-    case .CALLIGRAPHY: 30
-    case .HIGHLIGHTER: 40
-    default: 20
-    }
-  }
-  static let offered: [PenType] = [.FINELINER, .FOUNTAIN, .PENCIL, .CALLIGRAPHY, .HIGHLIGHTER]
-
+/// How each Android pen type is drawn here.
+extension PenType {
   /// The PencilKit ink that draws it live.
   var ink: PKInk.InkType {
     switch self {
@@ -36,59 +16,6 @@ enum PenType: String, CaseIterable, Codable, Sendable {
 
   /// Width varies with pressure.
   var pressureSensitive: Bool { self == .FOUNTAIN || self == .CALLIGRAPHY || self == .PENCIL }
-}
-
-/// One pen in the toolbar (Android's `PenSlot`, the parts ported so far).
-struct PenSlot: Codable, Hashable, Identifiable, Sendable {
-  var id: String
-  var type: PenType
-  var color: Int32
-  var size: Float
-  /// Her three thicknesses (empty until she sets them) and which one is in use (Android's `sizes`, `sizeSlot`).
-  var sizes: [Float] = []
-  var sizeSlot = 1
-  /// How many of its palette's colours sit in the toolbar; nil until set (the app-wide number).
-  var toolbarColors: Int? = nil
-
-  init(id: String, type: PenType, color: Int32, size: Float, sizes: [Float] = [], sizeSlot: Int = 1, toolbarColors: Int? = nil) {
-    self.id = id
-    self.type = type
-    self.color = color
-    self.size = size
-    self.sizes = sizes
-    self.sizeSlot = sizeSlot
-    self.toolbarColors = toolbarColors
-  }
-
-  // Missing keys take their defaults, as kotlinx.serialization does (pens saved before these fields, or from Android).
-  init(from decoder: Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    id = try c.decode(String.self, forKey: .id)
-    type = try c.decode(PenType.self, forKey: .type)
-    color = try c.decode(Int32.self, forKey: .color)
-    size = try c.decode(Float.self, forKey: .size)
-    sizes = try c.decodeIfPresent([Float].self, forKey: .sizes) ?? []
-    sizeSlot = try c.decodeIfPresent(Int.self, forKey: .sizeSlot) ?? 1
-    toolbarColors = try c.decodeIfPresent(Int.self, forKey: .toolbarColors)
-  }
-
-  static let highlighterAlpha: UInt32 = 0x66
-  static let defaultColors: [UInt32] = [
-    0xFF1B_1F2A, 0xFF4A_5160, 0xFF1F_5FD1, 0xFFD8_3A3A, 0xFF1E_9E6A, 0xFFF0_8A24, 0xFF7A_4FD8, 0xFFFF_D60A, 0xFFFF_6FA8, 0xFF9B_6BF2, 0xFF5A_A9E6,
-  ]
-
-  static let defaults: [PenSlot] = [
-    PenSlot(id: "p1", type: .FINELINER, color: Int32(bitPattern: defaultColors[0]), size: 2.4),
-    PenSlot(id: "p2", type: .FOUNTAIN, color: Int32(bitPattern: defaultColors[2]), size: 3),
-    PenSlot(id: "p4", type: .FINELINER, color: Int32(bitPattern: defaultColors[3]), size: 2.4),
-    PenSlot(id: "p5", type: .HIGHLIGHTER, color: Int32(bitPattern: defaultColors[7]), size: 18),
-  ]
-
-  /// The colour strokes are stored in: highlighters see-through, everything else opaque (`Brushes.inkColor`).
-  var inkColor: Int32 {
-    let c = UInt32(bitPattern: color)
-    return Int32(bitPattern: type == .HIGHLIGHTER ? (c & 0x00FF_FFFF) | (PenSlot.highlighterAlpha << 24) : c | 0xFF00_0000)
-  }
 }
 
 extension UIColor {

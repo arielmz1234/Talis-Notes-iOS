@@ -10,14 +10,12 @@ enum PanelKind { case pen, eraser, shapes }
 
 /// Saved colours (Android's `savedColors` / `highlighterColors`) and how many sit in the toolbar.
 enum Palette {
-  static let defaultHighlighter: [UInt32] = [0xFFFF_D60A, 0xFFFF_6FA8, 0xFF5A_A9E6, 0xFF7D_DB8A, 0xFFFF_A94D]
-
   static var saved: [UInt32] {
     get { (UserDefaults.standard.array(forKey: "savedColors") as? [Int])?.map { UInt32(truncatingIfNeeded: $0) } ?? PenSlot.defaultColors }
     set { UserDefaults.standard.set(newValue.map { Int($0) }, forKey: "savedColors") }
   }
   static var highlighter: [UInt32] {
-    get { (UserDefaults.standard.array(forKey: "highlighterColors") as? [Int])?.map { UInt32(truncatingIfNeeded: $0) } ?? defaultHighlighter }
+    get { (UserDefaults.standard.array(forKey: "highlighterColors") as? [Int])?.map { UInt32(truncatingIfNeeded: $0) } ?? PenSlot.defaultHighlighterColors }
     set { UserDefaults.standard.set(newValue.map { Int($0) }, forKey: "highlighterColors") }
   }
   /// How many colours a pen shows in the toolbar until it has its own number (Android's default 3).
@@ -25,42 +23,6 @@ enum Palette {
 
   static func colors(for pen: PenSlot) -> [UInt32] { pen.type == .HIGHLIGHTER ? highlighter : saved }
   static func toolbarCount(for pen: PenSlot) -> Int { pen.toolbarColors ?? toolbarColors }
-}
-
-extension PenSlot {
-  /// The three thicknesses; until she sets them, a thinner and a thicker one around [size] (Android's `presetSizes`).
-  var presetSizes: [Float] {
-    if sizes.count == 3 { return sizes }
-    func half(_ v: Float) -> Float { (v * 2).rounded() / 2 }
-    let minSize: Float = 0.5
-    let thin = min(max(half(size * 0.6), minSize), size)
-    let thick = min(max(half(size * 1.6), size), type.maxSize)
-    switch min(max(sizeSlot, 0), 2) {
-    case 0: return [size, min(half(size * 1.6), type.maxSize), min(half(size * 2.5), type.maxSize)]
-    case 2: return [max(half(size * 0.4), minSize), thin, size]
-    default: return [thin, size, thick]
-    }
-  }
-
-  /// A new thickness for the one of the three she's on.
-  func withSize(_ v: Float) -> PenSlot {
-    var p = self
-    var all = presetSizes
-    all[min(max(sizeSlot, 0), 2)] = v
-    p.size = v
-    p.sizes = all
-    return p
-  }
-
-  /// Switches to her [i]th thickness.
-  func pickSize(_ i: Int) -> PenSlot {
-    var p = self
-    let all = presetSizes
-    p.sizeSlot = i
-    p.size = all[i]
-    p.sizes = all
-    return p
-  }
 }
 
 /// A pen drawn like a real tool standing in a tray (Android's `PenGlyph`): neutral body, a coloured
@@ -382,7 +344,7 @@ struct QuickSizes: View {
             VStack(alignment: .leading, spacing: 6) {
               Text(L("thickness_n", i + 1)).font(TaliType.titleSmall).foregroundStyle(c.ink)
               HStack {
-                StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: 0.5...pen.type.maxSize, step: 0.5)
+                StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: pen.type.minSize...pen.type.maxSize, step: 0.5)
                 Text(String(format: "%.1f", pen.size)).font(TaliType.titleSmall).foregroundStyle(c.ink).frame(width: 40)
               }
             }
@@ -430,10 +392,7 @@ struct PenPanel: View {
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .contentShape(Rectangle())
             .onTapGesture {
-              withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                pen.type = t
-                pen.size = min(max(pen.size, 0.5), t.maxSize)
-              }
+              withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { pen = pen.withType(t) }
             }
             .accessibilityLabel(penName(t))
             .accessibilityAddTraits(t == pen.type ? [.isButton, .isSelected] : .isButton)
@@ -450,7 +409,7 @@ struct PenPanel: View {
       Spacer().frame(height: 8)
       HStack(spacing: 0) {
         Text(L("size")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).frame(width: 44, alignment: .leading)
-        StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: 0.5...pen.type.maxSize, step: 0.5)
+        StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: pen.type.minSize...pen.type.maxSize, step: 0.5)
         Text(String(format: "%.1f", pen.size)).font(TaliType.titleSmall).foregroundStyle(c.ink).frame(width: 40).padding(.leading, 8)
       }
       Spacer().frame(height: 10)
