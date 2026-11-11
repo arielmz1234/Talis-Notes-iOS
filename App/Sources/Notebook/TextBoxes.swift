@@ -13,6 +13,8 @@ struct TextEditState {
   var editing: TextRow?
   var original: TextRow?
   var tap: UITapGestureRecognizer?
+  /// A− / A+ above the box (Android's editor `SizeButton`s).
+  var sizeBar: UIView?
 }
 
 extension NoteCanvas.Coordinator: UITextViewDelegate {
@@ -100,6 +102,8 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     v.accessibilityIdentifier = "text-editor"
     canvas.addSubview(v)
     textEdit.view = v
+    textEdit.sizeBar = makeSizeBar()
+    if let bar = textEdit.sizeBar { canvas.addSubview(bar) }
     layoutTextEditor()
     v.attributedText = NSAttributedString(string: t.text, attributes: editorAttributes(t))
     v.becomeFirstResponder()
@@ -126,6 +130,7 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     let fit = v.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height
     let h = max(fit, CGFloat(max(t.fontSize * TextRow.line, t.height)) * z)
     v.frame = CGRect(x: CGFloat(t.x) * z, y: CGFloat(t.y) * z, width: w, height: h)
+    if let bar = textEdit.sizeBar { bar.frame.origin = CGPoint(x: v.frame.maxX - bar.frame.width, y: v.frame.minY - bar.frame.height - 6) }
     let attrs = editorAttributes(t)
     v.typingAttributes = attrs
     if let text = v.attributedText, text.length > 0, (text.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)?.pointSize != (attrs[.font] as? UIFont)?.pointSize {
@@ -135,6 +140,39 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
 
   func textViewDidChange(_ textView: UITextView) { layoutTextEditor() }
 
+  private func makeSizeBar() -> UIView {
+    let bar = UIStackView()
+    bar.axis = .horizontal
+    bar.spacing = 2
+    bar.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.95)
+    bar.layer.cornerRadius = 12
+    bar.layer.borderColor = UIColor(argb: Int32(bitPattern: 0x337A_4ED6)).cgColor
+    bar.layer.borderWidth = 1
+    bar.isLayoutMarginsRelativeArrangement = true
+    bar.layoutMargins = UIEdgeInsets(top: 2, left: 4, bottom: 2, right: 4)
+    for (title, grow) in [("A−", false), ("A+", true)] {
+      let b = UIButton(type: .system)
+      b.setTitle(title, for: .normal)
+      b.titleLabel?.font = .systemFont(ofSize: grow ? 17 : 14, weight: .semibold)
+      b.tintColor = UIColor(argb: Int32(bitPattern: 0xFF7A_4ED6))
+      b.accessibilityIdentifier = grow ? "text-bigger" : "text-smaller"
+      b.addAction(UIAction { [weak self] _ in self?.resizeText(grow) }, for: .touchUpInside)
+      b.widthAnchor.constraint(equalToConstant: 40).isActive = true
+      bar.addArrangedSubview(b)
+    }
+    bar.frame.size = bar.systemLayoutSizeFitting(CGSize(width: 200, height: 36))
+    return bar
+  }
+
+  /// A− / A+: the text 15% smaller or bigger, between 10 and 160 (Android's limits).
+  private func resizeText(_ grow: Bool) {
+    guard var t = textEdit.editing, let v = textEdit.view else { return }
+    t.fontSize = min(max(grow ? t.fontSize * 1.15 : t.fontSize / 1.15, 10), 160)
+    textEdit.editing = t
+    v.attributedText = NSAttributedString(string: v.text, attributes: editorAttributes(t))
+    layoutTextEditor()
+  }
+
   /// Keeps what was typed: a new box with text is added, an emptied one removed, a changed one
   /// replaced; one undo step.
   func finishText() {
@@ -143,6 +181,8 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     textEdit.editing = nil
     v.resignFirstResponder()
     v.removeFromSuperview()
+    textEdit.sizeBar?.removeFromSuperview()
+    textEdit.sizeBar = nil
     let text = v.text.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
     t.text = text
     let original = textEdit.original

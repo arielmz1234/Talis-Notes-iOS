@@ -290,3 +290,15 @@ Next:
 - Not yet for text: lasso and eraser on text boxes, A−/A+ and the side dots, Android's two-step tap
   (pick up, then type).
 - Remember to keep `RUNNING` fresh in long sessions (a stale time lets the next scheduled session in).
+- Typed text, debugging in CI (runs 43056814643, 43062180296): the first box didn't take the
+  keyboard ("neither element nor any descendant has keyboard focus", which also stopped the rest of
+  the test run); fixed with a second `becomeFirstResponder` once it's on screen. Then the test's tap
+  inside the box finished it (the canvas's text tap saw it): the tap recogniser now ignores touches
+  on the box. And SwiftUI's keyboard avoidance pushed the whole canvas up: the canvas now
+  `.ignoresSafeArea(.keyboard)` and scrolls the box below the toolbars itself. Being checked in
+  run 43068434218.
+- The page didn't fit on opening (iPhone at 100%, page far wider than the screen): the canvas
+  refits whenever its size changes until she zooms by hand (`fittedSize`); min zoom 0.2.
+- Phone toolbar: the tools fold into one button (`compactTools`, Android's `MainToolbarPhone`),
+  dropping a bar of eraser, lasso, shapes, keyboard. The UI test opens it (`showTool`).
+- CI now prints the failure lines of each screenshot test run (the element, the reason).
