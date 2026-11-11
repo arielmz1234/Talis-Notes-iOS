@@ -200,6 +200,29 @@ extension CGRect {
   var center: CGPoint { CGPoint(x: midX, y: midY) }
 }
 
+extension MediaTests {
+  /// + › Camera in the library: the photo becomes a Picture item, with the Adding pill and Open.
+  func testAddingPill() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
+    let app = launch(["-cameraPicture"])
+    settle()
+    app.buttons["add"].firstMatch.tap()
+    settle()
+    app.buttons["add-camera"].firstMatch.tap()
+    settle()
+    app.buttons["cam-save"].firstMatch.tap()
+    let words = app.staticTexts["adding-words"].firstMatch
+    XCTAssertTrue(words.waitForExistence(timeout: 5), "the pill shows")
+    shot("a1-adding")
+    XCTAssertTrue(app.buttons["adding-open"].waitForExistence(timeout: 8), "Added, with Open")
+    shot("a2-added")
+    app.buttons["adding-open"].firstMatch.tap()
+    settle()
+    shot("a3-opened")
+  }
+}
+
 /// English labels the tests tap.
 enum L10n {
   static let exportPDF = "Export PDF"

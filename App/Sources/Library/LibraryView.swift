@@ -19,7 +19,8 @@ struct LibraryView: View {
   @State private var photos: [PhotosPickerItem] = []
   /// The + menu's Camera.
   @State private var camera = false
-  @State private var importNote: String?
+  /// What + is adding, shown in a pill at the bottom.
+  @State private var adding = AddingModel()
   @State private var drawer = false
   @State private var renaming: NotebookMeta?
   @State private var moving: NotebookMeta?
@@ -60,20 +61,7 @@ struct LibraryView: View {
     }
     .fileImporter(isPresented: $importing, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { result in
       guard case .success(let urls) = result, !urls.isEmpty else { return }
-      Task { @MainActor in
-        // Each PDF becomes an item of its own; pictures picked together become one.
-        for u in urls where u.pathExtension.lowercased() == "pdf" {
-          do {
-            try await lib.importPDF(u)
-          } catch Library.ImportError.message(let m) {
-            importNote = m
-          } catch {
-            importNote = L("couldn_t_open_that_file")
-          }
-        }
-        let pictures = urls.filter { $0.pathExtension.lowercased() != "pdf" }
-        if !pictures.isEmpty, await lib.importPictures(pictures) == nil { importNote = L("couldn_t_open_that_file") }
-      }
+      adding.addFiles(urls, into: lib)
     }
     .photosPicker(isPresented: $pickingPhotos, selection: $photos, maxSelectionCount: 30, matching: .images)
     .onChange(of: photos) { _, items in
@@ -84,17 +72,17 @@ struct LibraryView: View {
         for item in items {
           if let d = try? await item.loadTransferable(type: Data.self) { data.append(d) }
         }
-        if await lib.importPictures(data: data) == nil { importNote = L("couldn_t_open_that_file") }
+        adding.addPhotos(data, into: lib)
       }
     }
     .fullScreenCover(isPresented: $camera) {
       CameraScreen(onClose: { camera = false }) { photos in
         camera = false
-        Task { @MainActor in _ = await lib.importPictures(data: photos) }
+        adding.addPhotos(photos, into: lib)
       }
     }
-    .alert(importNote ?? "", isPresented: Binding(get: { importNote != nil }, set: { if !$0 { importNote = nil } })) {
-      Button(L("close")) { importNote = nil }
+    .overlay(alignment: .bottom) {
+      AddingPill(adding: adding) { id in if let n = lib.notebooks.first(where: { $0.id == id }) { onOpen(n) } }
     }
     .overlay {
       if creating {
