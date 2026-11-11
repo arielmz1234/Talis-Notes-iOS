@@ -808,13 +808,9 @@ enum CrashNote {
 /// A picture item (kind 2): where it sits and its image, read from the app's images folder at a
 /// size that suits the page (a PDF page or photo is never decoded at full size).
 func picture(from row: ItemRow) -> (rect: CGRect, image: CGImage)? {
-  guard let obj = try? JSONSerialization.jsonObject(with: row.payload) as? [String: Any], let file = obj["file"] as? String,
-    let r = obj["rect"] as? [String: Any]
-  else { return nil }
-  func n(_ k: String) -> CGFloat { CGFloat((r[k] as? NSNumber)?.doubleValue ?? 0) }
-  let rect = CGRect(x: n("left"), y: n("top"), width: n("right") - n("left"), height: n("bottom") - n("top"))
-  guard !file.contains("/"), rect.width > 0, rect.height > 0 else { return nil }
-  let url = AppFiles.folders.images.appendingPathComponent(file)
+  guard let p = PictureRow(row), !p.file.contains("/"), p.rect.width > 0, p.rect.height > 0 else { return nil }
+  let rect = CGRect(p.rect)
+  let url = AppFiles.folders.images.appendingPathComponent(p.file)
   guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
   let maxSide = min(max(rect.width, rect.height) * 2, 2400)
   let opts: [CFString: Any] = [
@@ -824,7 +820,6 @@ func picture(from row: ItemRow) -> (rect: CGRect, image: CGImage)? {
   guard let image = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
   return (rect, image)
 }
-
 
 /// An imported PDF's page drawn from the PDF kept beside its picture (Android's `SharpPdf` draws
 /// patches at screen resolution; here the tiled page layer simply draws the page as vectors at every
@@ -839,15 +834,7 @@ final class SharpPage: @unchecked Sendable {
 
   /// The page a picture item shows, when it's an imported PDF page whose PDF is here.
   static func of(_ row: ItemRow) -> (rect: CGRect, page: SharpPage)? {
-    guard let obj = try? JSONSerialization.jsonObject(with: row.payload) as? [String: Any], let file = obj["file"] as? String,
-      file.hasPrefix("pdf-"), let r = obj["rect"] as? [String: Any], obj["crop"] == nil
-    else { return nil }
-    // pdf-<36-char id>-p<page>-<uuid>.jpg
-    let rest = file.dropFirst(4)
-    guard rest.count > 38 else { return nil }
-    let id = String(rest.prefix(36))
-    let after = rest.dropFirst(36)
-    guard after.hasPrefix("-p"), let dash = after.dropFirst(2).firstIndex(of: "-"), let index = Int(after[after.index(after.startIndex, offsetBy: 2)..<dash]) else { return nil }
+    guard let p = PictureRow(row), p.crop == nil, let (id, index) = p.pdfSource, p.rect.width > 0, p.rect.height > 0 else { return nil }
     lock.lock()
     defer { lock.unlock() }
     let doc: PDFDocument
@@ -859,10 +846,7 @@ final class SharpPage: @unchecked Sendable {
       doc = d
     }
     guard let page = doc.page(at: index) else { return nil }
-    func n(_ k: String) -> CGFloat { CGFloat((r[k] as? NSNumber)?.doubleValue ?? 0) }
-    let rect = CGRect(x: n("left"), y: n("top"), width: n("right") - n("left"), height: n("bottom") - n("top"))
-    guard rect.width > 0, rect.height > 0 else { return nil }
-    return (rect, SharpPage(page))
+    return (CGRect(p.rect), SharpPage(page))
   }
 
   /// Draws the page filling [rect] (world units, y down) on white.

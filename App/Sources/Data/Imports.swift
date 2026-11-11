@@ -47,7 +47,7 @@ extension Library {
       let scale = min(Self.pdfRenderWidth / w, Self.pdfRenderMaxSide / max(w, h))
       let size = CGSize(width: max((w * scale).rounded(), 1), height: max((h * scale).rounded(), 1))
       let picture = page.thumbnail(of: size, for: .mediaBox)
-      let name = kept ? "pdf-\(pdfId)-p\(i)-\(newId()).jpg" : "\(newId()).jpg"
+      let name = kept ? PictureRow.pdfPageFile(pdf: pdfId, page: i, unique: newId()) : "\(newId()).jpg"
       guard let jpeg = Self.onWhite(picture).jpegData(compressionQuality: 0.88) else { continue }
       try? jpeg.write(to: images.appendingPathComponent(name))
       pages.append(ImportedPage(file: name, width: w, height: h))
@@ -127,13 +127,7 @@ extension Library {
       let w = Float(p.width * s), h = Float(p.height * s)
       let c = r.center
       let rect = Rect(c.x - w / 2, c.y - h / 2, c.x + w / 2, c.y + h / 2)
-      func n(_ v: Float) -> Double { Double("\(v)") ?? Double(v) }
-      let payload: [String: Any] = [
-        "file": p.file, "rect": ["left": n(rect.left), "top": n(rect.top), "right": n(rect.right), "bottom": n(rect.bottom)], "pdfPage": true,
-      ]
-      let data = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
-      let row = ItemRow(id: newId(), z: Int64(i), kind: 2, pen: nil, color: 0, size: 0, payload: data, l: rect.left, t: rect.top, r: rect.right, b: rect.bottom)
-      try? db.put(row, in: meta.id)
+      try? db.put(PictureRow(id: newId(), z: Int64(i), file: p.file, rect: rect, pdfPage: true).itemRow, in: meta.id)
       placed.append((CGRect(rect), p.file))
     }
     // Its preview: the top of the first page, as the library shows notebooks.
