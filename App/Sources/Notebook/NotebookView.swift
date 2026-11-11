@@ -41,6 +41,9 @@ struct NotebookView: View {
   @State private var viewing: Bool
   /// Toolbars hidden with the eye (Android's focus mode).
   @State private var hidden = false
+  /// Where each bar last sat, and the mist playing where they are or were.
+  @State private var bars = BarFrames()
+  @State private var puff: BarPuff?
   /// The notebook's name as shown (tapping the name pill renames it, as on Android).
   @State private var title: String
   @State private var renaming = false
@@ -114,33 +117,24 @@ struct NotebookView: View {
               .frame(height: 52)
               .accessibilityIdentifier("write")
             }
-          } else if hidden {
-            HStack {
-              Spacer()
-              FloatingBar(crown: .softEdge) {
-                ToolIcon(system: "eye", label: L("show_toolbars")) { withAnimation(.easeOut(duration: 0.22)) { hidden = false } }
-              }
-            }
-            .transition(.opacity)
           } else if narrow {
             HStack(spacing: 10) {
-              leftBars
+              if !hidden { leftBars.bar("title", 0, bars) }
               Spacer(minLength: 10)
-              rightBars(showName: !PhoneWriting.onPhone)
+              if !hidden { rightBars(showName: !PhoneWriting.onPhone).bar("undo", 2, bars) }
             }
-            mainToolbar(showColors: !PhoneWriting.onPhone)
-              .transition(.move(edge: .top).combined(with: .opacity))
+            if !hidden { mainToolbar(showColors: !PhoneWriting.onPhone).bar("tools", 1, bars) }
           } else {
             ZStack(alignment: .top) {
               HStack(spacing: 10) {
-                leftBars
+                if !hidden { leftBars.bar("title", 0, bars) }
                 Spacer(minLength: 10)
-                rightBars(showName: true)
+                if !hidden { rightBars(showName: true).bar("undo", 2, bars) }
               }
               .frame(height: 60)
-              mainToolbar(showColors: true)
+              // Over the name pill, also while both are leaving.
+              if !hidden { mainToolbar(showColors: true).bar("tools", 1, bars).zIndex(1) }
             }
-            .transition(.opacity)
           }
           if !hidden, !viewing, let shown = panel {
             Spacer().frame(height: 10)
@@ -165,6 +159,18 @@ struct NotebookView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 20)
+        if let puff {
+          BarPuffs(puff: puff).ignoresSafeArea()
+        }
+        if hidden, !viewing {
+          ShowToolbarsButton { setHidden(false) }
+            .padding(.top, 26).padding(.trailing, 22)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .transition(
+              .asymmetric(
+                insertion: .opacity.combined(with: .scale(scale: 0.9)).animation(Ease.outStrong(duration: 0.24).delay(0.08)),
+                removal: .opacity.combined(with: .scale(scale: 0.95)).animation(Ease.outStrong(duration: 0.14))))
+        }
         if let sel = selection, !hidden, !viewing {
           SelectionMenuLayer(selection: sel, narrow: narrow) { command = $0 }
             .ignoresSafeArea()
@@ -289,6 +295,20 @@ struct NotebookView: View {
 
   private func closePaperCard() { withAnimation(.easeOut(duration: 0.16)) { paperCard = nil } }
 
+  /// Hides or brings back the toolbars, with a puff of mist where each bar is: fuller when they go.
+  private func setHidden(_ h: Bool) {
+    let shot = BarPuff(spots: Array(bars.frames.values), strength: h ? 0.85 : 0.5)
+    puff = shot
+    withAnimation(Ease.outStrong(duration: 0.26)) {
+      panel = nil
+      hidden = h
+    }
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(PuffTiming.subtlePuff))
+      if puff?.id == shot.id { puff = nil }
+    }
+  }
+
   /// Shows [text] for a few seconds.
   private func show(_ text: String) {
     hintTask?.cancel()
@@ -352,12 +372,8 @@ struct NotebookView: View {
         }
       }
       FloatingBar(crown: .softEdge) {
-        ToolIcon(system: "eye.slash", label: L("hide_toolbars")) {
-          withAnimation(.easeOut(duration: 0.2)) {
-            panel = nil
-            hidden = true
-          }
-        }
+        ToolIcon(system: "eye.slash", label: L("hide_toolbars")) { setHidden(true) }
+          .accessibilityIdentifier("hide-toolbars")
         // ⋯ always last, in the top-right corner.
         ToolIcon(system: "ellipsis", label: L("more")) { moreOpen = true }
           .accessibilityIdentifier("more")
@@ -506,5 +522,75 @@ enum PaperCard: Equatable {
   var editing: CustomPaper? {
     if case .edit(let p) = self { return p }
     return nil
+  }
+}
+
+/// Where each toolbar last sat on screen (Android's plain map: written while bars move, so it
+/// mustn't redraw anything).
+final class BarFrames {
+  var frames: [String: CGRect] = [:]
+}
+
+/// The mist over the bars as they hide or come back.
+struct BarPuff: Identifiable {
+  let id = UUID()
+  let start = Date()
+  var spots: [CGRect]
+  var strength: Double
+}
+
+struct BarPuffs: View {
+  var puff: BarPuff
+
+  var body: some View {
+    GeometryReader { g in
+      let origin = g.frame(in: .global).origin
+      ForEach(Array(puff.spots.enumerated()), id: \.offset) { _, r in
+        PuffPlayer(start: puff.start, duration: PuffTiming.subtlePuff, strength: puff.strength)
+          .frame(width: r.width, height: r.height)
+          .position(x: r.midX - origin.x, y: r.midY - origin.y)
+      }
+    }
+    .allowsHitTesting(false)
+  }
+}
+
+/// While the toolbars are hidden, the one thing left (Android's `ShowToolbarsButton`): a small
+/// frosted circle in the corner with the eye, which brings them back.
+struct ShowToolbarsButton: View {
+  var action: () -> Void
+  @Environment(\.tali) private var c
+
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: "eye").font(.system(size: 17)).foregroundStyle(c.inkMuted)
+        .frame(width: 40, height: 40)
+        .background(Circle().fill(c.surface.opacity(0.72)))
+        .overlay(Circle().stroke(c.line, lineWidth: 1))
+        .contentShape(Circle())
+    }
+    .buttonStyle(PressStyle(scale: 0.9))
+    .accessibilityLabel(L("show_toolbars"))
+    .accessibilityIdentifier("show-toolbars")
+  }
+}
+
+/// A bar arriving lifts in from its own top edge, growing from 96%; the bars follow one another by
+/// 40 ms and leave together, quicker (Android's `Modifier.bar`).
+private struct BarLift: ViewModifier {
+  var shown: Double
+
+  func body(content: Content) -> some View {
+    content.opacity(shown).scaleEffect(0.96 + 0.04 * shown, anchor: .top).offset(y: (1 - shown) * -10)
+  }
+}
+
+extension View {
+  fileprivate func bar(_ key: String, _ order: Int, _ frames: BarFrames) -> some View {
+    onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.frames[key] = $0 }
+      .transition(
+        .asymmetric(
+          insertion: .modifier(active: BarLift(shown: 0), identity: BarLift(shown: 1)).animation(Ease.outStrong(duration: 0.26).delay(0.04 * Double(order))),
+          removal: .modifier(active: BarLift(shown: 0), identity: BarLift(shown: 1)).animation(Ease.outStrong(duration: 0.17))))
   }
 }

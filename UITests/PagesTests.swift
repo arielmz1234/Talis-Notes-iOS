@@ -69,6 +69,25 @@ final class PagesTests: ShotCase {
     XCTAssertTrue(pageCountShown(app, 2), "a page was added")
   }
 
+  func testHideToolbars() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait
+    let app = launch()
+    settle()
+    open(app, "Exam revision")
+    app.buttons["hide-toolbars"].firstMatch.tap()
+    shot("t1-hiding-mist")
+    settle()
+    shot("t2-hidden")
+    XCTAssertTrue(app.buttons["show-toolbars"].exists, "the frosted button brings them back")
+    XCTAssertFalse(app.buttons["more"].exists, "the bars are gone")
+    app.buttons["show-toolbars"].firstMatch.tap()
+    shot("t3-showing")
+    settle()
+    shot("t4-shown")
+    XCTAssertTrue(app.buttons["more"].exists, "the bars are back")
+  }
+
   func testPapers() {
     continueAfterFailure = true
     XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait
