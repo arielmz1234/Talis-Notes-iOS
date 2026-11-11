@@ -154,6 +154,9 @@ struct MainToolbar: View {
   /// The keyboard: a new text box to type in.
   var onKeyboard: () -> Void = {}
   var showColors = true
+  /// On a phone the tools fold into one button (Android's `MainToolbarPhone`).
+  var compactTools = false
+  @State private var toolsOpen = false
   @Environment(\.tali) private var c
   @Namespace private var toolGlide
 
@@ -211,22 +214,72 @@ struct MainToolbar: View {
           .transition(.opacity)
       }
       BarDivider()
-      HStack(spacing: 0) {
-        toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
-        toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
-        toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
-        Button(action: onKeyboard) {
-          Image(systemName: "keyboard").font(.system(size: 19)).foregroundStyle(c.ink).frame(width: 44, height: 44)
+      if compactTools {
+        // A phone (Android's `MainToolbarPhone`): one button showing the tool in use drops the tools down.
+        Button {
+          withAnimation(Ease.outStrong(duration: 0.2)) { toolsOpen.toggle() }
+        } label: {
+          Group {
+            if tool == .shape {
+              ShapeIcon(kind: shapeKind, color: c.blue, size: 24)
+            } else {
+              Image(systemName: currentToolIcon).font(.system(size: 19)).foregroundStyle(isPen ? c.ink : c.blue)
+            }
+          }
+          .frame(width: 44, height: 44)
+          .background(RoundedRectangle(cornerRadius: 14).fill(isPen ? (toolsOpen ? c.accentSoft : .clear) : c.blueSoft))
         }
         .buttonStyle(PressStyle(scale: 0.9))
-        .accessibilityLabel(L("keyboard"))
-        .accessibilityIdentifier("tool-keyboard")
+        .accessibilityLabel(L("more_tools"))
+        .accessibilityIdentifier("tools-button")
+        .padding(.trailing, 2)
+      } else {
+        tools.padding(.trailing, 2)
       }
-      .padding(.trailing, 2)
     }
     .padding(.horizontal, 6).padding(.vertical, 4)
     .frame(height: 60)
     .cloudSurface(radius: 22, crown: .edge)
+    .overlay(alignment: .topTrailing) {
+      if compactTools && toolsOpen {
+        tools
+          .padding(.horizontal, 6).padding(.vertical, 4)
+          .frame(height: 56)
+          .cloudSurface(radius: 20, crown: .none, shadowDepth: 8)
+          .offset(y: 68)
+          .transition(.opacity.combined(with: .offset(y: -6)))
+      }
+    }
+    .onChange(of: tool) { _, _ in if compactTools { withAnimation(.easeOut(duration: 0.14)) { toolsOpen = false } } }
+  }
+
+  /// The tools: eraser, lasso, shapes, then the keyboard (a new text box).
+  private var tools: some View {
+    HStack(spacing: 0) {
+      toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
+      toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
+      toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
+      Button {
+        toolsOpen = false
+        onKeyboard()
+      } label: {
+        Image(systemName: "keyboard").font(.system(size: 19)).foregroundStyle(c.ink).frame(width: 44, height: 44)
+      }
+      .buttonStyle(PressStyle(scale: 0.9))
+      .accessibilityLabel(L("keyboard"))
+      .accessibilityIdentifier("tool-keyboard")
+    }
+  }
+
+  private var isPen: Bool { if case .pen = tool { true } else { false } }
+
+  private var currentToolIcon: String {
+    switch tool {
+    case .eraser: "eraser"
+    case .lasso: "lasso"
+    case .shape: "square.on.circle"
+    case .pen: "square.grid.2x2"
+    }
   }
 
   private func tapPen(_ pen: PenSlot) {
