@@ -50,7 +50,10 @@ jobs:
           run() { # device tag dark lang
             TEST_RUNNER_SHOT_DIR="$PWD/shots" TEST_RUNNER_SHOT_TAG="$2" TEST_RUNNER_SHOT_DARK="$3" TEST_RUNNER_SHOT_LANG="$4" \
             xcodebuild test-without-building -project TalisNotes.xcodeproj -scheme TalisNotes \
-              -destination "id=$1" -derivedDataPath build/dd -resultBundlePath "build/$2.xcresult" 2>&1 | tail -25
+              -destination "id=$1" -derivedDataPath build/dd -resultBundlePath "build/$2.xcresult" > "build/$2.log" 2>&1 || true
+            # Why a test failed (the element it couldn't find, the line), then the summary.
+            grep -E "error:|Failed|failed:|Assertion|No matches|not hittable|ScreenshotTests.swift:" "build/$2.log" | grep -v "Test Suite" | head -20 || true
+            tail -6 "build/$2.log"
           }
           run "$ipad" ipad-light 0 ""
           run "$ipad" ipad-dark 1 ""

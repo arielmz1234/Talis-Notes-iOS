@@ -61,6 +61,7 @@ final class ScreenshotTests: XCTestCase {
       shot("2b-add-menu")
       notebookItem.tap()
       settle()
+      if !app.buttons["create"].waitForExistence(timeout: 4) { shot("3x-after-notebook-tap") }
     }
     shot("3-new-notebook")
     app.buttons["create"].firstMatch.tap()
