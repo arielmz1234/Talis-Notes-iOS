@@ -38,6 +38,14 @@ final class ScreenshotTests: XCTestCase {
 
   private func settle() { Thread.sleep(forTimeInterval: 1.2) }
 
+  /// On a phone the tools are folded behind one button: open it when the tool isn't showing.
+  private func showTool(_ app: XCUIApplication, _ id: String) {
+    if !app.buttons[id].exists, app.buttons["tools-button"].exists {
+      app.buttons["tools-button"].firstMatch.tap()
+      settle()
+    }
+  }
+
   func testLibraryAndNotebook() {
     continueAfterFailure = true
     let device = XCUIDevice.shared
@@ -89,6 +97,7 @@ final class ScreenshotTests: XCTestCase {
     app.buttons["pen-p1"].firstMatch.tap()
     settle()
     // The lasso: a loop round the strokes picks them up and shows the selection menu.
+    showTool(app, "tool-lasso")
     if app.buttons["tool-lasso"].exists {
       app.buttons["tool-lasso"].firstMatch.tap()
       settle()
@@ -101,6 +110,7 @@ final class ScreenshotTests: XCTestCase {
       settle()
     }
     // The Shapes tool: its panel opens, an ellipse is chosen and dragged out.
+    showTool(app, "tool-shapes")
     if app.buttons["tool-shapes"].exists {
       app.buttons["tool-shapes"].firstMatch.tap()
       settle()
@@ -117,6 +127,7 @@ final class ScreenshotTests: XCTestCase {
       settle()
     }
     // Typed text: the keyboard opens a box below what's written; the lasso tool puts it down.
+    showTool(app, "tool-keyboard")
     if app.buttons["tool-keyboard"].exists {
       app.buttons["tool-keyboard"].firstMatch.tap()
       settle()
@@ -126,6 +137,7 @@ final class ScreenshotTests: XCTestCase {
         box.typeText("Sum of moments = 0\nReaction R = 12 kN")
       }
       shot("4g-typing")
+      showTool(app, "tool-lasso")
       if app.buttons["tool-lasso"].exists { app.buttons["tool-lasso"].firstMatch.tap() }
       settle()
       shot("4h-text")
