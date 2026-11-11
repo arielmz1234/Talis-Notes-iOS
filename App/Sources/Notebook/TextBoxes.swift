@@ -69,8 +69,8 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
       let top = min(bottoms.max().map { $0 + 6 * mm } ?? (r.top + 22 * mm), r.bottom - 30 * mm)
       t = TextRow(text: "", x: r.left + 20 * mm, y: top, width: r.width - 40 * mm, fontSize: TextRow.defaultSize, color: color)
     } else {
-      let left = Float(canvas.contentOffset.x / CGFloat(z)) + 48 / z
-      let top = Float(canvas.contentOffset.y / CGFloat(z)) + 140 / z
+      let left = Float((canvas.contentOffset.x + 48) / CGFloat(z))
+      let top = Float((canvas.contentOffset.y + parent.topClearance + 32) / CGFloat(z))
       t = TextRow(text: "", x: left, y: top, width: min(Float(canvas.bounds.width) / z * 0.7, 1100), fontSize: TextRow.defaultSize, color: color)
     }
     t.id = newId()
@@ -104,12 +104,15 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     textEdit.view = v
     textEdit.sizeBar = makeSizeBar()
     if let bar = textEdit.sizeBar { canvas.addSubview(bar) }
+    (canvas as? NoteCanvasView)?.typing = [v, textEdit.sizeBar].compactMap { $0 }
     layoutTextEditor()
     v.attributedText = NSAttributedString(string: t.text, attributes: editorAttributes(t))
+    TextLook.setDirections(v.textStorage)
     v.becomeFirstResponder()
     // Comfortably below the toolbars and above the keyboard (Android's `showForTyping`).
-    let want = v.frame.minY - 160
-    if v.frame.minY < canvas.contentOffset.y + 140 || v.frame.minY > canvas.contentOffset.y + canvas.bounds.height * 0.4 {
+    let clearance = parent.topClearance
+    let want = v.frame.minY - (clearance + 56)
+    if v.frame.minY < canvas.contentOffset.y + clearance + 36 || v.frame.minY > canvas.contentOffset.y + canvas.bounds.height * 0.4 {
       canvas.setContentOffset(CGPoint(x: canvas.contentOffset.x, y: want), animated: true)
     }
     // Once it's on screen: a text view added and focused in the same moment can miss the keyboard.
@@ -135,10 +138,14 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     v.typingAttributes = attrs
     if let text = v.attributedText, text.length > 0, (text.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)?.pointSize != (attrs[.font] as? UIFont)?.pointSize {
       v.attributedText = NSAttributedString(string: text.string, attributes: attrs)
+      TextLook.setDirections(v.textStorage)
     }
   }
 
-  func textViewDidChange(_ textView: UITextView) { layoutTextEditor() }
+  func textViewDidChange(_ textView: UITextView) {
+    if textView.markedTextRange == nil { TextLook.setDirections(textView.textStorage) }
+    layoutTextEditor()
+  }
 
   private func makeSizeBar() -> UIView {
     let bar = UIStackView()
@@ -170,6 +177,7 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     t.fontSize = min(max(grow ? t.fontSize * 1.15 : t.fontSize / 1.15, 10), 160)
     textEdit.editing = t
     v.attributedText = NSAttributedString(string: v.text, attributes: editorAttributes(t))
+    TextLook.setDirections(v.textStorage)
     layoutTextEditor()
   }
 
@@ -183,6 +191,7 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     v.removeFromSuperview()
     textEdit.sizeBar?.removeFromSuperview()
     textEdit.sizeBar = nil
+    (canvas as? NoteCanvasView)?.typing = []
     let text = v.text.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
     t.text = text
     let original = textEdit.original

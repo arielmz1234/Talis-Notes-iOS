@@ -11,3 +11,4 @@ build/
 shots/
 xcuserdata/
 .DS_Store
+App/Info.plist

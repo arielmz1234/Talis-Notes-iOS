@@ -95,16 +95,33 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
 /// 1.3 times the size apart, each paragraph running the way its first letters do (Hebrew from the right).
 enum TextLook {
   static func attributed(_ t: TextRow) -> NSAttributedString {
-    NSAttributedString(string: t.text, attributes: attributes(size: CGFloat(t.fontSize), color: t.color))
+    let s = NSMutableAttributedString(string: t.text, attributes: attributes(size: CGFloat(t.fontSize), color: t.color))
+    setDirections(s)
+    return s
   }
 
   static func attributes(size: CGFloat, color: Int32) -> [NSAttributedString.Key: Any] {
+    [.font: UIFont.systemFont(ofSize: size), .foregroundColor: UIColor(argb: color), .paragraphStyle: paragraph(size: size, rightToLeft: false)]
+  }
+
+  /// Each paragraph runs the way its first letters do (Android's FIRSTSTRONG_LTR), not the way the
+  /// app's language does: English stays on the left in Hebrew, Hebrew on the right in English.
+  static func setDirections(_ s: NSMutableAttributedString) {
+    let text = s.string
+    guard let size = (s.length > 0 ? s.attribute(.font, at: 0, effectiveRange: nil) as? UIFont : nil)?.pointSize else { return }
+    for p in TextDirection.paragraphs(text) {
+      let r = NSRange(p.range.lowerBound..<(p.range.upperBound < text.endIndex ? text.index(after: p.range.upperBound) : p.range.upperBound), in: text)
+      s.addAttribute(.paragraphStyle, value: paragraph(size: size, rightToLeft: p.rightToLeft), range: r)
+    }
+  }
+
+  private static func paragraph(size: CGFloat, rightToLeft: Bool) -> NSParagraphStyle {
     let p = NSMutableParagraphStyle()
     p.minimumLineHeight = size * CGFloat(TextRow.line)
     p.maximumLineHeight = size * CGFloat(TextRow.line)
-    p.alignment = .natural
-    p.baseWritingDirection = .natural
-    return [.font: UIFont.systemFont(ofSize: size), .foregroundColor: UIColor(argb: color), .paragraphStyle: p]
+    p.baseWritingDirection = rightToLeft ? .rightToLeft : .leftToRight
+    p.alignment = rightToLeft ? .right : .left
+    return p
   }
 
   /// How tall the laid-out text is in world units.
@@ -133,6 +150,37 @@ enum LineDash {
     }
     // With round caps each part grows by a width, so the gaps take that back.
     return p.enumerated().map { i, v in i % 2 == 0 ? max(v * width, 0.01) : (v + 1) * width }
+  }
+}
+
+/// PencilKit's canvas, telling the notebook when its size changes (so the page is fitted as soon as
+/// it has one) and showing VoiceOver the text box being typed in, which PencilKit hides like all of its
+/// subviews.
+final class NoteCanvasView: PKCanvasView {
+  /// The canvas got a new size (it appeared, the notebook slid in, the device turned).
+  var onResize: () -> Void = {}
+  private var laidOutSize: CGSize = .zero
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if bounds.size != laidOutSize {
+      laidOutSize = bounds.size
+      onResize()
+    }
+  }
+
+  var typing: [UIView] = [] {
+    didSet { UIAccessibility.post(notification: .layoutChanged, argument: typing.first) }
+  }
+
+  override var accessibilityElements: [Any]? {
+    get { typing.isEmpty ? super.accessibilityElements : typing }
+    set { super.accessibilityElements = newValue }
+  }
+
+  override var isAccessibilityElement: Bool {
+    get { typing.isEmpty && super.isAccessibilityElement }
+    set { super.isAccessibilityElement = newValue }
   }
 }
 
@@ -165,6 +213,8 @@ struct NoteCanvas: UIViewRepresentable {
   var tool: Tool
   var pens: [PenSlot]
   var viewOnly = false
+  /// How far down the toolbars reach over the canvas (Android's `topClearance`: two rows when narrow).
+  var topClearance: CGFloat = 104
   var settings: CanvasSettings
   /// Lets the notebook screen ask for page pictures.
   var bridge: CanvasBridge? = nil
@@ -187,7 +237,7 @@ struct NoteCanvas: UIViewRepresentable {
 
   func makeUIView(context: Context) -> PKCanvasView {
     let c = context.coordinator
-    let v = PKCanvasView()
+    let v = NoteCanvasView()
     v.delegate = c
     v.drawingPolicy = .pencilOnly
     if ProcessInfo.processInfo.arguments.contains("-uitest") { v.drawingPolicy = .anyInput }
@@ -223,6 +273,7 @@ struct NoteCanvas: UIViewRepresentable {
     v.insertSubview(pages, at: 0)
     c.canvas = v
     c.pages = pages
+    v.onResize = { [weak c] in c?.updateContent() }
     c.load()
     return v
   }
@@ -334,12 +385,6 @@ struct NoteCanvas: UIViewRepresentable {
       }
       pages?.pages.under = under
       canvas.drawing = PKDrawing(strokes: strokes)
-      if ProcessInfo.processInfo.arguments.contains("-uitest"), let first = strokes.first, first.path.count > 0 {
-        let mid = first.path[first.path.count / 2]
-        let live = UserDefaults.standard.string(forKey: "uitest-ink") ?? "-"
-        let note = "\(live) | loaded point \(String(format: "%.2f", mid.size.width)) force \(String(format: "%.2f", mid.force)) sec \(String(format: "%.2f", mid.secondaryScale))"
-        DispatchQueue.main.async { self.parent.onHint(note) }
-      }
       loading = false
       updateContent()
       applyTool()
@@ -505,13 +550,8 @@ struct NoteCanvas: UIViewRepresentable {
         didFit = true
         fittedSize = canvas.bounds.size
         // The page's whole width on screen (a slide-shaped PDF page is far wider than A4), once the
-        // canvas has its size. Something in the canvas's first moments set the zoom back to 100%, so
-        // it's fitted again a moment later unless she has zoomed meanwhile.
+        // canvas has its size.
         DispatchQueue.main.async { [weak self] in self?.fitWidth() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-          guard let self, !self.zoomedByHand else { return }
-          self.fitWidth()
-        }
         return
       }
       centre()
@@ -549,7 +589,7 @@ struct NoteCanvas: UIViewRepresentable {
       guard let canvas, let pages else { return }
       let w = pages.worldSize.width * canvas.zoomScale
       let side = max((canvas.bounds.width - w) / 2, 16)
-      canvas.contentInset = UIEdgeInsets(top: 104, left: side, bottom: 40, right: side)
+      canvas.contentInset = UIEdgeInsets(top: parent.topClearance, left: side, bottom: 40, right: side)
     }
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
@@ -571,7 +611,6 @@ struct NoteCanvas: UIViewRepresentable {
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateContent() }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-      if !didFit { updateContent() }
       reportView()
       reportSelection()
     }
@@ -634,13 +673,6 @@ struct NoteCanvas: UIViewRepresentable {
             // Keep the live width matching the stored one (see InkWidth).
             let mid = pk.path[pk.path.count / 2]
             InkWidth.learn(pen.type.ink, size: pen.size, pointSize: mid.size.width, secondary: mid.secondaryScale)
-          }
-          if ProcessInfo.processInfo.arguments.contains("-uitest"), pk.path.count > 0 {
-            let mid = pk.path[pk.path.count / 2]
-            let sizes = pk.path.map { $0.size.width }
-            let note = "live tool \(pen.size) point \(String(format: "%.2f", mid.size.width)) max \(String(format: "%.2f", sizes.max() ?? 0)) force \(String(format: "%.2f", mid.force)) sec \(String(format: "%.2f", mid.secondaryScale)) ink \(pk.ink.inkType.rawValue.split(separator: ".").last ?? "")"
-            UserDefaults.standard.set(note, forKey: "uitest-ink")
-            parent.onHint(note)
           }
           z += 1
           changed.append(s)

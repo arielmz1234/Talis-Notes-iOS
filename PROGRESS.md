@@ -10,6 +10,48 @@
    screenshots, macOS runners sometimes queue). Batch changes, and read compile errors with
    `gh run view <id> --log-failed | grep error:`.
 
+## On the Mac (session 3, 11 Nov 2026)
+
+Building and checking locally now (Xcode 27, iOS 27 simulators; the code is unchanged for it):
+
+```bash
+brew install xcodegen && xcodegen generate
+swift test --package-path Packages/TaliCore                      # 82 core tests
+sh scripts/local-shots.sh "iPad Pro 13" ipad-light 0 ""           # build + the screenshot test
+NO_BUILD=1 sh scripts/local-shots.sh "iPhone 17 Pro" iphone-dark 1 ""
+python3 scripts/contact-sheet.py out.png shots/iphone-light-4*.png   # several shots in one image
+```
+
+A run takes about 1.5 minutes per device. `local-shots.sh` stops `xcodebuild` once the test summary is
+out (on Xcode 27 it sat forever after the last test). Landscape iPad shots come out upright locally.
+
+Checked on the simulators this session (iPad Pro 13" M5, iPhone 17 Pro), light, dark and Hebrew:
+- Typing in a text box works on iPad and iPhone. The box opens below the writing, scrolls under the
+  toolbars, keeps its text when finished and after reopening.
+- The text box was invisible to accessibility (PencilKit's canvas hides its subviews), so VoiceOver
+  couldn't reach it and the UI test could never type ("Neither element nor any descendant has
+  keyboard focus" in CI). The canvas is now `NoteCanvasView`, which offers the box and A−/A+ while
+  one is open. The test types into whatever has the keyboard.
+- Opening fitted: the first fit waited for an unrelated scroll event (about 2 s after opening a PDF,
+  so the screenshot showed 100%). Nothing told the canvas it had a size. `NoteCanvasView.onResize`
+  now calls `updateContent` when the size changes, so the fit comes 0.2 s after the tap. The 0.35 s
+  second fit and the scroll hook were removed: the zoom was never being reset, only fitted late.
+- `topClearance` from Android (`NotebookScreen`: 196 narrow, 124 wide), as 164 / 104 points
+  here since the canvas starts below the status bar: the first page now starts below the phone's
+  second toolbar row, and the text box's A−/A+ is no longer hidden behind it.
+- The phone's folded tools, A−/A+, the lasso (2 picked) and the shapes panel look right on iPhone.
+- Typed text in Hebrew (or Arabic) UI was right-aligned even when written in English. Now each
+  paragraph runs the way its first letters do, as Android's `FIRSTSTRONG_LTR` (`TaliCore/TextDirection`,
+  with tests), on the page and in the editor. Seen in `ipad-he-4g/4h`.
+- The test-build diagnostics (ink widths, lasso hints) were removed after confirming live and
+  reloaded ink match (3.31 pt both).
+
+There is no Simulator.app in this Xcode 27 install and T3's device panel is off, so runs are
+headless; review the shots in `shots/`.
+
+Same as Android, left as is: on a phone at 30% typed text is small (Android doesn't zoom for typing);
+a page nearly full puts a new box 30 mm above the page's bottom, over what's there.
+
 ## Moving to a Mac (11 Nov 2026, end of session 2)
 
 The owner is continuing on a MacBook. There, build and test locally instead of waiting ~35 min for CI:

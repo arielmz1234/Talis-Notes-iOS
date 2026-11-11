@@ -8,4 +8,5 @@ Work in progress: see `PLAN.md` and `PROGRESS.md`.
 - `App/`: SwiftUI app. `UITests/`: screenshot tests.
 - `tools/import_strings.py`: the string catalog from the Android app's strings.
 - `tools/make_icon.py`: the app icon from the Android app's `tools/icon-source.png`.
+- `scripts/local-shots.sh`: the screenshot test on a local simulator (see PROGRESS.md).
 - CI (`.github/workflows/ci.yml`) builds, tests, saves screenshots and an unsigned `.ipa`.

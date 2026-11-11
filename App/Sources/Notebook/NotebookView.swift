@@ -68,6 +68,7 @@ struct NotebookView: View {
         Color(uiColor: dark ? UIColor(argb: Int32(bitPattern: 0xFF2A_2338)) : UIColor(c.desk)).ignoresSafeArea()
         NoteCanvas(
           notebook: notebook, db: lib.db, tool: tool, pens: pens, viewOnly: viewing,
+          topClearance: narrow ? 164 : 104,
           settings: CanvasSettings(paper: paper, dark: dark, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between),
           bridge: bridge,
           eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize)),

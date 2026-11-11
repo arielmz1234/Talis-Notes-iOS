@@ -131,10 +131,12 @@ final class ScreenshotTests: XCTestCase {
     if app.buttons["tool-keyboard"].exists {
       app.buttons["tool-keyboard"].firstMatch.tap()
       settle()
-      let box = app.textViews["text-editor"].firstMatch
-      if box.waitForExistence(timeout: 3) {
-        box.tap()
-        box.typeText("Sum of moments = 0\nReaction R = 12 kN")
+      // The box sits inside PencilKit's canvas, which hides its subviews from accessibility:
+      // type into whatever has the keyboard, as a person would.
+      if app.keyboards.firstMatch.waitForExistence(timeout: 3) {
+        app.typeText("Sum of moments = 0\nReaction R = 12 kN")
+      } else {
+        XCTFail("no keyboard for the new text box")
       }
       shot("4g-typing")
       showTool(app, "tool-lasso")
