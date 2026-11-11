@@ -140,7 +140,7 @@ extension Library {
     let layer = PagesLayer()
     layer.layout = layout
     layer.count = pages.count
-    layer.paper = .BLANK
+    layer.paper = PaperSpec(style: .BLANK)
     if let pic = placed.first, let img = UIImage(contentsOfFile: AppFiles.folders.images.appendingPathComponent(pic.file).path)?.cgImage {
       layer.under.pictures = [(pic.rect, img)]
     }

@@ -29,8 +29,9 @@ struct UnderItems: @unchecked Sendable {
 final class PagesLayer: CATiledLayer, @unchecked Sendable {
   nonisolated(unsafe) var layout = Pages.portrait
   nonisolated(unsafe) var count = 1
-  nonisolated(unsafe) var paper = PaperStyle.GRID
-  nonisolated(unsafe) var dark = false
+  nonisolated(unsafe) var paper = PaperSpec(style: .GRID)
+  /// A picture paper's image, once loaded.
+  nonisolated(unsafe) var picture: CGImage?
   nonisolated(unsafe) var under = UnderItems()
 
   override class func fadeDuration() -> CFTimeInterval { 0.08 }
@@ -43,7 +44,7 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
     for i in 0..<max(count, 1) {
       let page = CGRect(layout.rect(i))
       guard page.intersects(rect) else { continue }
-      PaperPainter.draw(paper, page: page, in: cg, scale: scale, dark: dark)
+      PaperPainter.draw(paper, area: page, in: cg, scale: scale, picture: picture)
     }
     for p in under.pdfPages where p.rect.intersects(rect) { p.page.draw(in: p.rect, cg) }
     for pic in under.pictures where pic.rect.intersects(rect) {
@@ -73,7 +74,7 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
         cg.fillPath()
       }
       cg.addPath(path)
-      cg.setStrokeColor(UIColor(argb: dark ? s.color : s.color).cgColor)
+      cg.setStrokeColor(UIColor(argb: paper.dark ? DarkInk.onDarkPaper(s.color) : s.color).cgColor)
       cg.setLineWidth(CGFloat(s.size))
       if let dash = LineDash.pattern(s.line, width: CGFloat(s.size)) { cg.setLineDash(phase: 0, lengths: dash) } else { cg.setLineDash(phase: 0, lengths: []) }
       cg.strokePath()
@@ -81,9 +82,10 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
     cg.setLineDash(phase: 0, lengths: [])
     if !under.texts.isEmpty {
       UIGraphicsPushContext(cg)
-      for t in under.texts {
+      for var t in under.texts {
         let box = TextLook.frame(t)
         guard box.intersects(rect) else { continue }
+        if paper.dark { t.color = DarkInk.onDarkPaper(t.color) }
         TextLook.attributed(t).draw(with: CGRect(x: box.minX, y: box.minY, width: box.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil)
       }
       UIGraphicsPopContext()
@@ -269,7 +271,7 @@ struct NoteCanvas: UIViewRepresentable {
     let pages = PagesView(frame: .zero)
     pages.pages.layout = notebook.pageLayout
     pages.pages.paper = settings.paper
-    pages.pages.dark = settings.dark
+    pages.pages.picture = settings.paper.picture
     v.insertSubview(pages, at: 0)
     c.canvas = v
     c.pages = pages
@@ -416,9 +418,9 @@ struct NoteCanvas: UIViewRepresentable {
       let old = applied
       applied = parent.settings
       let s = parent.settings
-      if old?.paper != s.paper || old?.dark != s.dark {
+      if old?.paper != s.paper {
         pages.pages.paper = s.paper
-        pages.pages.dark = s.dark
+        pages.pages.picture = s.paper.picture
         pages.layer.setNeedsDisplay()
         canvas.overrideUserInterfaceStyle = s.dark ? .dark : .light
       }

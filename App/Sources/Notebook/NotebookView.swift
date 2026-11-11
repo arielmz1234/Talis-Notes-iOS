@@ -17,6 +17,7 @@ struct NotebookView: View {
     _viewing = State(initialValue: PhoneWriting.opensViewOnly(notebook.id, kind: notebook.kind))
     _title = State(initialValue: notebook.title)
     _paper = State(initialValue: notebook.paper)
+    _customPaper = State(initialValue: notebook.customPaper)
     _dark = State(initialValue: notebook.dark)
   }
   @Environment(Library.self) private var lib
@@ -45,6 +46,9 @@ struct NotebookView: View {
   @State private var renaming = false
   /// The notebook's paper and dark paper, changed from the ⋯ menu.
   @State private var paper: PaperStyle
+  /// One of her own papers, drawn instead of [paper] while it exists.
+  @State private var customPaper: String?
+  @State private var paperCard: PaperCard?
   @State private var dark: Bool
   @State private var moreOpen = false
   /// What the lasso picked up (window coordinates), a held spot offering Paste, and a hint line.
@@ -65,11 +69,11 @@ struct NotebookView: View {
     GeometryReader { geo in
       let narrow = geo.size.width < 900
       ZStack(alignment: .top) {
-        Color(uiColor: dark ? UIColor(argb: Int32(bitPattern: 0xFF2A_2338)) : UIColor(c.desk)).ignoresSafeArea()
+        Color(uiColor: dark ? UIColor(argb: Int32(bitPattern: 0xFF0E_0C13)) : UIColor(c.desk)).ignoresSafeArea()
         NoteCanvas(
           notebook: notebook, db: lib.db, tool: tool, pens: pens, viewOnly: viewing,
           topClearance: narrow ? 164 : 104,
-          settings: CanvasSettings(paper: paper, dark: dark, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between),
+          settings: CanvasSettings(paper: paperSpec, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between),
           bridge: bridge,
           eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize)),
           shapeKind: shapeKind,
@@ -184,6 +188,26 @@ struct NotebookView: View {
           }
           .transition(.opacity)
         }
+        if let card = paperCard {
+          DialogOverlay(onClose: closePaperCard) {
+            switch card {
+            case .builtIn(let style): BuiltInPaperCard(style: style, onDone: closePaperCard)
+            case .new, .edit:
+              NewPaperCard(
+                editing: card.editing,
+                onSave: { p in
+                  if card.editing != nil {
+                    PaperSettings.shared.update(p)
+                  } else {
+                    PaperSettings.shared.add(p)
+                    paperChoice.wrappedValue = .custom(p.id)
+                  }
+                  closePaperCard()
+                }, onCancel: closePaperCard)
+            }
+          }
+          .transition(.opacity)
+        }
         if exporting {
           DialogOverlay(onClose: { withAnimation(.easeOut(duration: 0.16)) { exporting = false } }) {
             ExportCard(bridge: bridge, paged: notebook.pages != nil) { withAnimation(.easeOut(duration: 0.16)) { exporting = false } }
@@ -223,11 +247,45 @@ struct NotebookView: View {
       }
     }
     .onChange(of: pens) { _, new in PenStore.save(new) }
-    .onChange(of: paper) { _, p in try? lib.db.run("UPDATE notebooks SET paper=? WHERE id=?", [.text(p.rawValue), .text(notebook.id)]) }
+    .onChange(of: paperColumn) { _, p in try? lib.db.run("UPDATE notebooks SET paper=? WHERE id=?", [.text(p), .text(notebook.id)]) }
     .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
     .statusBarHidden(fullScreen)
     .persistentSystemOverlays(fullScreen ? .hidden : .automatic)
   }
+
+  private var paperSpec: PaperSpec {
+    let papers = PaperSettings.shared
+    return papers.spec(paper, custom: papers.custom(customPaper), dark: dark)
+  }
+
+  /// What the notebook's paper column holds (Android's "custom:<id>" for one of hers).
+  private var paperColumn: String { customPaper.map { CustomPaper.prefix + $0 } ?? paper.rawValue }
+
+  /// Choosing a paper also makes it the one new notebooks start with, as on Android.
+  private var paperChoice: Binding<PaperChoice> {
+    Binding(
+      get: { customPaper.map(PaperChoice.custom) ?? .style(paper) },
+      set: { choice in
+        switch choice {
+        case .style(let s):
+          paper = s
+          customPaper = nil
+          UserDefaults.standard.set(s.rawValue, forKey: "defaultPaper")
+          PaperSettings.shared.defaultCustomPaper = nil
+        case .custom(let id):
+          paper = .BLANK
+          customPaper = id
+          PaperSettings.shared.defaultCustomPaper = id
+        }
+      })
+  }
+
+  private func openPaperCard(_ card: PaperCard) {
+    moreOpen = false
+    withAnimation(Ease.outStrong(duration: 0.24)) { paperCard = card }
+  }
+
+  private func closePaperCard() { withAnimation(.easeOut(duration: 0.16)) { paperCard = nil } }
 
   /// Shows [text] for a few seconds.
   private func show(_ text: String) {
@@ -303,7 +361,17 @@ struct NotebookView: View {
           .accessibilityIdentifier("more")
           .popover(isPresented: $moreOpen, arrowEdge: .top) {
             MoreMenu(
-              paged: notebook.pages != nil, paper: $paper, dark: $dark,
+              paged: notebook.pages != nil,
+              papers: {
+                PaperPicker(
+                  choice: paperChoice, customs: PaperSettings.shared.customPapers, dark: dark || barColors.isDark,
+                  onAdd: { openPaperCard(.new) },
+                  onRemove: { PaperSettings.shared.remove($0.id) },
+                  onEditCurrent: {
+                    if let id = customPaper, let p = PaperSettings.shared.custom(id) { openPaperCard(.edit(p)) } else { openPaperCard(.builtIn(paper)) }
+                  })
+              },
+              dark: $dark,
               fingerDraws: Binding(get: { fingerDraws }, set: { fingerDrawsRaw = $0 == nil ? -1 : ($0! ? 1 : 0) }),
               smartUndo: $smartUndo, between: $between, fullScreen: $fullScreen,
               onPages: {
@@ -424,5 +492,17 @@ enum PenStore {
   }
   static func save(_ p: [PenSlot]) {
     if let d = try? JSONEncoder().encode(p) { UserDefaults.standard.set(d, forKey: "pens") }
+  }
+}
+
+/// The paper card open over the notebook: a built-in paper's, a new paper of hers, or one of hers.
+enum PaperCard: Equatable {
+  case builtIn(PaperStyle)
+  case new
+  case edit(CustomPaper)
+
+  var editing: CustomPaper? {
+    if case .edit(let p) = self { return p }
+    return nil
   }
 }
