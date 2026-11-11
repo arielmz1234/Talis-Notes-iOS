@@ -162,16 +162,12 @@ struct NotebookView: View {
             }
             if !hidden { mainToolbar(showColors: !PhoneWriting.onPhone).bar("tools", 1, bars) }
           } else {
-            ZStack(alignment: .top) {
-              HStack(spacing: 10) {
-                if !hidden { leftBars.bar("title", 0, bars) }
-                Spacer(minLength: 10)
-                if !hidden { rightBars(showName: true).bar("undo", 2, bars) }
-              }
-              .frame(height: 60)
-              // Over the name pill, also while both are leaving.
-              if !hidden { mainToolbar(showColors: true).bar("tools", 1, bars).zIndex(1) }
+            TopBarLayout {
+              if !hidden { leftBars.bar("title", 0, bars).topBarRole(.title) }
+              if !hidden { mainToolbar(showColors: true).bar("tools", 1, bars).topBarRole(.tools).zIndex(1) }
+              if !hidden { rightBars(showName: true).bar("undo", 2, bars).topBarRole(.corner) }
             }
+            .frame(minHeight: 60, alignment: .top)
           }
           if !hidden, !viewing, let shown = panel {
             Spacer().frame(height: 10)
