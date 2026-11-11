@@ -362,7 +362,7 @@ struct NoteCanvas: UIViewRepresentable {
       case .pen(let id):
         lastPenId = id
         let pen = parent.pens.first { $0.id == id } ?? PenSlot.defaults[0]
-        canvas.tool = PKInkingTool(pen.type.ink, color: UIColor(argb: pen.inkColor), width: CGFloat(pen.size))
+        canvas.tool = PKInkingTool(pen.type.ink, color: UIColor(argb: pen.inkColor), width: InkWidth.toolWidth(pen.size, pen.type.ink))
       case .eraser:
         // Whole strokes, or precise (rubs out just what it passes over), at her size.
         if parent.eraser.precise {
@@ -410,9 +410,14 @@ struct NoteCanvas: UIViewRepresentable {
     }
 
     func reportUndo() {
-      let u = canvas?.undoManager
-      parent.onUndoState(u?.canUndo ?? false, u?.canRedo ?? false)
-      parent.onPageCount(pageCount)
+      // After the current view update: this is also called while the canvas is being made (loading),
+      // where a change to the screen's state would be dropped (a 2-page PDF showed "1 / 1").
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        let u = self.canvas?.undoManager
+        self.parent.onUndoState(u?.canUndo ?? false, u?.canRedo ?? false)
+        self.parent.onPageCount(self.pageCount)
+      }
     }
 
     // MARK: Size and zoom
@@ -430,11 +435,17 @@ struct NoteCanvas: UIViewRepresentable {
       canvas.contentSize = CGSize(width: world.width * z, height: (world.height + 300) * z)
       if !didFit, canvas.bounds.width > 0 {
         didFit = true
-        let fit = min((canvas.bounds.width - 48) / world.width, 1.2)
-        canvas.zoomScale = fit
-        centre()
-        // Start at the top of the first page, below the toolbars.
-        canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
+        // The page's whole width on screen (a slide-shaped PDF page is far wider than A4), once the
+        // canvas has its size: set during its first layout, the zoom didn't take.
+        DispatchQueue.main.async { [weak self] in
+          guard let self, let canvas = self.canvas, let pages = self.pages else { return }
+          let fit = min((canvas.bounds.width - 48) / pages.worldSize.width, 1.2)
+          canvas.setZoomScale(fit, animated: false)
+          self.updateContent()
+          // Start at the top of the first page, below the toolbars.
+          canvas.contentOffset = CGPoint(x: -canvas.contentInset.left, y: -canvas.contentInset.top)
+          self.reportView()
+        }
         return
       }
       centre()
@@ -524,6 +535,11 @@ struct NoteCanvas: UIViewRepresentable {
         } else {
           // A new stroke from the pen.
           let s = InkStroke.from(pk, pen: pen, id: newId(), z: z)
+          if !pen.type.pressureSensitive, pk.path.count > 2 {
+            // Keep the live width matching the stored one (see InkWidth).
+            let sizes = pk.path.map { $0.size.width }.sorted()
+            InkWidth.learn(pen.type.ink, toolWidth: InkWidth.toolWidth(pen.size, pen.type.ink), pointSize: sizes[sizes.count / 2])
+          }
           if ProcessInfo.processInfo.arguments.contains("-uitest"), pk.path.count > 0 {
             let mid = pk.path[pk.path.count / 2]
             let sizes = pk.path.map { $0.size.width }

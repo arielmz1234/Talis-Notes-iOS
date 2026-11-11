@@ -197,3 +197,26 @@ extension CGRect {
     self.init(x: CGFloat(r.left), y: CGFloat(r.top), width: CGFloat(r.width), height: CGFloat(r.height))
   }
 }
+
+/// How much wider PencilKit draws a live stroke than the tool width it's given, per ink (measured in
+/// the simulator: monoline 2.4 → points 4.40, about 1.83×). The tool is given the pen's size divided
+/// by this, so live strokes are the pen's real width, the width Android draws and the width they
+/// reload at. Learned again from each stroke of an ink without pressure, so it stays right.
+@MainActor
+enum InkWidth {
+  static func factor(_ ink: PKInk.InkType) -> CGFloat {
+    let stored = UserDefaults.standard.double(forKey: "inkWidth-\(ink.rawValue)")
+    if stored > 0 { return CGFloat(stored) }
+    return ink == .monoline ? 1.83 : 1
+  }
+
+  /// The tool width that draws a stroke [size] wide with [ink].
+  static func toolWidth(_ size: Float, _ ink: PKInk.InkType) -> CGFloat { CGFloat(size) / factor(ink) }
+
+  /// A live stroke drawn with [toolWidth] came out with points [pointSize] wide.
+  static func learn(_ ink: PKInk.InkType, toolWidth: CGFloat, pointSize: CGFloat) {
+    guard toolWidth > 0.1, pointSize > 0.1 else { return }
+    let f = min(max(pointSize / toolWidth, 0.5), 3)
+    UserDefaults.standard.set(Double(f), forKey: "inkWidth-\(ink.rawValue)")
+  }
+}
