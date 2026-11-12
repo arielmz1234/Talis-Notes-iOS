@@ -71,9 +71,13 @@ simulators and its own UI test class (`UITests/<Area>Tests.swift` on `ShotCase`;
       circle radius dot, soft selection, measuring badges (items 13, 14, 17, 18, 23, 24, 58, 85).
       Merged 12 Nov. Left: snapping and joint dots (with Selecting, more); rotation snaps to 45° as
       Android's code does (its README says 15°); stale ink after a lasso resize seen once on iPhone.
-- [ ] Pens and ink: line styles (19), quick colours and toolbar colours per pen (20, 30, 37),
+- [x] Pens and ink: line styles (19), quick colours and toolbar colours per pen (20, 30, 37),
       highlighter straight lines and square tip (25), laser (26), eraser filters and a precise
-      eraser of our own, Apple Pencil double-tap and squeeze (Android's side button)
+      eraser of our own, Apple Pencil double-tap and squeeze (Android's side button). Merged 12 Nov.
+      Not checked without a real Pencil: double-tap and squeeze, palm next to the pencil. Left: dashes
+      follow the curve (Android lays straight pieces); the eraser takes text boxes (Android's doesn't);
+      the gliding colour ring; on the iPad Pro 13 only, picking the highlighter right after removing
+      a pen with its panel open closes the panel instead.
 - [x] Library: folder colours, rename and move, folders inside folders with tiles and a path (3),
       the + card (63), mist when things go (8), gliding highlight everywhere (7), first-run tour (61),
       Select several notebooks. Merged 12 Nov. Left: the tour has 4 of 8 steps and Settings has no
