@@ -6,5 +6,45 @@
     "pt-BR": "Dica: toque duas vezes no Apple Pencil para mudar para a borracha e voltar.",
     "ar": "نصيحة: انقر مرتين على Apple Pencil للتبديل إلى الممحاة والعودة.",
     "he": "טיפ: הקשה כפולה על Apple Pencil עוברת למחק ובחזרה."
+  },
+  "tour_pencil_title": {
+    "en": "Apple Pencil tricks",
+    "es": "Trucos del Apple Pencil",
+    "fr": "Astuces Apple Pencil",
+    "pt-BR": "Truques do Apple Pencil",
+    "ar": "حيل Apple Pencil",
+    "he": "טריקים עם Apple Pencil"
+  },
+  "tour_pencil_body": {
+    "en": "Double-tap Apple Pencil, or squeeze Apple Pencil Pro, to switch to the eraser and back. Hold the pencil still at the end of a line and it becomes a clean shape. Tap with two fingers to undo.",
+    "es": "Toca dos veces el Apple Pencil, o aprieta el Apple Pencil Pro, para pasar al borrador y volver. Deja el lápiz quieto al final de una línea y se convierte en una forma limpia. Toca con dos dedos para deshacer.",
+    "fr": "Touchez deux fois l'Apple Pencil, ou pressez l'Apple Pencil Pro, pour passer à la gomme et revenir. Gardez le stylet immobile à la fin d'un trait : il devient une forme nette. Touchez avec deux doigts pour annuler.",
+    "pt-BR": "Toque duas vezes no Apple Pencil, ou aperte o Apple Pencil Pro, para mudar para a borracha e voltar. Segure a caneta parada no fim de um traço: vira uma forma perfeita. Toque com dois dedos para desfazer.",
+    "ar": "انقر مرتين على Apple Pencil، أو اضغط على Apple Pencil Pro، للتبديل إلى الممحاة والعودة. أبقِ القلم ثابتًا في نهاية الخط فيتحول إلى شكل متقن. انقر بإصبعين للتراجع.",
+    "he": "הקשה כפולה על Apple Pencil, או לחיצה על Apple Pencil Pro, עוברת למחק ובחזרה. משאירים את העיפרון במקום בסוף קו והוא הופך לצורה נקייה. הקשה בשתי אצבעות מבטלת."
+  },
+  "feat_pencil_title": {
+    "en": "Double-tap and squeeze",
+    "es": "Tocar dos veces y apretar",
+    "fr": "Toucher deux fois et presser",
+    "pt-BR": "Toque duplo e apertar",
+    "ar": "النقر المزدوج والضغط",
+    "he": "הקשה כפולה ולחיצה"
+  },
+  "feat_pencil_body": {
+    "en": "Double-tap Apple Pencil, or squeeze Apple Pencil Pro, to do what you chose in Settings › Apple Pencil: switch to the eraser and back, go back to the last tool, or open the pen's settings.",
+    "es": "Toca dos veces el Apple Pencil, o aprieta el Apple Pencil Pro, para hacer lo que elegiste en Ajustes › Apple Pencil: pasar al borrador y volver, volver a la herramienta anterior o abrir los ajustes del lápiz.",
+    "fr": "Touchez deux fois l'Apple Pencil, ou pressez l'Apple Pencil Pro, pour faire ce que vous avez choisi dans Réglages › Apple Pencil : passer à la gomme et revenir, revenir à l'outil précédent ou ouvrir les réglages du stylo.",
+    "pt-BR": "Toque duas vezes no Apple Pencil, ou aperte o Apple Pencil Pro, para fazer o que você escolheu em Ajustes › Apple Pencil: mudar para a borracha e voltar, voltar à ferramenta anterior ou abrir as configurações da caneta.",
+    "ar": "انقر مرتين على Apple Pencil، أو اضغط على Apple Pencil Pro، لتنفيذ ما اخترته في الإعدادات › Apple Pencil: التبديل إلى الممحاة والعودة، أو الرجوع إلى الأداة السابقة، أو فتح إعدادات القلم.",
+    "he": "הקשה כפולה על Apple Pencil, או לחיצה על Apple Pencil Pro, עושה את מה שנבחר בהגדרות › Apple Pencil: מעבר למחק ובחזרה, חזרה לכלי הקודם או פתיחת ההגדרות של העט."
+  },
+  "feat_paste_body_ios": {
+    "en": "Copy or cut something, then hold the pen or a finger still anywhere on the page: a Paste bubble appears right there.",
+    "es": "Copia o corta algo y luego mantén el lápiz o un dedo quieto en cualquier parte de la página: aparece una burbuja Pegar justo ahí.",
+    "fr": "Copiez ou coupez quelque chose, puis gardez le stylet ou un doigt immobile n’importe où sur la page : une bulle Coller apparaît juste là.",
+    "pt-BR": "Copie ou recorte algo e depois segure a caneta ou um dedo parado em qualquer lugar da página: uma bolha Colar aparece ali mesmo.",
+    "ar": "انسخ شيئًا أو قصّه، ثم اترك القلم أو إصبعك ثابتًا في أي مكان من الصفحة: تظهر فقاعة «لصق» هناك.",
+    "he": "מעתיקים או גוזרים משהו, ואז מחזיקים את העט או אצבע במקום כלשהו בעמוד: בועת הדבקה מופיעה בדיוק שם."
   }
 }

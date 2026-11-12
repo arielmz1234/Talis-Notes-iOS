@@ -5,7 +5,7 @@ import TaliCore
 
 /// The one card over the library at a time.
 enum LibraryDialog: Equatable {
-  case newNotebook, backups, settings, tour, emptyTrash
+  case newNotebook, backups, settings, tour, tips, emptyTrash
   case rename(NotebookMeta)
   case delete(NotebookMeta)
   case deletePicked(Set<String>)
@@ -138,8 +138,9 @@ struct LibraryView: View {
       }
     case .backups: BackupCard(onClose: { close() })
     case .settings:
-      SettingsCard(onClose: { close() }, onTour: { show(.tour) })
+      SettingsCard(onClose: { close() }, onTour: { show(.tour) }, onTips: { show(.tips) })
     case .tour: TourCard(onDone: { close() })
+    case .tips: FeaturesCard(onDone: { close() })
     case .rename(let n):
       NameCard(title: L("rename_notebook"), initial: n.title, placeholder: L("notebook_name"), confirm: L("rename"), onClose: { close() }) {
         lib.rename(n.id, to: $0)

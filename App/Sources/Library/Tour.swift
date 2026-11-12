@@ -7,8 +7,7 @@ struct TourStep {
   var picture: AnyView
 }
 
-/// A short walk through the app for someone new (Android's `TourCard`). Android's steps about
-/// subject shapes, voice memos, the S Pen and Google Drive are left out until the app has them.
+/// A short walk through the app for someone new (Android's `TourCard`), without its backups step.
 struct TourCard: View {
   var onDone: () -> Void
   var body: some View {
@@ -17,17 +16,21 @@ struct TourCard: View {
         TourStep(title: L("tour_write_title"), body: L("tour_write_body"), picture: AnyView(WritingPicture())),
         TourStep(title: L("tour_pens_title"), body: L("tour_pens_body"), picture: AnyView(PensPicture())),
         TourStep(title: L("tour_hold_title"), body: L("tour_hold_body"), picture: AnyView(HoldPicture())),
+        TourStep(title: L("tour_subjects_title"), body: L("tour_subjects_body"), picture: AnyView(StackPicture())),
         TourStep(title: L("tour_lasso_title"), body: L("tour_lasso_body"), picture: AnyView(LassoPicture())),
+        TourStep(title: L("tour_voice_title"), body: L("tour_voice_body"), picture: AnyView(VoicePicture())),
+        TourStep(title: L("tour_pencil_title"), body: L("tour_pencil_body"), picture: AnyView(PencilPicture())),
       ], finish: L("tour_start_writing"), onDone: onDone)
   }
 }
 
-/// A card that walks through [steps] one at a time (Android's `StepsCard`): a counter and Skip
-/// along the top, the step's picture beside its words, then dots, Back and Next; the last step's
-/// button says [finish].
+/// A card that walks through [steps] one at a time (Android's `StepsCard`): a counter (after
+/// [heading], if any) and Skip along the top, the step's picture beside its words, then dots, Back
+/// and Next; the last step's button says [finish].
 struct StepsCard: View {
   var steps: [TourStep]
   var finish: String
+  var heading: String?
   var onDone: () -> Void
   @Environment(\.tali) private var c
   @Environment(\.layoutDirection) private var direction
@@ -40,7 +43,8 @@ struct StepsCard: View {
   var body: some View {
     DialogCard(width: 760) {
       HStack(spacing: 0) {
-        Text(L("tour_step_n_of_n", at + 1, steps.count)).font(TaliType.labelMedium).foregroundStyle(c.inkFaint)
+        Text([heading, L("tour_step_n_of_n", at + 1, steps.count)].compactMap { $0 }.joined(separator: "  ·  "))
+          .font(TaliType.labelMedium).foregroundStyle(c.inkFaint)
         Spacer(minLength: 0)
         if !last {
           Button(action: onDone) {
@@ -115,12 +119,21 @@ struct StepsCard: View {
       .environment(\.layoutDirection, .leftToRight)
   }
 
-  /// One dot per step; the current one is a wider pill. Tapping a dot goes there.
+  /// One dot per step; the current one is a wider pill. Tapping a dot goes there. Many steps on a
+  /// phone get smaller dots, so all of them still fit beside Back and Next.
   private var dots: some View {
-    HStack(spacing: 6) {
+    ViewThatFits(in: .horizontal) {
+      dots(size: 8, current: 22, spacing: 6)
+      dots(size: 6, current: 14, spacing: 4)
+      dots(size: 5, current: 10, spacing: 3)
+    }
+  }
+
+  private func dots(size: CGFloat, current: CGFloat, spacing: CGFloat) -> some View {
+    HStack(spacing: spacing) {
       ForEach(steps.indices, id: \.self) { i in
         Capsule().fill(i == at ? c.accent : c.line)
-          .frame(width: i == at ? 22 : 8, height: 8)
+          .frame(width: i == at ? current : size, height: size)
           .animation(Ease.outStrong(duration: 0.24), value: at)
           .contentShape(Rectangle().inset(by: -6))
           .onTapGesture { go(i) }
@@ -132,7 +145,7 @@ struct StepsCard: View {
 // MARK: The pictures: small drawings that loop, in the app's colours
 
 /// 0..1 over [seconds], round and round; with Reduce Motion, held at [still].
-private struct Loop<Content: View>: View {
+struct Loop<Content: View>: View {
   var seconds: Double
   var still: Double
   @ViewBuilder var content: (Double) -> Content
@@ -149,13 +162,13 @@ private struct Loop<Content: View>: View {
   }
 }
 
-private func phase(_ t: Double, _ from: Double, _ to: Double) -> Double { min(max((t - from) / (to - from), 0), 1) }
+func phase(_ t: Double, _ from: Double, _ to: Double) -> Double { min(max((t - from) / (to - from), 0), 1) }
 
-private func ease(_ x: Double) -> Double { 1 - (1 - x) * (1 - x) * (1 - x) }
+func ease(_ x: Double) -> Double { 1 - (1 - x) * (1 - x) * (1 - x) }
 
 /// Joined-up "handwriting" from [x0] to [x1] on [baseline]: loops like cursive letters (a prolate
 /// trochoid), smaller and taller by turns, with gaps between words.
-private func cursive(_ x0: CGFloat, _ x1: CGFloat, _ baseline: CGFloat, _ height: CGFloat, seed: Int = 0) -> [CGPoint] {
+func cursive(_ x0: CGFloat, _ x1: CGFloat, _ baseline: CGFloat, _ height: CGFloat, seed: Int = 0) -> [CGPoint] {
   let step = height * 0.42
   let loops = max(Int((x1 - x0) / (step * 2 * .pi)), 2)
   var out: [CGPoint] = []
@@ -174,7 +187,7 @@ private func cursive(_ x0: CGFloat, _ x1: CGFloat, _ baseline: CGFloat, _ height
 }
 
 /// The first [part] of a polyline, as a path.
-private func partial(_ points: [CGPoint], _ part: Double) -> Path {
+func partial(_ points: [CGPoint], _ part: Double) -> Path {
   var path = Path()
   guard let first = points.first, part > 0 else { return path }
   var total: CGFloat = 0
@@ -196,18 +209,18 @@ private func partial(_ points: [CGPoint], _ part: Double) -> Path {
   return path
 }
 
-private func ink(_ ctx: GraphicsContext, _ path: Path, _ color: Color, _ width: CGFloat = 3) {
+func ink(_ ctx: GraphicsContext, _ path: Path, _ color: Color, _ width: CGFloat = 3) {
   ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
 }
 
-private func line(_ ctx: GraphicsContext, _ a: CGPoint, _ b: CGPoint, _ color: Color, _ width: CGFloat, round: Bool = false) {
+func line(_ ctx: GraphicsContext, _ a: CGPoint, _ b: CGPoint, _ color: Color, _ width: CGFloat, round: Bool = false) {
   var p = Path()
   p.move(to: a)
   p.addLine(to: b)
   ctx.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: round ? .round : .butt))
 }
 
-private func ruledPage(_ ctx: GraphicsContext, _ size: CGSize, _ c: TaliColors) {
+func ruledPage(_ ctx: GraphicsContext, _ size: CGSize, _ c: TaliColors) {
   var y: CGFloat = 26
   while y < size.height {
     line(ctx, CGPoint(x: 0, y: y), CGPoint(x: size.width, y: y), c.line, 1)
@@ -298,9 +311,7 @@ private struct HoldPicture: View {
         }
         if snap >= 1 {
           for p in [CGPoint(x: (l + r) / 2, y: top), CGPoint(x: r, y: (top + b) / 2), CGPoint(x: (l + r) / 2, y: b), CGPoint(x: l, y: (top + b) / 2)] {
-            let dot = Path(ellipseIn: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10))
-            ctx.fill(dot, with: .color(.white))
-            ctx.stroke(dot, with: .color(c.accent), lineWidth: 1.6)
+            handle(ctx, p, c, radius: 5, width: 1.6)
           }
         }
       }
@@ -336,6 +347,124 @@ private struct LassoPicture: View {
           let p = CGPoint(x: w * 0.2, y: h * 0.18)
           ctx.fill(Path(roundedRect: CGRect(x: p.x - 28, y: p.y - 12, width: 56, height: 24), cornerRadius: 12), with: .color(c.accent.opacity(paste)))
         }
+      }
+    }
+  }
+}
+
+func circle(_ center: CGPoint, _ radius: CGFloat) -> Path {
+  Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+}
+
+/// A dot like a shape's handle: white, ringed in the accent.
+func handle(_ ctx: GraphicsContext, _ at: CGPoint, _ c: TaliColors, radius: CGFloat = 5.5, width: CGFloat = 1.8) {
+  ctx.fill(circle(at, radius), with: .color(.white))
+  ctx.stroke(circle(at, radius), with: .color(c.accent), lineWidth: width)
+}
+
+func star(_ ctx: GraphicsContext, _ at: CGPoint, _ r: CGFloat, _ inner: CGFloat, _ color: Color) {
+  var p = Path()
+  for k in 0..<10 {
+    let rr = k % 2 == 0 ? r : inner
+    let a = -CGFloat.pi / 2 + CGFloat(k) * .pi / 5
+    let q = CGPoint(x: at.x + rr * cos(a), y: at.y + rr * sin(a))
+    if k == 0 { p.move(to: q) } else { p.addLine(to: q) }
+  }
+  p.closeSubpath()
+  ctx.fill(p, with: .color(color))
+}
+
+private struct StackPicture: View {
+  @Environment(\.tali) private var c
+  var body: some View {
+    Loop(seconds: 3.6, still: 0.5) { t in
+      Canvas { ctx, size in
+        let w = size.width, h = size.height
+        let grow = t < 0.5 ? ease(phase(t, 0.08, 0.45)) : 1 - ease(phase(t, 0.6, 0.95))
+        let cell: CGFloat = 22
+        let top = h * 0.1
+        let height = cell * (2.2 + 5 * grow)
+        let l = w * 0.36, r = w * 0.64
+        ctx.stroke(Path(roundedRect: CGRect(x: l, y: top, width: r - l, height: height), cornerRadius: 3), with: .color(c.ink), lineWidth: 2.4)
+        var y = top + cell
+        while y < top + height - 4 {
+          line(ctx, CGPoint(x: l, y: y), CGPoint(x: r, y: y), c.ink, 2)
+          y += cell
+        }
+        let dot = CGPoint(x: (l + r) / 2, y: top + height)
+        handle(ctx, dot, c, radius: 6, width: 2)
+        var way = Path()
+        way.move(to: CGPoint(x: dot.x, y: top + cell * 2.2))
+        way.addLine(to: CGPoint(x: dot.x, y: top + cell * 7.2))
+        ctx.stroke(way, with: .color(c.accent.opacity(0.35)), style: StrokeStyle(lineWidth: 1.5, dash: [5, 5]))
+        star(ctx, CGPoint(x: w * 0.82, y: h * 0.2), 13, 5.5, starGold)
+      }
+    }
+  }
+}
+
+private let memoRed = Color(argb: 0xFFE5_484D)
+
+private struct VoicePicture: View {
+  @Environment(\.tali) private var c
+  var body: some View {
+    Loop(seconds: 2.4, still: 0.25) { t in
+      Canvas { ctx, size in
+        let w = size.width, h = size.height
+        ctx.stroke(Path(roundedRect: CGRect(x: w * 0.06, y: h * 0.08, width: w * 0.5, height: h * 0.84), cornerRadius: 8), with: .color(c.line), lineWidth: 1.5)
+        for k in 0..<6 {
+          let y = h * (0.2 + CGFloat(k) * 0.12)
+          line(ctx, CGPoint(x: w * 0.12, y: y), CGPoint(x: w * 0.5, y: y), c.line, 1)
+        }
+        let b = CGPoint(x: w * 0.74, y: h * 0.32)
+        let pulse = sin(t * 2 * .pi) * 0.5 + 0.5
+        ctx.fill(circle(b, 20 + 6 * pulse), with: .color(memoRed.opacity(0.18)))
+        ctx.fill(circle(b, 14), with: .color(memoRed))
+        for k in 0..<9 {
+          let x = w * 0.62 + CGFloat(k) * 9
+          let amp = (0.3 + 0.7 * (sin(Double(k) * 1.3 + t * 2 * .pi * 2) * 0.5 + 0.5)) * 22
+          line(ctx, CGPoint(x: x, y: h * 0.66 - amp / 2), CGPoint(x: x, y: h * 0.66 + amp / 2), c.accent, 4, round: true)
+        }
+      }
+    }
+  }
+}
+
+/// Apple Pencil lying along [y] from [l] to [r] (its tip to the right), and the two quick rings of
+/// a double-tap on its side while [tapped] (0..1) runs.
+func pencil(_ ctx: GraphicsContext, _ c: TaliColors, y: CGFloat, l: CGFloat, r: CGFloat, tapped: Double) {
+  ctx.fill(Path(roundedRect: CGRect(x: l, y: y - 7, width: r - l, height: 14), cornerRadius: 4), with: .color(c.inkMuted))
+  var tip = Path()
+  tip.move(to: CGPoint(x: r, y: y - 7))
+  tip.addLine(to: CGPoint(x: r + 22, y: y))
+  tip.addLine(to: CGPoint(x: r, y: y + 7))
+  tip.closeSubpath()
+  ctx.fill(tip, with: .color(c.inkMuted.opacity(0.7)))
+  ctx.fill(circle(CGPoint(x: r + 20, y: y), 2), with: .color(c.ink))
+  for (from, to) in [(0.0, 0.45), (0.5, 0.95)] {
+    let k = phase(tapped, from, to)
+    guard k > 0 && k < 1 else { continue }
+    ctx.stroke(circle(CGPoint(x: r - 22, y: y), 5 + 12 * k), with: .color(c.accent.opacity(1 - k)), lineWidth: 2)
+  }
+}
+
+private struct PencilPicture: View {
+  @Environment(\.tali) private var c
+  var body: some View {
+    Loop(seconds: 3.4, still: 0.62) { t in
+      Canvas { ctx, size in
+        let w = size.width, h = size.height
+        ruledPage(ctx, size, c)
+        let pts = cursive(w * 0.12, w * 0.88, 26 * 3 - 3, 14, seed: 1)
+        let wiped = ease(phase(t, 0.45, 0.8))
+        let cut = w * 0.12 + w * 0.76 * wiped
+        var word = ctx
+        if wiped > 0 { word.clip(to: Path(CGRect(x: cut, y: 0, width: w - cut, height: h))) }
+        ink(word, partial(pts, ease(phase(t, 0, 0.35))), c.ink, 2.6)
+        if wiped > 0.01 && wiped < 0.99 {
+          ctx.stroke(circle(CGPoint(x: cut, y: 26 * 3 - 9), 12), with: .color(c.accent), lineWidth: 2)
+        }
+        pencil(ctx, c, y: h * 0.84, l: w * 0.2, r: w * 0.74, tapped: phase(t, 0.33, 0.45))
       }
     }
   }

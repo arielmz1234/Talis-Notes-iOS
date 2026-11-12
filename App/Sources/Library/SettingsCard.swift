@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsCard: View {
   var onClose: () -> Void = {}
   var onTour: () -> Void = {}
+  var onTips: () -> Void = {}
   @Environment(\.tali) private var c
   @Environment(\.openURL) private var openURL
   @Environment(\.colorScheme) private var scheme
@@ -43,15 +44,30 @@ struct SettingsCard: View {
           detail: pdfsToLibrary ? L("a_pdf_you_open_with_tali") : L("a_pdf_you_open_with_tali_2"))
       }
       Spacer().frame(height: 22)
-      HStack(spacing: 0) {
-        Button(L("take_the_tour"), action: onTour).buttonStyle(QuietButtonStyle()).accessibilityIdentifier("take-tour")
-        Spacer(minLength: 8)
-        Button(L("done")) { onClose() }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("settings-done")
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 8) {
+          walkthroughs
+          Spacer(minLength: 0)
+          done
+        }
+        VStack(alignment: .trailing, spacing: 8) {
+          HStack(spacing: 8) { walkthroughs }.frame(maxWidth: .infinity, alignment: .leading)
+          done
+        }
       }
       Spacer().frame(height: 14)
       Text(L("made_by_n", "Ariel M.") + " · " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
         .font(TaliType.labelSmall).foregroundStyle(c.inkFaint).frame(maxWidth: .infinity)
     }
+  }
+
+  @ViewBuilder private var walkthroughs: some View {
+    Button(L("take_the_tour"), action: onTour).buttonStyle(QuietButtonStyle()).accessibilityIdentifier("take-tour")
+    Button(L("tips_and_tricks"), action: onTips).buttonStyle(QuietButtonStyle()).accessibilityIdentifier("tips-and-tricks")
+  }
+
+  private var done: some View {
+    Button(L("done")) { onClose() }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("settings-done")
   }
 
   private var languageRow: some View {

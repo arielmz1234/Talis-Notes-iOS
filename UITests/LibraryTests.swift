@@ -159,19 +159,34 @@ final class LibraryTests: ShotCase {
     settle()
     app.buttons["take-tour"].firstMatch.tap()
     settle()
-    shot("lib-24-tour-1")
-    for i in 2...4 {
-      app.buttons["tour-next"].firstMatch.tap()
-      Thread.sleep(forTimeInterval: 1.5)
-      shot("lib-2\(3 + i)-tour-\(i)")
-    }
-    app.buttons["tour-next"].firstMatch.tap()
-    settle()
+    walk(app, steps: 7, name: "lib-24-tour")
+    XCTAssertFalse(app.buttons["tour-next"].exists, "Start writing closes the tour after its seventh step")
     app.buttons["add"].firstMatch.tap()
     settle()
     app.buttons["add-notebook"].firstMatch.tap()
     settle()
     shot("lib-28-new-notebook")
+  }
+
+  func testTips() {
+    let app = launch()
+    settle()
+    tapSidebar(app, "settings")
+    app.buttons["tips-and-tricks"].firstMatch.tap()
+    settle()
+    walk(app, steps: 15, name: "lib-50-tips")
+    XCTAssertFalse(app.buttons["tour-next"].exists, "Done closes the tips after the fifteenth")
+  }
+
+  /// Shoots each of a steps card's [steps] a moment into its drawing, then taps through the last.
+  private func walk(_ app: XCUIApplication, steps: Int, name: String) {
+    for i in 1...steps {
+      if i > 1 { app.buttons["tour-next"].firstMatch.tap() }
+      Thread.sleep(forTimeInterval: 1.5)
+      shot(String(format: "%@-%02d", name, i))
+    }
+    app.buttons["tour-next"].firstMatch.tap()
+    settle()
   }
 
   func testPortrait() throws {
