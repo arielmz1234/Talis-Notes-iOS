@@ -283,13 +283,16 @@ extension NoteCanvas.Coordinator {
   }
 
   /// Keeps a finished shape: stored as Android stores it, drawn with the page, one undo step.
-  func addShape(_ shape: ShapeRow) {
+  @discardableResult
+  func addShape(_ shape: ShapeRow) -> ShapeRow {
     var s = shape
     s.id = newId()
     let z = max(stored.map(\.stroke.z).max() ?? 0, shapeZ) + 1
     shapeZ = z
     putShape(s, z: z)
     registerShapeUndo(s, z: z)
+    s.z = z
+    return s
   }
 
   /// Undo takes the shape away; redo puts it back (and can be undone again).

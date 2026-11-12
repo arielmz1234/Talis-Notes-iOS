@@ -14,6 +14,9 @@ struct ShapeToolState {
   /// The start locked onto another shape, or lined up with them (its guides).
   var startStuck = false
   var startGuides: [SnapGuide] = []
+  /// The touch went to the shape just drawn (still picked up): its dots, chips, rotate handle or
+  /// inside it, which edit or move it as the lasso's selection does.
+  var editing = false
   let layer = CAShapeLayer()
 }
 
@@ -26,8 +29,23 @@ extension NoteCanvas.Coordinator {
     w.isEnabled = false
     w.accepts = { [weak self] t in self?.drawsShapes(t) ?? false }
     w.began = { [weak self] t, _ in self?.shapeBegan(t) }
-    w.moved = { [weak self] t, _ in self?.shapeMoved(t) }
-    w.ended = { [weak self] cancelled in self?.shapeEnded(cancelled) }
+    w.moved = { [weak self] t, e in
+      guard let self else { return }
+      if self.shapeTool.editing {
+        for s in e.coalescedTouches(for: t) ?? [t] { self.lassoStep(.changed, s) }
+      } else {
+        self.shapeMoved(t)
+      }
+    }
+    w.ended = { [weak self] cancelled in
+      guard let self else { return }
+      if self.shapeTool.editing {
+        self.shapeTool.editing = false
+        self.lassoStep(cancelled ? .cancelled : .ended, nil)
+      } else {
+        self.shapeEnded(cancelled)
+      }
+    }
     v.addGestureRecognizer(w)
     // One finger or the pen draws the shape; scrolling waits until it's clear it isn't one.
     v.panGestureRecognizer.require(toFail: w)
@@ -57,6 +75,24 @@ extension NoteCanvas.Coordinator {
 
   private func shapeBegan(_ t: UITouch) {
     guard let canvas else { return }
+    // The shape just drawn is still picked up: dragging inside it moves it rather than starting
+    // another (Android: the pen with the Shapes tool doesn't write through), its dots reshape it,
+    // its chips and handle resize, move and turn it. Anywhere else starts a new shape.
+    if lasso.bounds != nil {
+      let q = t.location(in: canvas)
+      let z = canvas.zoomScale
+      let p = CGPoint(x: q.x / z, y: q.y / z)
+      lasso.lastAt = p
+      if beginDotDrag(at: p) || beginResize(at: p) || beginRotate(at: p) {
+        shapeTool.editing = true
+        return
+      }
+      if let b = lasso.bounds, b.insetBy(dx: -8 / z, dy: -8 / z).contains(p) || onMoveChip(p) {
+        shapeTool.editing = true
+        lassoStep(.began, t)
+        return
+      }
+    }
     clearSelection()
     let q = t.location(in: canvas)
     shapeTool.startScreen = q
@@ -133,7 +169,8 @@ extension NoteCanvas.Coordinator {
     lasso.snap = nil
     showSnap([])
     drawShapePreview()
-    if let shape { addShape(shape) }
+    // A shape stays picked up after it's drawn, ready to adjust (Android's soft selection).
+    if let shape { select([], shapes: [addShape(shape)]) }
   }
 
   private func drawShapePreview() {

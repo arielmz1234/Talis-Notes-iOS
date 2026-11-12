@@ -455,7 +455,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     return (copies, shapeCopies)
   }
 
-  private func select(_ strokes: [InkStroke], shapes picked: [ShapeRow] = []) {
+  func select(_ strokes: [InkStroke], shapes picked: [ShapeRow] = []) {
     lasso.picked = Set(strokes.map(\.id))
     lasso.pickedShapes = Set(picked.map(\.id))
     lasso.bounds = joined(unionOf(strokes), unionOf(picked))

@@ -403,6 +403,7 @@ struct NoteCanvas: UIViewRepresentable {
       if let last = lastTool, last != parent.tool, textEdit.view != nil {
         DispatchQueue.main.async { self.finishText() }
       }
+      let toolChanged = lastTool != nil && lastTool != parent.tool
       lastTool = parent.tool
       // Draw with finger: Auto follows iOS's own Apple Pencil setting.
       if !ProcessInfo.processInfo.arguments.contains("-uitest") {
@@ -417,7 +418,8 @@ struct NoteCanvas: UIViewRepresentable {
       lasso.pan?.isEnabled = !parent.viewOnly && parent.tool == .lasso
       shapeTool.watcher?.isEnabled = !parent.viewOnly && parent.tool == .shape
       // Another tool puts down what the lasso picked up (after this update: it changes the screen's state).
-      if parent.tool != .lasso, lasso.bounds != nil || !lasso.loop.isEmpty {
+      // A shape the Shapes tool just drew stays picked up while that tool is on (Android's soft selection).
+      if toolChanged || (parent.tool != .lasso && parent.tool != .shape), lasso.bounds != nil || !lasso.loop.isEmpty {
         DispatchQueue.main.async { self.clearSelection() }
       }
       switch parent.tool {
