@@ -34,6 +34,50 @@ struct SelectionInfo: Equatable {
   var croppable = false
 }
 
+/// Scrolls the page while something is carried near a screen edge (Android's `edgeStep`): each
+/// frame, by what `EdgeScroll` says for where the carried thing is.
+@MainActor
+final class EdgeScroller: NSObject {
+  /// Where it's carried, in the canvas's visible area; nil when it's let go.
+  private(set) var at: CGPoint?
+  /// Called after each frame that scrolled: the page moved under the carried thing.
+  var scrolled: () -> Void = {}
+  private var rule: EdgeScroll
+  private let coordinator: () -> NoteCanvas.Coordinator?
+  private var link: CADisplayLink?
+
+  init(_ rule: EdgeScroll, coordinator: @escaping () -> NoteCanvas.Coordinator?) {
+    self.rule = rule
+    self.coordinator = coordinator
+  }
+
+  func carry(_ p: CGPoint?) {
+    at = p
+    if p != nil, link == nil {
+      rule = EdgeScroll(zone: rule.zone, dwell: rule.dwell)
+      let l = CADisplayLink(target: self, selector: #selector(step))
+      l.add(to: .main, forMode: .common)
+      link = l
+    } else if p == nil {
+      link?.invalidate()
+      link = nil
+    }
+  }
+
+  @objc private func step(_ l: CADisplayLink) {
+    guard let p = at, let c = coordinator(), let canvas = c.canvas else { return }
+    let by = rule.step(now: l.timestamp, at: Pt(p), screen: Pt(Float(canvas.bounds.width), Float(canvas.bounds.height)), topClearance: Float(c.parent.topClearance))
+    if by == .zero { return }
+    let inset = canvas.contentInset, o = canvas.contentOffset
+    let maxX = max(canvas.contentSize.width - canvas.bounds.width + inset.right, -inset.left)
+    let maxY = max(canvas.contentSize.height - canvas.bounds.height + inset.bottom, -inset.top)
+    let to = CGPoint(x: min(max(o.x + CGFloat(by.x), -inset.left), maxX), y: min(max(o.y + CGFloat(by.y), -inset.top), maxY))
+    if to == o { return }
+    canvas.contentOffset = to
+    scrolled()
+  }
+}
+
 extension Pt {
   init(_ p: CGPoint) { self.init(Float(p.x), Float(p.y)) }
 }

@@ -39,6 +39,8 @@ struct LassoState {
   var pasteAt: CGPoint?
   /// Where the lasso's touch last was (world units).
   var lastAt: CGPoint = .zero
+  /// Carrying what's picked up near a screen edge scrolls the page.
+  var edge: EdgeScroller?
   let loopLayer = CAShapeLayer()
   let chrome = SelectionChromeView()
   /// What this drag snaps to and the guides it shows (see Snapping.swift).
@@ -90,6 +92,9 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     lasso.shapeLayer.zPosition = 9
     v.layer.addSublayer(lasso.shapeLayer)
     v.addSubview(lasso.chrome)
+    let edge = EdgeScroller(.selection) { [weak self] in self }
+    edge.scrolled = { [weak self] in self?.pageScrolledUnderTheCarried() }
+    lasso.edge = edge
     installLock(on: v)
     installShotFlash(on: v)
   }
@@ -151,11 +156,16 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     case .changed:
       if lasso.drag != nil {
         continueDrag(to: p)
+        if let t, case .move? = lasso.drag {
+          let q = t.location(in: canvas)
+          lasso.edge?.carry(CGPoint(x: q.x - canvas.bounds.minX, y: q.y - canvas.bounds.minY))
+        }
       } else if !lasso.loop.isEmpty {
         lasso.loop.append(p)
         drawLoop()
       }
     case .ended, .cancelled, .failed:
+      lasso.edge?.carry(nil)
       if lasso.drag != nil {
         endDrag(cancelled: phase != .ended)
       } else if phase == .cancelled {
@@ -167,6 +177,14 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       }
     default: break
     }
+  }
+
+  /// The page scrolled while what's picked up was held at an edge: it stays under the finger or pen.
+  private func pageScrolledUnderTheCarried() {
+    guard let canvas, case .move? = lasso.drag, let s = lasso.edge?.at else { return }
+    let z = canvas.zoomScale
+    lasso.lastAt = CGPoint(x: (s.x + canvas.bounds.minX) / z, y: (s.y + canvas.bounds.minY) / z)
+    continueDrag(to: Pt(lasso.lastAt))
   }
 
   /// The loop is done (Android's `finishLasso`): the screenshot lasso takes its picture; a tap picks

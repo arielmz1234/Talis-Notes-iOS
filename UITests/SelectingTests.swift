@@ -596,6 +596,39 @@ final class SelectingTests: ShotCase {
     XCTAssertGreaterThan(redText(), 8, "undo brings it back")
   }
 
+  /// What's picked up, carried to the bottom of the screen and rested there, scrolls the page along
+  /// and stays under the finger.
+  func testCarryingToAnEdgeScrollsThePage() {
+    let app = openNewNotebook()
+    let window = app.windows.firstMatch.frame
+    func onPage(_ n: Int) -> Bool { app.buttons.matching(NSPredicate(format: "label == %@", "\(n) / 3")).firstMatch.exists }
+    // Three pages, so there's somewhere to scroll to on any screen.
+    app.buttons.matching(NSPredicate(format: "label == %@", "1 / 1")).firstMatch.tap()
+    settle()
+    app.buttons["Add a page"].firstMatch.tap()
+    app.buttons["Add a page"].firstMatch.tap()
+    app.buttons["Done"].firstMatch.tap()
+    settle()
+    drag(app, (0.30, 0.44), (0.52, 0.45))
+    lasso(app)
+    drag(app, (0.40, 0.38), (0.44, 0.56))
+    let f = selectionFrame(app)
+    XCTAssertTrue(onPage(1), "it starts on page 1 of 3")
+    // Across the bottom edge's zone and straight back: passing through doesn't scroll.
+    let grab = CGPoint(x: f.midX, y: f.midY)
+    point(app, grab).press(forDuration: 0.05, thenDragTo: point(app, CGPoint(x: grab.x, y: window.height * 0.6)), withVelocity: .fast, thenHoldForDuration: 0.05)
+    settle()
+    XCTAssertTrue(onPage(1), "carried about in the middle of the screen, the page stays")
+    let now = selectionFrame(app)
+    shot("g1-resting-at-the-edge", after: 2.5) {
+      self.point(app, CGPoint(x: now.midX, y: now.midY)).press(
+        forDuration: 0.05, thenDragTo: self.point(app, CGPoint(x: now.midX, y: window.height - 20)), withVelocity: .slow, thenHoldForDuration: 4)
+    }
+    XCTAssertFalse(onPage(1), "rested at the bottom edge, the page scrolled along")
+    XCTAssertGreaterThan(selectionFrame(app).midY, window.height * 0.7, "and what's carried stayed under the finger")
+    calmShot("g2-carried-to-a-later-page")
+  }
+
   func testSnapping() {
     let app = openNewNotebook()
     let window = app.windows.firstMatch.frame

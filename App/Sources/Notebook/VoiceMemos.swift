@@ -38,10 +38,7 @@ final class MemoModel {
   @ObservationIgnored weak var bridge: CanvasBridge?
   @ObservationIgnored private var notebookId = ""
   @ObservationIgnored private var db: NotesDb?
-  @ObservationIgnored private var carry: CADisplayLink?
-  @ObservationIgnored private var carried: CGPoint?
-  @ObservationIgnored private var edgeSince: CFTimeInterval = 0
-  @ObservationIgnored private var edgeFrameAt: CFTimeInterval = 0
+  @ObservationIgnored private lazy var edge = EdgeScroller(.memo) { [weak self] in self?.bridge?.coordinator }
 
   static let draftId = "draft"
 
@@ -188,61 +185,8 @@ final class MemoModel {
     bridge?.coordinator?.touch()
   }
 
-  // MARK: Carrying near an edge
-
-  /// A memo carried at [at] (canvas points), or nil when let go: resting near an edge scrolls the page.
-  func carry(_ at: CGPoint?) {
-    carried = at
-    if at != nil, carry == nil {
-      edgeSince = 0
-      edgeFrameAt = 0
-      let link = CADisplayLink(target: EdgeStep(self), selector: #selector(EdgeStep.step))
-      link.add(to: .main, forMode: .common)
-      carry = link
-    } else if at == nil {
-      carry?.invalidate()
-      carry = nil
-    }
-  }
-
-  /// Screen points per second to scroll with the memo at [p]: nothing outside the edge zones (140 pt,
-  /// below the toolbars at the top), then a gentle ramp the deeper it goes (Android's `edgeVelocity`).
-  private func edgeVelocity(_ p: CGPoint, size: CGSize) -> CGPoint {
-    let zone: CGFloat = 140
-    let top = max(zone, CGFloat(placement.topClearance) + 20)
-    func push(_ dist: CGFloat, _ z: CGFloat) -> CGFloat {
-      let t = min(max((z - dist) / z, 0), 1)
-      return t * t
-    }
-    let most: CGFloat = 900
-    return CGPoint(x: (push(size.width - p.x, zone) - push(p.x, zone)) * most, y: (push(size.height - p.y, zone) - push(p.y, top)) * most)
-  }
-
-  fileprivate func edgeStep(_ now: CFTimeInterval) {
-    guard let p = carried, let canvas = bridge?.coordinator?.canvas else { return }
-    let v = edgeVelocity(p, size: canvas.bounds.size)
-    if v == .zero {
-      edgeSince = 0
-    } else {
-      if edgeSince == 0 { edgeSince = now }
-      // Passing an edge on the way somewhere doesn't scroll; resting there does.
-      if now - edgeSince >= 0.06, edgeFrameAt != 0 {
-        let dt = min(now - edgeFrameAt, 0.032)
-        let maxY = max(canvas.contentSize.height - canvas.bounds.height + canvas.contentInset.bottom, -canvas.contentInset.top)
-        let maxX = max(canvas.contentSize.width - canvas.bounds.width + canvas.contentInset.right, -canvas.contentInset.left)
-        let o = canvas.contentOffset
-        canvas.contentOffset = CGPoint(
-          x: min(max(o.x + v.x * dt, -canvas.contentInset.left), maxX), y: min(max(o.y + v.y * dt, -canvas.contentInset.top), maxY))
-      }
-    }
-    edgeFrameAt = now
-  }
-
-  @MainActor private final class EdgeStep: NSObject {
-    weak var model: MemoModel?
-    init(_ m: MemoModel) { model = m }
-    @objc func step(_ link: CADisplayLink) { model?.edgeStep(link.timestamp) }
-  }
+  /// A memo carried at [at] (in the canvas's visible area), or nil when let go: resting near an edge scrolls the page.
+  func carry(_ at: CGPoint?) { edge.carry(at) }
 }
 
 func memoClock(_ ms: Int64) -> String {
