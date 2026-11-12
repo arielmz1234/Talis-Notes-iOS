@@ -102,3 +102,23 @@ simulators and its own UI test class (`UITests/<Area>Tests.swift` on `ShotCase`;
       recoloured (46), snapping (49) and joint dots. Merged 12 Nov with pens unified (one eraser,
       one undo step, one Picks up).
 - [ ] Phone layout pass over all of the above (67, 73)
+
+### Parity leftovers (12 Nov, from the agents' reports)
+A. Notebook and phone:
+- [ ] Phone: the tools row (eight tools) puts the eraser off the left edge; a pass over every phone
+      screen (toolbar, panels, menus, cards) for anything cut off or covered.
+- [ ] Typed text's small bar (size, colour, delete, done) as Android's TextEditor.
+- [ ] The eraser leaves typed text alone (Android's `eraserHits` is false without a pen).
+- [ ] After a precise erase cuts a fill's outline, the pieces still travel with the fill (Android's
+      `finishErase` regroups `walls`).
+- [ ] Memos follow page delete and reorder; the overview drags a picked group of pages; a deleted
+      page goes on a puff.
+- [ ] Carrying a selection or memo to a screen edge scrolls the page (Android's `edgeStep`).
+- [ ] iPad Pro 13: the first tap on another pen after "Remove this pen" only closes the panel.
+- [ ] The 14 remaining rounded `contentShape`s (taps reach the neighbouring control).
+B. Library, look and export:
+- [ ] The first-run tour's other steps (subject shapes, voice memos and PDFs, Apple Pencil tricks)
+      and Settings' Tips and tricks card.
+- [ ] The new-notebook card and library card pictures show her own papers.
+- [ ] Export PDF draws writing as vector lines (Android's), not a picture.
+- [ ] The Shapes tool's tips ("Drag on the page to draw the shape", part circle).
