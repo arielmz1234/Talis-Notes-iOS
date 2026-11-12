@@ -10,6 +10,15 @@
    screenshots, macOS runners sometimes queue). Batch changes, and read compile errors with
    `gh run view <id> --log-failed | grep error:`.
 
+## Windows sessions 4–5 (11–12 Nov 2026), merged without their code
+
+While the Mac ran the parity work, the scheduled task on the owner's Windows PC kept going and
+pushed 15 commits to `main` (shape dots, snapping, resize/move chips and rotate handle, the Shapes
+Style tab, soft selection). The Mac's `main` had all of these in fuller form, built and tested with
+the rest, so they were merged with `git merge -s ours` (commit "Merge the Windows sessions 4–5"):
+their history is kept, their code isn't used. Turn that scheduled task off (OWNER_TODO.md) so the
+two machines don't build the same things again.
+
 ## Parity run (session 3, 11–12 Nov 2026)
 
 Goal: parity with Android except backups, iCloud and Drive. Six areas were built by agents in
