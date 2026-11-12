@@ -56,7 +56,7 @@ struct SelectionMenu: View {
           switch extra {
           case .colour:
             HStack(spacing: 0) {
-              ForEach(Palette.saved, id: \.self) { col in
+              ForEach(Palettes.shared.saved, id: \.self) { col in
                 ColorDot(color: Color(argb: col), selected: false, size: 22) { onCommand(.recolourSelection(col)) }
                   .frame(maxWidth: .infinity)
               }

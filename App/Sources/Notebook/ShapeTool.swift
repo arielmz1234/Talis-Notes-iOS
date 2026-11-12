@@ -102,13 +102,12 @@ extension NoteCanvas.Coordinator {
     if let (a, b) = s.geometry.squareHint { hint.addLines(between: [a, b].map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) }) }
     shapeTool.squareHint.path = hint
     let path = CGMutablePath()
-    for line in s.geometry.paths(s.size) where line.count > 1 {
+    for line in s.strokes where line.count > 1 {
       path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
     }
     shapeTool.layer.path = path
-    shapeTool.layer.strokeColor = UIColor(argb: s.color).cgColor
+    shapeTool.layer.strokeColor = UIColor(argb: s.inkColor).cgColor
     shapeTool.layer.lineWidth = CGFloat(s.size) * z
     shapeTool.layer.fillColor = (s.geometry.closed ? s.fill.map { UIColor(argb: $0).cgColor } : nil) ?? UIColor.clear.cgColor
-    shapeTool.layer.lineDashPattern = LineDash.pattern(s.line, width: CGFloat(s.size) * z)?.map { NSNumber(value: Double($0)) }
   }
 }

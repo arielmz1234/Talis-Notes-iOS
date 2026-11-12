@@ -106,9 +106,8 @@ private struct FillWalls: @unchecked Sendable {
     cg.setLineJoin(.round)
     cg.setStrokeColor(UIColor.black.cgColor)
     for s in shapes {
-      for line in s.geometry.paths(s.size) where line.count > 1 { cg.addLines(between: line.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }) }
+      for line in s.strokes where line.count > 1 { cg.addLines(between: line.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }) }
       cg.setLineWidth(CGFloat(s.size))
-      cg.setLineDash(phase: 0, lengths: LineDash.pattern(s.line, width: CGFloat(s.size)) ?? [])
       cg.strokePath()
     }
     if !texts.isEmpty {

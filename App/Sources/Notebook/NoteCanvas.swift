@@ -12,6 +12,8 @@ enum Tool: Equatable {
   case lasso
   case shape
   case fill
+  /// Points at things with a glowing trail that fades away; nothing is kept.
+  case laser
 }
 
 /// What the page layer draws besides paper: shapes and pictures from the notebook (pictures first,
@@ -75,14 +77,10 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
     cg.setLineCap(.round)
     cg.setLineJoin(.round)
     for s in under.shapes {
-      let paths = s.geometry.paths(s.size)
       let path = CGMutablePath()
-      for line in paths where line.count > 1 {
-        path.move(to: CGPoint(x: CGFloat(line[0].x), y: CGFloat(line[0].y)))
-        for p in line.dropFirst() { path.addLine(to: CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))) }
-      }
+      for line in s.strokes { path.addLines(between: line.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }) }
       guard path.boundingBox.insetBy(dx: -CGFloat(s.size) * 2, dy: -CGFloat(s.size) * 2).intersects(rect) else { continue }
-      if let fill = s.fill, s.geometry.closed, let outline = paths.first, outline.count > 2 {
+      if let fill = s.fill, s.geometry.closed, let outline = s.geometry.paths(s.size).first, outline.count > 2 {
         let f = CGMutablePath()
         f.addLines(between: outline.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) })
         f.closeSubpath()
@@ -91,12 +89,10 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
         cg.fillPath()
       }
       cg.addPath(path)
-      cg.setStrokeColor(UIColor(argb: paper.dark ? DarkInk.onDarkPaper(s.color) : s.color).cgColor)
+      cg.setStrokeColor(UIColor(argb: paper.dark ? DarkInk.onDarkPaper(s.inkColor) : s.inkColor).cgColor)
       cg.setLineWidth(CGFloat(s.size))
-      if let dash = LineDash.pattern(s.line, width: CGFloat(s.size)) { cg.setLineDash(phase: 0, lengths: dash) } else { cg.setLineDash(phase: 0, lengths: []) }
       cg.strokePath()
     }
-    cg.setLineDash(phase: 0, lengths: [])
     if !under.texts.isEmpty {
       UIGraphicsPushContext(cg)
       for var t in under.texts {
@@ -152,23 +148,6 @@ enum TextLook {
   static func frame(_ t: TextRow) -> CGRect {
     let h = max(textHeight(t), t.fontSize * TextRow.line, t.height)
     return CGRect(x: CGFloat(t.x), y: CGFloat(t.y), width: CGFloat(t.width), height: CGFloat(h))
-  }
-}
-
-/// Android's line styles as Core Graphics dashes (visible lengths in multiples of the line's width; 0 = a round dot).
-enum LineDash {
-  static func pattern(_ name: String, width: CGFloat) -> [CGFloat]? {
-    let p: [CGFloat]
-    switch name {
-    case "DOTTED": p = [0, 1.7]
-    case "LONG_DASH": p = [6, 2.4]
-    case "SHORT_DASH": p = [2.4, 2]
-    case "DOT_DASH": p = [4, 2, 0, 2]
-    case "MIXED_DASH": p = [6, 2, 2.2, 2]
-    default: return nil
-    }
-    // With round caps each part grows by a width, so the gaps take that back.
-    return p.enumerated().map { i, v in i % 2 == 0 ? max(v * width, 0.01) : (v + 1) * width }
   }
 }
 
@@ -238,6 +217,7 @@ struct NoteCanvas: UIViewRepresentable {
   /// Lets the notebook screen ask for page pictures.
   var bridge: CanvasBridge? = nil
   var eraser = EraserSettings()
+  var lassoPicks = LassoSettings()
   /// The shape the Shapes tool draws.
   var shape: ShapeSource = .kind(.LINE)
   var onUndoState: (Bool, Bool) -> Void
@@ -248,6 +228,8 @@ struct NoteCanvas: UIViewRepresentable {
   var onHint: (String) -> Void = { _ in }
   /// A hold on the page offering Paste there (window coordinates), or nil.
   var onPasteOffer: (CGPoint?) -> Void = { _ in }
+  /// Apple Pencil was double-tapped or squeezed, with what the system's settings say it should do.
+  var onPencil: (PencilGesture.Preference) -> Void = { _ in }
   /// The page in the middle of the screen and the zoom, as they change (for the page and zoom chips).
   var onView: (Int, CGFloat) -> Void = { _, _ in }
   @Binding var command: CanvasCommand?
@@ -275,10 +257,12 @@ struct NoteCanvas: UIViewRepresentable {
     c.applied = settings
     c.installSelection(on: v)
     c.installHoldToShape(on: v)
-    c.installShapeEraser(on: v)
+    c.installEraser(on: v)
     c.installShapeTool(on: v)
     c.installFillTool(on: v)
     c.installTextBoxes(on: v)
+    c.installOwnInk(on: v)
+    c.installPencilGestures(on: v)
     bridge?.coordinator = c
     v.minimumZoomScale = 0.2
     v.maximumZoomScale = 6
@@ -320,6 +304,7 @@ struct NoteCanvas: UIViewRepresentable {
 
   static func dismantleUIView(_ v: PKCanvasView, coordinator: Coordinator) {
     coordinator.saveNow()
+    coordinator.history?.removeAllActions()
   }
 
   @MainActor
@@ -333,6 +318,9 @@ struct NoteCanvas: UIViewRepresentable {
     /// The highest z among shapes, so new items go on top of them.
     var shapeZ: Int64 = 0
     var loading = false
+    /// The window's undo manager outlives this screen, so its steps are dropped on leaving: kept,
+    /// Undo stayed lit after reopening with nothing real behind it (Android starts each visit fresh).
+    weak var history: UndoManager?
     private var didFit = false
     private var saveWork: DispatchWorkItem?
 
@@ -372,19 +360,23 @@ struct NoteCanvas: UIViewRepresentable {
     var layout: Pages { parent.notebook.pageLayout }
     var paged: Bool { parent.notebook.pages != nil }
 
+    /// Nil when a stroke that began at [y] isn't cut off anywhere.
+    func pageClip(startingAt y: Float) -> CGRect? {
+      guard paged, let r = layout.clip(anchorY: y, count: pageCount, between: parent.settings.between) else { return nil }
+      return CGRect(r)
+    }
+
     /// The page a stroke belongs to (where it began), as a PencilKit mask.
     func mask(for s: InkStroke) -> UIBezierPath? {
-      guard paged, let first = s.inputs.points.first else { return nil }
-      guard let r = layout.clip(anchorY: first.y, count: pageCount, between: parent.settings.between) else { return nil }
-      return UIBezierPath(rect: CGRect(x: CGFloat(r.left), y: CGFloat(r.top), width: CGFloat(r.width), height: CGFloat(r.height)))
+      guard let first = s.inputs.points.first, let page = pageClip(startingAt: first.y) else { return nil }
+      return UIBezierPath(rect: page)
     }
 
     func load() {
       guard let canvas else { return }
       loading = true
       let rows = (try? parent.db.items(of: parent.notebook.id)) ?? []
-      var strokes: [PKStroke] = []
-      stored = []
+      var inks: [InkStroke] = []
       shapeZ = 0
       var under = UnderItems()
       for row in rows {
@@ -410,13 +402,13 @@ struct NoteCanvas: UIViewRepresentable {
           under.pictures.append(pic)
           continue
         }
-        guard let ink = InkStroke(row: row) else { continue }
-        let pk = ink.pkStroke(mask: mask(for: ink))
-        strokes.append(pk)
-        stored.append((StrokeKey(pk), ink))
+        if let ink = InkStroke(row: row) { inks.append(ink) }
       }
       pages?.pages.under = under
-      canvas.drawing = PKDrawing(strokes: strokes)
+      // Highlighter under the writing, as Android draws it.
+      let drawn = (inks.filter(\.pen.isHighlighter) + inks.filter { !$0.pen.isHighlighter }).map { ($0.pkStroke(mask: mask(for: $0)), $0) }
+      stored = drawn.map { (StrokeKey($0.0), $0.1) }
+      canvas.drawing = PKDrawing(strokes: drawn.map(\.0))
       loading = false
       updateContent()
       applyTool()
@@ -431,16 +423,18 @@ struct NoteCanvas: UIViewRepresentable {
     var lasso = LassoState()
     /// Hold-to-shape (see HoldToShape.swift).
     var hold = HoldState()
-    /// The eraser on shapes (see ShapeSelection.swift).
-    var shapeEraser = ShapeEraser()
     /// Page numbers and the pull past the last page (see PageChrome.swift).
     var pageChrome = PageChromeState()
+    /// The eraser (see Eraser.swift).
+    var erasing = EraserState()
     /// The Shapes tool (see ShapeTool.swift), and the pen last used (shapes take its look).
     var shapeTool = ShapeToolState()
     /// The Fill tool (see FillTool.swift).
     var fillTool = FillToolState()
     /// Typing in a text box (see TextBoxes.swift).
     var textEdit = TextEditState()
+    /// The laser and the ink the notebook draws itself (see OwnInk.swift).
+    var own = OwnInkState()
     var lastTool: Tool?
     var lastPenId: String?
 
@@ -498,9 +492,6 @@ struct NoteCanvas: UIViewRepresentable {
       case true?: canvas.drawingPolicy = .anyInput
       case false?: canvas.drawingPolicy = .pencilOnly
       }
-      // Just looking: fingers and the pencil scroll and zoom, nothing writes. The lasso draws its own
-      // loop, and a touch that's editing the selection doesn't write.
-      canvas.drawingGestureRecognizer.isEnabled = inkOn && lasso.drag == nil
       applyFillTool()
       lasso.pan?.isEnabled = !parent.viewOnly
       shapeTool.watcher?.isEnabled = !parent.viewOnly && parent.tool == .shape
@@ -509,20 +500,21 @@ struct NoteCanvas: UIViewRepresentable {
         lastPenId = id
         let pen = parent.pens.first { $0.id == id } ?? PenSlot.defaults[0]
         canvas.tool = PKInkingTool(pen.type.ink, color: UIColor(argb: pen.inkColor), width: InkWidth.toolWidth(pen.size, pen.type.ink))
-      case .eraser:
-        // Whole strokes, or precise (rubs out just what it passes over), at her size.
-        if parent.eraser.precise {
-          canvas.tool = PKEraserTool(.bitmap, width: CGFloat(parent.eraser.size))
-        } else {
-          canvas.tool = PKEraserTool(.vector, width: CGFloat(parent.eraser.size))
-        }
-      case .lasso, .shape, .fill:
-        // Our own lasso, Shapes and Fill tools (Android's): the canvas doesn't draw while they're in use.
+      case .eraser, .lasso, .shape, .fill, .laser:
+        // Our own eraser, lasso, Shapes, Fill and laser (Android's): the canvas doesn't draw while they're in use.
         canvas.tool = PKInkingTool(.monoline, color: .clear, width: 1)
       }
+      // After the tool is set: setting it switches PencilKit's drawing back on (it then drew its own
+      // stroke under ours until the pen lifted). A touch editing the selection doesn't write.
+      canvas.drawingGestureRecognizer.isEnabled = inkOn && lasso.drag == nil
     }
 
-    var inkOn: Bool { !parent.viewOnly && parent.tool != .lasso && parent.tool != .shape && parent.tool != .fill }
+    /// Whether PencilKit draws: a pen, not just looking, and not a pen whose ink the notebook draws
+    /// itself (dashed lines, the highlighter). The other tools, and just looking, never write.
+    var inkOn: Bool {
+      guard !parent.viewOnly, case .pen = parent.tool else { return false }
+      return ownInk == nil
+    }
 
     func run(_ cmd: CanvasCommand) {
       guard let canvas else { return }
@@ -574,6 +566,7 @@ struct NoteCanvas: UIViewRepresentable {
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
         let u = self.canvas?.undoManager
+        self.history = u
         self.parent.onUndoState(u?.canUndo ?? false, u?.canRedo ?? false)
         self.parent.onPageCount(self.pageCount)
       }
@@ -701,9 +694,7 @@ struct NoteCanvas: UIViewRepresentable {
           var s = stored[i].stroke
           if pk.transform != .identity {
             // Moved or resized with the lasso: store the moved points, and draw it untransformed.
-            let tags = s.tags
-            s = InkStroke.from(pk, pen: PenSlot(id: "", type: s.pen, color: s.color, size: s.size), id: s.id, z: s.z)
-            s.tags = tags
+            s = InkStroke.from(pk, pen: PenSlot(id: "", type: s.pen, color: s.color, size: s.size), id: s.id, z: s.z, tags: s.tags)
             s.size = Float(CGFloat(s.size) * sqrt(abs(pk.transform.a * pk.transform.d - pk.transform.b * pk.transform.c)))
             changed.append(s)
             let fresh = s.pkStroke(mask: mask(for: s))
@@ -714,11 +705,13 @@ struct NoteCanvas: UIViewRepresentable {
             rebuilt.append(pk)
             next.append((key, s))
           }
-        } else if let given = pending.removeValue(forKey: key) ?? archive[key] {
-          // A copy we put there ourselves (duplicate, paste, a box): it keeps its own pen.
-          var s = given
-          s.z = z
-          z += 1
+        } else if var s = pending.removeValue(forKey: key) ?? archive[key] {
+          // Put there by the app (a copy, a box, an eraser's piece) or brought back by undo: it keeps
+          // its own pen, and its place in the stack when it has one (a new stroke goes on top).
+          if s.z == 0 {
+            s.z = z
+            z += 1
+          }
           changed.append(s)
           growPages(for: s)
           rebuilt.append(pk)
@@ -751,6 +744,14 @@ struct NoteCanvas: UIViewRepresentable {
             next.append((key, s))
           }
         }
+      }
+      // Highlighter stays under the writing however late it was added (Android draws it first).
+      let highlights = next.indices.filter { next[$0].stroke.pen.isHighlighter }
+      if let last = highlights.last, last >= highlights.count {
+        let order = highlights + next.indices.filter { !next[$0].stroke.pen.isHighlighter }
+        next = order.map { next[$0] }
+        rebuilt = order.map { rebuilt[$0] }
+        needsRebuild = true
       }
       // A stroke replaced under the same id (recoloured, mirrored) isn't removed.
       let keptIds = Set(next.map(\.stroke.id))
@@ -847,12 +848,6 @@ enum CanvasCommand: Equatable {
   case goToPage(Int)
   /// One endless page, or back to A4 pages.
   case setEndless(Bool)
-}
-
-/// The eraser as she set it in its panel.
-struct EraserSettings: Equatable {
-  var precise = false
-  var size: Float = 20
 }
 
 /// A plain log of things that went wrong, kept on the device (Android's CrashLog, simplified).

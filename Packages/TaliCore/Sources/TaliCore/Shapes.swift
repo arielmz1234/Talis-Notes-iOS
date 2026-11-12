@@ -318,6 +318,22 @@ extension ShapeRow {
 extension ShapeRow {
   /// Its item row, with its own id and z.
   public var itemRow: ItemRow { row(id: id, z: z) }
+
+  /// The lines to draw (Android's `StrokeFactory.shapeStrokes`): a dotted or dashed shape is cut
+  /// into its pieces, to be drawn with round ends.
+  public var strokes: [[Pt]] {
+    let paths = geometry.paths(size).filter { $0.count >= 2 }
+    guard let style = LineStyle(rawValue: line), style != .SOLID else { return paths }
+    return paths.flatMap { Dashes.cut($0, size: size, line: style) }
+  }
+
+  /// The colour it's drawn in (Android's `Brushes.shapeInk`): a highlighter's shape is see-through
+  /// like its ink, other shapes keep the opacity they were given, and a colour saved without any is opaque.
+  public var inkColor: Int32 {
+    if pen == PenType.HIGHLIGHTER.rawValue { return PenSlot.inkColor(.HIGHLIGHTER, color) }
+    let c = UInt32(bitPattern: color)
+    return c >> 24 == 0 ? Int32(bitPattern: c | 0xFF00_0000) : color
+  }
 }
 
 /// A typed text box (Android's `TextItem`, item kind 3): its text, top-left, width it wraps in, its

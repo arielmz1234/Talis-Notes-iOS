@@ -19,7 +19,7 @@ struct FillPanel: View {
       SectionLabel(text: L("colour"))
       Spacer().frame(height: 8)
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 38, maximum: 38), spacing: 2)], alignment: .leading, spacing: 2) {
-        ForEach(Array(Palette.saved.enumerated()), id: \.element) { i, col in
+        ForEach(Array(Palettes.shared.saved.enumerated()), id: \.element) { i, col in
           ColorDot(color: Color(argb: col), selected: !none && UInt32(truncatingIfNeeded: colour) == col) {
             colour = Int(col)
             none = false

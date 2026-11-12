@@ -51,7 +51,7 @@ struct ShapeStylePicker: View {
       SectionLabel(text: L("outline_colour"))
       Spacer().frame(height: 6)
       ColourFlow {
-        ForEach(Array(Palette.saved.enumerated()), id: \.element) { i, col in
+        ForEach(Array(Palettes.shared.saved.enumerated()), id: \.element) { i, col in
           ColorDot(color: Color(argb: col), selected: col | 0xFF00_0000 == outline, size: 26) {
             if !followsPen { update { $0.color = Int32(bitPattern: col | 0xFF00_0000) } }
           }
@@ -64,7 +64,7 @@ struct ShapeStylePicker: View {
       Spacer().frame(height: 6)
       ColourFlow {
         NoneDot(selected: fill == nil, size: 26) { update { $0.fill = nil } }
-        ForEach(Array(Palette.saved.enumerated()), id: \.element) { i, col in
+        ForEach(Array(Palettes.shared.saved.enumerated()), id: \.element) { i, col in
           ColorDot(color: Color(argb: col), selected: col | 0xFF00_0000 == fill, size: 26) { update { $0.fill = Int32(bitPattern: col | 0xFF00_0000) } }
             .accessibilityIdentifier("shape-fill-\(i)")
         }
@@ -141,16 +141,23 @@ struct ShapeStylePreview: View {
   var body: some View {
     Canvas { ctx, size in
       let w = max(CGFloat(look.size) * 0.9, 1)
-      let dash = LineDash.pattern(look.line, width: w) ?? []
+      let style = LineStyle(rawValue: look.line) ?? .SOLID
+      // Cut into pieces as the page cuts a dashed shape (Android's `StrokeFactory.dashes`).
+      func pieces(_ points: [CGPoint]) -> Path {
+        var p = Path()
+        let line = points.map { Pt(Float($0.x), Float($0.y)) }
+        for part in style == .SOLID ? [line] : Dashes.cut(line, size: Float(w), line: style) where part.count > 1 {
+          p.addLines(part.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) })
+        }
+        return p
+      }
       let ink = Color(uiColor: UIColor(argb: look.outlineArgb))
       let box = CGRect(x: size.width * 0.1, y: size.height * 0.2, width: size.width * 0.42, height: size.height * 0.6)
       if let fill = look.fillArgb { ctx.fill(Path(box), with: .color(Color(uiColor: UIColor(argb: fill)))) }
-      ctx.stroke(Path(box), with: .color(ink), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round, dash: dash))
+      let corners = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.minX, y: box.minY)]
+      ctx.stroke(pieces(corners), with: .color(ink), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
       let a = CGPoint(x: size.width * 0.62, y: size.height * 0.74), b = CGPoint(x: size.width * 0.9, y: size.height * 0.26)
-      var shaft = Path()
-      shaft.move(to: a)
-      shaft.addLine(to: b)
-      ctx.stroke(shaft, with: .color(ink), style: StrokeStyle(lineWidth: w, lineCap: .round, dash: dash))
+      ctx.stroke(pieces([a, b]), with: .color(ink), style: StrokeStyle(lineWidth: w, lineCap: .round))
       // The arrowhead stays solid, as on the page.
       let len = hypot(b.x - a.x, b.y - a.y)
       let dir = CGPoint(x: (b.x - a.x) / len, y: (b.y - a.y) / len)
@@ -215,7 +222,7 @@ struct CompactLineStylePicker: View {
           var p = Path()
           p.move(to: CGPoint(x: size.width * 0.15, y: size.height / 2))
           p.addLine(to: CGPoint(x: size.width * 0.85, y: size.height / 2))
-          ctx.stroke(p, with: .color(on ? c.accent : c.ink), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: LineDash.pattern(line, width: 2) ?? []))
+          ctx.stroke(p, with: .color(on ? c.accent : c.ink), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: (LineStyle(rawValue: line) ?? .SOLID).dash(width: 2)))
         }
         .frame(maxWidth: .infinity).frame(height: 30)
         .background {

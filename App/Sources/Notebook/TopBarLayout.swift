@@ -24,7 +24,8 @@ struct TopBarLayout: SwiftUI.Layout {
   func sizeThatFits(proposal: ProposedViewSize, subviews: LayoutSubviews, cache: inout ()) -> CGSize {
     let width = proposal.width ?? 0
     let m = measure(width, subviews)
-    let height = max(m.tools?.size.height ?? 0, mid + (m.title?.size.height ?? 0) / 2, mid + (m.corner?.size.height ?? 0) / 2)
+    let top = top(m)
+    let height = max(top + (m.tools?.size.height ?? 0), top + mid + (m.title?.size.height ?? 0) / 2, top + mid + (m.corner?.size.height ?? 0) / 2)
     return CGSize(width: width, height: height)
   }
 
@@ -34,9 +35,15 @@ struct TopBarLayout: SwiftUI.Layout {
     let from = titleWidth + gap
     let to = max(bounds.width - cornerWidth - gap - toolsWidth, from)
     let x = min(max((bounds.width - toolsWidth) / 2, from), to)
-    if let t = m.title { t.view.place(at: CGPoint(x: bounds.minX, y: bounds.minY + mid), anchor: .leading, proposal: ProposedViewSize(t.size)) }
-    if let t = m.tools { t.view.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY), anchor: .topLeading, proposal: ProposedViewSize(t.size)) }
-    if let c = m.corner { c.view.place(at: CGPoint(x: bounds.maxX, y: bounds.minY + mid), anchor: .trailing, proposal: ProposedViewSize(c.size)) }
+    let top = bounds.minY + top(m)
+    if let t = m.title { t.view.place(at: CGPoint(x: bounds.minX, y: top + mid), anchor: .leading, proposal: ProposedViewSize(t.size)) }
+    if let t = m.tools { t.view.place(at: CGPoint(x: bounds.minX + x, y: top), anchor: .topLeading, proposal: ProposedViewSize(t.size)) }
+    if let c = m.corner { c.view.place(at: CGPoint(x: bounds.maxX, y: top + mid), anchor: .trailing, proposal: ProposedViewSize(c.size)) }
+  }
+
+  /// A title or corner taller than the tools' middle line pushes everything down (Android's `top`).
+  private func top(_ m: (title: Part?, tools: Part?, corner: Part?)) -> CGFloat {
+    max(0, (m.title?.size.height ?? 0) / 2 - mid, (m.corner?.size.height ?? 0) / 2 - mid)
   }
 
   private typealias Part = (view: LayoutSubview, size: CGSize)

@@ -2,28 +2,8 @@ import PencilKit
 import TaliCore
 import UIKit
 
-/// The Android app's pen types (stored by name in the `pen` column).
-enum PenType: String, CaseIterable, Codable, Sendable {
-  case FINELINER, FOUNTAIN, PENCIL, CALLIGRAPHY, HIGHLIGHTER, DASHED
-
-  var defaultSize: Float {
-    switch self {
-    case .FINELINER, .PENCIL: 2.5
-    case .FOUNTAIN: 3
-    case .CALLIGRAPHY: 7
-    case .HIGHLIGHTER: 18
-    case .DASHED: 2.4
-    }
-  }
-  var maxSize: Float {
-    switch self {
-    case .CALLIGRAPHY: 30
-    case .HIGHLIGHTER: 40
-    default: 20
-    }
-  }
-  static let offered: [PenType] = [.FINELINER, .FOUNTAIN, .PENCIL, .CALLIGRAPHY, .HIGHLIGHTER]
-
+/// How each Android pen type is drawn here.
+extension PenType {
   /// The PencilKit ink that draws it live.
   var ink: PKInk.InkType {
     switch self {
@@ -36,59 +16,6 @@ enum PenType: String, CaseIterable, Codable, Sendable {
 
   /// Width varies with pressure.
   var pressureSensitive: Bool { self == .FOUNTAIN || self == .CALLIGRAPHY || self == .PENCIL }
-}
-
-/// One pen in the toolbar (Android's `PenSlot`, the parts ported so far).
-struct PenSlot: Codable, Hashable, Identifiable, Sendable {
-  var id: String
-  var type: PenType
-  var color: Int32
-  var size: Float
-  /// Her three thicknesses (empty until she sets them) and which one is in use (Android's `sizes`, `sizeSlot`).
-  var sizes: [Float] = []
-  var sizeSlot = 1
-  /// How many of its palette's colours sit in the toolbar; nil until set (the app-wide number).
-  var toolbarColors: Int? = nil
-
-  init(id: String, type: PenType, color: Int32, size: Float, sizes: [Float] = [], sizeSlot: Int = 1, toolbarColors: Int? = nil) {
-    self.id = id
-    self.type = type
-    self.color = color
-    self.size = size
-    self.sizes = sizes
-    self.sizeSlot = sizeSlot
-    self.toolbarColors = toolbarColors
-  }
-
-  // Missing keys take their defaults, as kotlinx.serialization does (pens saved before these fields, or from Android).
-  init(from decoder: Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    id = try c.decode(String.self, forKey: .id)
-    type = try c.decode(PenType.self, forKey: .type)
-    color = try c.decode(Int32.self, forKey: .color)
-    size = try c.decode(Float.self, forKey: .size)
-    sizes = try c.decodeIfPresent([Float].self, forKey: .sizes) ?? []
-    sizeSlot = try c.decodeIfPresent(Int.self, forKey: .sizeSlot) ?? 1
-    toolbarColors = try c.decodeIfPresent(Int.self, forKey: .toolbarColors)
-  }
-
-  static let highlighterAlpha: UInt32 = 0x66
-  static let defaultColors: [UInt32] = [
-    0xFF1B_1F2A, 0xFF4A_5160, 0xFF1F_5FD1, 0xFFD8_3A3A, 0xFF1E_9E6A, 0xFFF0_8A24, 0xFF7A_4FD8, 0xFFFF_D60A, 0xFFFF_6FA8, 0xFF9B_6BF2, 0xFF5A_A9E6,
-  ]
-
-  static let defaults: [PenSlot] = [
-    PenSlot(id: "p1", type: .FINELINER, color: Int32(bitPattern: defaultColors[0]), size: 2.4),
-    PenSlot(id: "p2", type: .FOUNTAIN, color: Int32(bitPattern: defaultColors[2]), size: 3),
-    PenSlot(id: "p4", type: .FINELINER, color: Int32(bitPattern: defaultColors[3]), size: 2.4),
-    PenSlot(id: "p5", type: .HIGHLIGHTER, color: Int32(bitPattern: defaultColors[7]), size: 18),
-  ]
-
-  /// The colour strokes are stored in: highlighters see-through, everything else opaque (`Brushes.inkColor`).
-  var inkColor: Int32 {
-    let c = UInt32(bitPattern: color)
-    return Int32(bitPattern: type == .HIGHLIGHTER ? (c & 0x00FF_FFFF) | (PenSlot.highlighterAlpha << 24) : c | 0xFF00_0000)
-  }
 }
 
 extension UIColor {
@@ -148,6 +75,20 @@ struct InkStroke {
       l: b.left, t: b.top, r: b.right, b: b.bottom)
   }
 
+  /// The old dashed pen drew short dashes.
+  var line: LineStyle {
+    pen == .DASHED ? .SHORT_DASH : tags.lazy.compactMap(LineStyle.init(rawValue:)).first ?? .SOLID
+  }
+
+  var square: Bool { tags.contains("SQUARE") }
+
+  var locked: Bool { tags.contains("LOCKED") }
+
+  /// Android's pen column: "PEN/STYLE" for a dotted or dashed stroke, "HIGHLIGHTER/SQUARE" for the square tip.
+  static func tags(for pen: PenSlot) -> [String] {
+    (pen.lineStyle == .SOLID ? [] : [pen.lineStyle.rawValue]) + (pen.square ? ["SQUARE"] : [])
+  }
+
   /// Where it's drawn: its samples grown by half the pen.
   var bounds: TaliCore.Rect {
     (inputs.bounds ?? TaliCore.Rect(0, 0, 0, 0)).outset(size / 2)
@@ -163,6 +104,17 @@ struct InkStroke {
 
   /// The PencilKit stroke that draws it, kept to [mask] (its page) when given.
   func pkStroke(mask: UIBezierPath?) -> PKStroke {
+    if let look = InkLook(pen: pen, line: line, square: square) {
+      let at = inputs.points.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }
+      var shape = look.outline(size: CGFloat(size), points: at)
+      if let mask, !mask.bounds.contains(shape.boundingBoxOfPath) { shape = shape.intersection(mask.cgPath) }
+      let cover = CGFloat(size) * InkLook.coverPerSize + InkLook.coverExtra
+      let under = PKStrokePath(
+        controlPoints: zip(at, inputs.points).map { p, i in
+          PKStrokePoint(location: p, timeOffset: TimeInterval(i.t), size: CGSize(width: cover, height: cover), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2, secondaryScale: 1)
+        }, creationDate: Date())
+      return PKStroke(ink: PKInk(.monoline, color: UIColor(argb: color)), path: under, transform: .identity, mask: UIBezierPath(cgPath: shape))
+    }
     let ink = PKInk(pen.ink, color: UIColor(argb: color))
     let start = Date(timeIntervalSinceReferenceDate: 0)
     // Built like PencilKit's own live points for this ink (see InkWidth).
@@ -180,17 +132,20 @@ struct InkStroke {
   }
 
   /// A stroke PencilKit just drew, in world units (the canvas's drawing is kept at zoom 1).
-  static func from(_ s: PKStroke, pen: PenSlot, id: String, z: Int64) -> InkStroke {
+  static func from(_ s: PKStroke, pen: PenSlot, id: String, z: Int64, tags: [String]? = nil) -> InkStroke {
     let t = s.transform
+    // A finger has no pressure: its force reads 0, and stored as the lightest touch a fountain pen's
+    // stroke came back as a hairline, here and on Android. It's kept as a medium touch instead.
+    let finger = !s.path.contains { $0.force > 0 }
     let pts = s.path.map { p -> InkInput in
       let at = p.location.applying(t)
       // Android's pressure is 0...1; half of Apple Pencil's force (which runs to about 4) reads the same.
-      let pressure = Float(min(max(p.force / 2, 0), 1))
+      let pressure = finger ? 0.5 : Float(min(max(p.force / 2, 0), 1))
       return InkInput(
         x: Float(at.x), y: Float(at.y), t: Float(p.timeOffset), pressure: pressure, tilt: Float(max(0, .pi / 2 - p.altitude)),
         orientation: Float(p.azimuth.truncatingRemainder(dividingBy: 2 * .pi) + (p.azimuth < 0 ? 2 * .pi : 0)))
     }
-    return InkStroke(id: id, z: z, pen: pen.type, color: pen.inkColor, size: pen.size, inputs: InkInputs(points: pts, tool: .stylus))
+    return InkStroke(id: id, z: z, pen: pen.type, tags: tags ?? InkStroke.tags(for: pen), color: pen.inkColor, size: pen.size, inputs: InkInputs(points: pts, tool: .stylus))
   }
 }
 

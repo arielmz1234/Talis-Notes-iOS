@@ -124,14 +124,13 @@ extension NoteCanvas.Coordinator {
 
   private func trace(_ s: ShapeRow, on l: CAShapeLayer, zoom z: CGFloat) {
     let path = CGMutablePath()
-    for line in s.geometry.paths(s.size) where line.count > 1 {
+    for line in s.strokes {
       path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
     }
     l.path = path
-    l.strokeColor = UIColor(argb: s.color).cgColor
+    l.strokeColor = UIColor(argb: s.inkColor).cgColor
     l.lineWidth = CGFloat(s.size) * z
     if let fill = s.fill, s.geometry.closed { l.fillColor = UIColor(argb: fill).cgColor } else { l.fillColor = UIColor.clear.cgColor }
-    l.lineDashPattern = LineDash.pattern(s.line, width: CGFloat(s.size) * z)?.map { NSNumber(value: Double($0)) }
   }
 
   /// The carried shapes and text boxes follow the drag: moved, resized or turned by [t] (world units).
@@ -170,70 +169,7 @@ extension NoteCanvas.Coordinator {
   }
 }
 
-/// The eraser on shapes (Android's eraser takes whole shapes it passes over): PencilKit's eraser only
-/// knows ink, so a watcher follows the eraser's touch and takes shapes off as it reaches them.
-struct ShapeEraser {
-  var watcher: StrokeWatcher?
-  var before: [ShapeRow]?
-  var textsBefore: [TextRow]?
-}
-
 extension NoteCanvas.Coordinator {
-  func installShapeEraser(on v: PKCanvasView) {
-    let w = StrokeWatcher(target: nil, action: nil)
-    w.delegate = self
-    w.began = { [weak self] t, _ in self?.eraseBegan(t) }
-    w.moved = { [weak self] t, e in
-      for s in e.coalescedTouches(for: t) ?? [t] { self?.eraseAt(s) }
-    }
-    w.ended = { [weak self] _ in self?.eraseEnded() }
-    v.addGestureRecognizer(w)
-    shapeEraser.watcher = w
-  }
-
-  private func eraseBegan(_ t: UITouch) {
-    shapeEraser.before = nil
-    guard parent.tool == .eraser, draws(t), claim(t) == nil else { return }
-    shapeEraser.before = shapes
-    eraseAt(t)
-  }
-
-  private func eraseAt(_ t: UITouch) {
-    guard let canvas, shapeEraser.before != nil else { return }
-    let q = t.location(in: canvas)
-    let p = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
-    let reach = parent.eraser.size / 2
-    // Text boxes go when the eraser passes over them, like a shape (Android's eraser takes them whole).
-    let textHits = texts.filter { !$0.locked && TextLook.frame($0).insetBy(dx: -CGFloat(reach), dy: -CGFloat(reach)).contains(CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))) }
-    if !textHits.isEmpty {
-      if shapeEraser.textsBefore == nil { shapeEraser.textsBefore = texts }
-      let goneTexts = Set(textHits.map(\.id))
-      setTexts(texts.filter { !goneTexts.contains($0.id) })
-    }
-    let hit = shapes.filter { s in
-      guard !s.locked, let b = s.geometry.bounds(s.size), b.outset(reach).contains(p) else { return false }
-      let r = reach + s.size / 2
-      return s.geometry.paths(s.size).contains { line in
-        line.count > 1 && (0..<(line.count - 1)).contains { Geo.distToSegment(p, line[$0], line[$0 + 1]) <= r }
-      }
-    }
-    if hit.isEmpty { return }
-    let gone = Set(hit.map(\.id))
-    setShapes(shapes.filter { !gone.contains($0.id) })
-  }
-
-  private func eraseEnded() {
-    if let tb = shapeEraser.textsBefore {
-      shapeEraser.textsBefore = nil
-      if tb != texts { registerTextsChange(from: tb, to: texts) }
-    }
-    guard let before = shapeEraser.before else { return }
-    shapeEraser.before = nil
-    let after = shapes
-    if before == after { return }
-    registerShapesChange(from: before, to: after)
-  }
-
   /// One undo step between two lists of shapes (redo goes forward again).
   func registerShapesChange(from before: [ShapeRow], to after: [ShapeRow]) {
     canvas?.undoManager?.registerUndo(withTarget: self) { c in

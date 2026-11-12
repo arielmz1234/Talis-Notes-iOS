@@ -1,3 +1,4 @@
+import PencilKit
 import SwiftUI
 import TaliCore
 
@@ -6,68 +7,14 @@ import TaliCore
 // the pen's settings, her first few colours, her three thicknesses, then the tools.
 
 /// Which panel hangs under the toolbar.
-enum PanelKind { case pen, eraser, shapes, fill }
-
-/// Saved colours (Android's `savedColors` / `highlighterColors`) and how many sit in the toolbar.
-enum Palette {
-  static let defaultHighlighter: [UInt32] = [0xFFFF_D60A, 0xFFFF_6FA8, 0xFF5A_A9E6, 0xFF7D_DB8A, 0xFFFF_A94D]
-
-  static var saved: [UInt32] {
-    get { (UserDefaults.standard.array(forKey: "savedColors") as? [Int])?.map { UInt32(truncatingIfNeeded: $0) } ?? PenSlot.defaultColors }
-    set { UserDefaults.standard.set(newValue.map { Int($0) }, forKey: "savedColors") }
-  }
-  static var highlighter: [UInt32] {
-    get { (UserDefaults.standard.array(forKey: "highlighterColors") as? [Int])?.map { UInt32(truncatingIfNeeded: $0) } ?? defaultHighlighter }
-    set { UserDefaults.standard.set(newValue.map { Int($0) }, forKey: "highlighterColors") }
-  }
-  /// How many colours a pen shows in the toolbar until it has its own number (Android's default 3).
-  static var toolbarColors: Int { UserDefaults.standard.object(forKey: "toolbarColors") as? Int ?? 3 }
-
-  static func colors(for pen: PenSlot) -> [UInt32] { pen.type == .HIGHLIGHTER ? highlighter : saved }
-  static func toolbarCount(for pen: PenSlot) -> Int { pen.toolbarColors ?? toolbarColors }
-}
-
-extension PenSlot {
-  /// The three thicknesses; until she sets them, a thinner and a thicker one around [size] (Android's `presetSizes`).
-  var presetSizes: [Float] {
-    if sizes.count == 3 { return sizes }
-    func half(_ v: Float) -> Float { (v * 2).rounded() / 2 }
-    let minSize: Float = 0.5
-    let thin = min(max(half(size * 0.6), minSize), size)
-    let thick = min(max(half(size * 1.6), size), type.maxSize)
-    switch min(max(sizeSlot, 0), 2) {
-    case 0: return [size, min(half(size * 1.6), type.maxSize), min(half(size * 2.5), type.maxSize)]
-    case 2: return [max(half(size * 0.4), minSize), thin, size]
-    default: return [thin, size, thick]
-    }
-  }
-
-  /// A new thickness for the one of the three she's on.
-  func withSize(_ v: Float) -> PenSlot {
-    var p = self
-    var all = presetSizes
-    all[min(max(sizeSlot, 0), 2)] = v
-    p.size = v
-    p.sizes = all
-    return p
-  }
-
-  /// Switches to her [i]th thickness.
-  func pickSize(_ i: Int) -> PenSlot {
-    var p = self
-    let all = presetSizes
-    p.sizeSlot = i
-    p.size = all[i]
-    p.sizes = all
-    return p
-  }
-}
+enum PanelKind { case pen, eraser, lasso, shapes, fill }
 
 /// A pen drawn like a real tool standing in a tray (Android's `PenGlyph`): neutral body, a coloured
 /// band, and a tip shaped by its style. 26 × 56 pt, the tip pointing up.
 struct PenGlyph: View {
   var type: PenType
   var color: Color
+  var line = LineStyle.SOLID
   @Environment(\.tali) private var c
 
   var body: some View {
@@ -83,6 +30,14 @@ struct PenGlyph: View {
       ctx.fill(Path(roundedRect: bodyRect, cornerRadius: 3 * u), with: .color(bodyFill))
       ctx.stroke(Path(roundedRect: bodyRect, cornerRadius: 3 * u), with: .color(outline), lineWidth: u)
       ctx.fill(Path(CGRect(x: cx - half, y: bodyTop + 9 * u, width: half * 2, height: 4 * u)), with: .color(color))
+      let pattern = type == .DASHED ? LineStyle.SHORT_DASH : line
+      if pattern != .SOLID {
+        let w = 2 * u
+        var down = Path()
+        down.move(to: CGPoint(x: cx, y: bodyTop + 18 * u))
+        down.addLine(to: CGPoint(x: cx, y: size.height))
+        ctx.stroke(down, with: .color(color.opacity(0.75)), style: StrokeStyle(lineWidth: w, lineCap: .round, dash: pattern.dash(width: w)))
+      }
       func cone(_ top: CGFloat, _ topHalf: CGFloat) {
         var p = Path()
         p.move(to: CGPoint(x: cx - half, y: bodyTop))
@@ -173,7 +128,7 @@ struct MainToolbar: View {
       HStack(alignment: .bottom, spacing: 0) {
         ForEach(pens) { pen in
           let on = pen.id == activeId
-          PenGlyph(type: pen.type, color: Color(uiColor: UIColor(argb: pen.color)))
+          PenGlyph(type: pen.type, color: Color(uiColor: UIColor(argb: pen.color)), line: pen.lineStyle)
             .offset(y: on ? 2 : 16)
             .frame(width: 34, height: 56, alignment: .top)
             .contentShape(Rectangle())
@@ -201,13 +156,15 @@ struct MainToolbar: View {
       .accessibilityLabel(L("pen_settings"))
       if showColors, let i = activeIndex {
         let pen = pens[i]
-        let count = Palette.toolbarCount(for: pen)
-        if count > 0 {
+        let quick = Array(Palettes.shared.colors(for: pen).prefix(Palettes.shared.toolbarCount(for: pen)))
+        if !quick.isEmpty {
           HStack(spacing: 0) {
-            ForEach(Array(Palette.colors(for: pen).prefix(count)), id: \.self) { col in
+            ForEach(quick, id: \.self) { col in
               ColorDot(color: Color(argb: col), selected: UInt32(bitPattern: pen.color) | 0xFF00_0000 == col | 0xFF00_0000, size: 22) {
                 pens[i].color = Int32(bitPattern: col)
               }
+              .accessibilityLabel(L("colour"))
+              .accessibilityIdentifier(String(format: "toolbar-colour-%06X", col & 0xFF_FFFF))
             }
           }
           .padding(.leading, 2)
@@ -257,14 +214,16 @@ struct MainToolbar: View {
       }
     }
     .onChange(of: tool) { _, _ in if compactTools { withAnimation(.easeOut(duration: 0.14)) { toolsOpen = false } } }
+    .animation(Ease.outStrong(duration: 0.22), value: activeIndex.map { Palettes.shared.toolbarCount(for: pens[$0]) })
   }
 
-  /// The tools: eraser, lasso, fill, shapes, then the keyboard (a new text box).
+  /// The tools: eraser, lasso, fill, laser, shapes, then the keyboard (a new text box).
   private var tools: some View {
     HStack(spacing: 0) {
       toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
       toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
       toolButton(.fill, icon: "", label: L("fill"), id: "fill")
+      toolButton(.laser, icon: "laser.burst", label: L("laser"), id: "laser")
       toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
       InsertButton { toolsOpen = false; onInsert($0) }
       if let memos { MicButton(memos: memos) { toolsOpen = false; onVoice() } }
@@ -286,6 +245,7 @@ struct MainToolbar: View {
     switch tool {
     case .eraser: "eraser"
     case .lasso: "lasso"
+    case .laser: "laser.burst"
     case .shape, .fill: "square.on.circle"
     case .pen: "square.grid.2x2"
     }
@@ -306,6 +266,7 @@ struct MainToolbar: View {
     return Button {
       if tool == t {
         if t == .eraser { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .eraser ? nil : .eraser } }
+        if t == .lasso { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .lasso ? nil : .lasso } }
         if t == .shape { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .shapes ? nil : .shapes } }
         if t == .fill { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .fill ? nil : .fill } }
       } else {
@@ -349,14 +310,8 @@ struct ColorDot: View {
   @Environment(\.tali) private var c
 
   var body: some View {
-    Button(action: action) {
-      Circle().fill(color).overlay(Circle().stroke(Color.black.opacity(0.13), lineWidth: 1))
-        .frame(width: size, height: size)
-        .padding(4)
-        .overlay(Circle().stroke(c.accent, lineWidth: 2).opacity(selected ? 1 : 0))
-        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: selected)
-    }
-    .buttonStyle(.plain)
+    Button(action: action) { ColorDotFace(color: color, selected: selected, size: size) }
+      .buttonStyle(.plain)
   }
 }
 
@@ -394,7 +349,7 @@ struct QuickSizes: View {
             VStack(alignment: .leading, spacing: 6) {
               Text(L("thickness_n", i + 1)).font(TaliType.titleSmall).foregroundStyle(c.ink)
               HStack {
-                StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: 0.5...pen.type.maxSize, step: 0.5)
+                StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: pen.type.minSize...pen.type.maxSize, step: 0.5)
                 Text(String(format: "%.1f", pen.size)).font(TaliType.titleSmall).foregroundStyle(c.ink).frame(width: 40)
               }
             }
@@ -409,16 +364,51 @@ struct QuickSizes: View {
   }
 }
 
-/// A panel that drops below the toolbar (Android's `Panel`): a cloud surface without bumps.
+/// A panel that drops below the toolbar (Android's `Panel` and `PanelColumn`): a cloud surface
+/// without bumps, never taller than the room under the toolbar; what doesn't fit scrolls.
 struct ToolPanel<Content: View>: View {
   var width: CGFloat
   @ViewBuilder var content: Content
+  @Environment(\.tali) private var c
+
   var body: some View {
+    ViewThatFits(in: .vertical) {
+      column
+      ScrollViewReader { proxy in
+        ScrollView { column.padding(.bottom, 20) }
+          .scrollIndicators(.hidden)
+          .environment(\.showInPanel) { id in withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .bottom) } }
+          .overlay(alignment: .bottom) {
+            LinearGradient(colors: [c.cloudBelly.opacity(0), c.cloudBelly], startPoint: .top, endPoint: .bottom).frame(height: 28).allowsHitTesting(false)
+          }
+      }
+    }
     // Its own width, or less on a phone so it never runs off the screen.
-    VStack(alignment: .leading, spacing: 0) { content }
-      .frame(maxWidth: width, alignment: .leading)
-      .padding(18)
-      .cloudSurface(radius: 22, crown: .none, shadowDepth: 10)
+    .frame(maxWidth: width, alignment: .leading)
+    .padding(18)
+    .cloudSurface(radius: 22, crown: .none, shadowDepth: 10)
+  }
+
+  private var column: some View { VStack(alignment: .leading, spacing: 0) { content } }
+}
+
+extension EnvironmentValues {
+  /// Scrolls a panel that doesn't fit so the part with this id shows.
+  @Entry var showInPanel: (String) -> Void = { _ in }
+}
+
+/// Something added to a panel after it opened (the colour picker) comes into view by itself:
+/// below the fold of a panel that scrolls, it would look as if nothing had happened.
+struct ShownWhenAdded: ViewModifier {
+  var id: String
+  @Environment(\.showInPanel) private var show
+
+  func body(content: Content) -> some View {
+    // After this pass of layout: the panel hasn't grown to hold it yet when it first appears.
+    content.id(id).task {
+      try? await Task.sleep(for: .milliseconds(60))
+      show(id)
+    }
   }
 }
 
@@ -426,15 +416,18 @@ struct ToolPanel<Content: View>: View {
 /// thicknesses, the size slider, its colours and how many of them sit in the toolbar.
 struct PenPanel: View {
   @Binding var pen: PenSlot
+  var onAddPen: () -> Void
+  /// Nil for the last pen, which stays.
+  var onRemovePen: (() -> Void)?
   @Environment(\.tali) private var c
   @Namespace private var types
-  @State private var paletteVersion = 0
+  @State private var pickingColour = false
 
   var body: some View {
     ToolPanel(width: 392) {
       HStack(spacing: 4) {
         ForEach(PenType.offered, id: \.self) { t in
-          PenGlyph(type: t, color: t == pen.type ? Color(uiColor: UIColor(argb: pen.color)) : Color(argb: 0xFF8E_95A2))
+          PenGlyph(type: t, color: t == pen.type ? Color(uiColor: UIColor(argb: pen.color)) : Color(argb: 0xFF8E_95A2), line: t.takesLineStyle ? pen.line : .SOLID)
             .frame(width: 58, height: 66, alignment: .bottom)
             .background {
               if t == pen.type { RoundedRectangle(cornerRadius: 14).fill(c.accentSoft).matchedGeometryEffect(id: "type", in: types) }
@@ -442,10 +435,7 @@ struct PenPanel: View {
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .contentShape(Rectangle())
             .onTapGesture {
-              withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                pen.type = t
-                pen.size = min(max(pen.size, 0.5), t.maxSize)
-              }
+              withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { pen = pen.withType(t) }
             }
             .accessibilityLabel(penName(t))
             .accessibilityAddTraits(t == pen.type ? [.isButton, .isSelected] : .isButton)
@@ -454,7 +444,7 @@ struct PenPanel: View {
       Spacer().frame(height: 10)
       Text(penName(pen.type)).font(TaliType.titleMedium).foregroundStyle(c.ink)
       Spacer().frame(height: 10)
-      StrokePreview(pen: pen).frame(height: 70)
+      StrokePreview(pen: pen)
       Spacer().frame(height: 12)
       Segmented(options: [0, 1, 2], selected: Binding(get: { min(max(pen.sizeSlot, 0), 2) }, set: { pen = pen.pickSize($0) })) {
         String(format: "%.1f", pen.presetSizes[$0])
@@ -462,63 +452,115 @@ struct PenPanel: View {
       Spacer().frame(height: 8)
       HStack(spacing: 0) {
         Text(L("size")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).frame(width: 44, alignment: .leading)
-        StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: 0.5...pen.type.maxSize, step: 0.5)
+        StepSlider(value: Binding(get: { pen.size }, set: { pen = pen.withSize($0) }), range: pen.type.minSize...pen.type.maxSize, step: 0.5)
         Text(String(format: "%.1f", pen.size)).font(TaliType.titleSmall).foregroundStyle(c.ink).frame(width: 40).padding(.leading, 8)
+      }
+      if pen.type.takesLineStyle {
+        Spacer().frame(height: 10)
+        SectionLabel(text: L("line"))
+        Spacer().frame(height: 8)
+        LineStylePicker(selected: Binding(get: { pen.lineStyle }, set: { pen.line = $0 }))
+      }
+      if pen.type.isHighlighter {
+        Spacer().frame(height: 12)
+        SectionLabel(text: L("draws"))
+        Spacer().frame(height: 8)
+        Segmented(options: [true, false], selected: Binding(get: { pen.straight }, set: { pen.freehand = !$0 })) { $0 ? L("straight_lines") : L("freehand") }
+        Spacer().frame(height: 12)
+        SectionLabel(text: L("tip"))
+        Spacer().frame(height: 8)
+        Segmented(options: [false, true], selected: Binding(get: { pen.square }, set: { pen.squareTip = $0 })) { $0 ? L("square") : L("round") }
       }
       Spacer().frame(height: 10)
       SectionLabel(text: pen.type == .HIGHLIGHTER ? L("highlighter_colours") : L("colours"))
       Spacer().frame(height: 8)
-      let palette = Palette.colors(for: pen)
-      let inBar = Palette.toolbarCount(for: pen)
-      LazyVGrid(columns: [GridItem(.adaptive(minimum: 38, maximum: 38), spacing: 2)], alignment: .leading, spacing: 2) {
-        ForEach(Array(palette.enumerated()), id: \.element) { i, col in
-          ColorDot(color: Color(argb: col), selected: UInt32(bitPattern: pen.color) | 0xFF00_0000 == col | 0xFF00_0000) {
-            pen.color = Int32(bitPattern: col)
-          }
-          .overlay(alignment: .trailing) {
-            // A thin line after the last toolbar colour sets them apart.
-            if i == inBar - 1 && inBar < palette.count { Rectangle().fill(c.line).frame(width: 1.5, height: 22).offset(x: 1) }
-          }
-        }
-      }
+      ReorderableColors(
+        colors: Palettes.shared.colors(for: pen), selected: UInt32(bitPattern: pen.color), inToolbar: Palettes.shared.toolbarCount(for: pen),
+        onPick: { pen.color = Int32(bitPattern: $0) },
+        onReorder: { order in Palettes.shared.edit(for: pen) { SavedColours.reordered($0, to: order) } },
+        onRemove: { color in Palettes.shared.edit(for: pen) { SavedColours.removing(color, from: $0) } },
+        onAdd: { withAnimation(.easeOut(duration: 0.18)) { pickingColour.toggle() } })
       Spacer().frame(height: 12)
       Text(L("in_the_toolbar_with_this_pen")).font(TaliType.bodyMedium).foregroundStyle(c.ink)
       Text(L("the_colours_before_the_line_hold")).font(TaliType.bodySmall).foregroundStyle(c.inkFaint)
       Spacer().frame(height: 8)
-      Segmented(options: Array(0...6), selected: Binding(get: { Palette.toolbarCount(for: pen) }, set: { pen.toolbarColors = $0 })) {
+      Segmented(options: Array(0...6), selected: Binding(get: { Palettes.shared.toolbarCount(for: pen) }, set: { pen.toolbarColors = $0 })) {
         $0 == 0 ? L("none") : "\($0)"
+      }
+      if pickingColour {
+        Spacer().frame(height: 12)
+        ColourPicker(
+          initial: UInt32(bitPattern: pen.color),
+          onChange: { pen.color = Int32(bitPattern: $0) },
+          onSave: { color in
+            Palettes.shared.edit(for: pen) { SavedColours.saving(color, in: $0) }
+            pen.color = Int32(bitPattern: color)
+            withAnimation(.easeOut(duration: 0.18)) { pickingColour = false }
+          }
+        )
+        .modifier(ShownWhenAdded(id: "colour-picker"))
+      }
+      Spacer().frame(height: 12)
+      HStack(spacing: 10) {
+        Button(L("add_a_pen"), action: onAddPen).buttonStyle(QuietButtonStyle())
+        if let onRemovePen { Button(L("remove_this_pen"), action: onRemovePen).buttonStyle(QuietButtonStyle(warning: true)) }
       }
     }
   }
 }
 
-/// A sample stroke in the pen's colour and size on a strip of paper.
+/// Android's `StrokePreview`, drawn by the code that draws stored strokes so it can't differ from the page.
 struct StrokePreview: View {
   var pen: PenSlot
   @Environment(\.tali) private var c
+  @Environment(\.displayScale) private var displayScale
+
+  /// Android lays the sample out this size in world units, so thicknesses read the same here.
+  private static let world = CGSize(width: 392, height: 70)
 
   var body: some View {
-    Canvas { ctx, size in
-      let w = size.width, h = size.height
-      var p = Path()
-      p.move(to: CGPoint(x: w * 0.1, y: h * 0.62))
-      p.addCurve(to: CGPoint(x: w * 0.5, y: h * 0.5), control1: CGPoint(x: w * 0.22, y: h * 0.1), control2: CGPoint(x: w * 0.36, y: h * 0.9))
-      p.addCurve(to: CGPoint(x: w * 0.9, y: h * 0.38), control1: CGPoint(x: w * 0.64, y: h * 0.1), control2: CGPoint(x: w * 0.78, y: h * 0.9))
-      let width = CGFloat(pen.size) * (pen.type == .HIGHLIGHTER ? 1 : 1.2)
-      ctx.stroke(
-        p, with: .color(Color(uiColor: UIColor(argb: pen.inkColor))),
-        style: StrokeStyle(lineWidth: width, lineCap: pen.type == .HIGHLIGHTER ? .square : .round, lineJoin: .round))
+    GeometryReader { geo in
+      Image(uiImage: StrokePreview.picture(pen, scale: displayScale * geo.size.width / StrokePreview.world.width))
+        .resizable()
+        .frame(width: geo.size.width, height: geo.size.height)
     }
+    .aspectRatio(StrokePreview.world.width / StrokePreview.world.height, contentMode: .fit)
     .background(c.paper)
     .clipShape(RoundedRectangle(cornerRadius: 14))
     .overlay(RoundedRectangle(cornerRadius: 14).stroke(c.line, lineWidth: 1))
+    .accessibilityHidden(true)
+  }
+
+  static func sample(_ pen: PenSlot) -> InkStroke {
+    let w = Float(world.width), h = Float(world.height)
+    let inputs: InkInputs
+    if pen.straight {
+      inputs = StraightLine.inputs(Pt(w * 0.12, h / 2), Pt(w * 0.88, h / 2))
+    } else {
+      let points = (0...90).map { i -> InkInput in
+        let f = Float(i) / 90
+        return InkInput(x: 14 + (w - 28) * f, y: h / 2 + sinf(f * 2 * .pi) * h * 0.22, t: Float(i) * 0.006, pressure: 0.35 + 0.55 * sinf(f * .pi))
+      }
+      inputs = InkInputs(points: points, tool: .stylus)
+    }
+    return InkStroke(id: "", z: 0, pen: pen.type, tags: InkStroke.tags(for: pen), color: pen.inkColor, size: pen.size, inputs: inputs)
+  }
+
+  private static func picture(_ pen: PenSlot, scale: CGFloat) -> UIImage {
+    var image = UIImage()
+    // The pen's own colour, whatever the app's theme (PencilKit lightens dark ink in dark mode).
+    UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+      image = PKDrawing(strokes: [sample(pen).pkStroke(mask: nil)]).image(from: CGRect(origin: .zero, size: world), scale: max(scale, 1))
+    }
+    return image
   }
 }
 
-/// The eraser's settings (Android's `EraserPanel`): whole strokes or precise, and its size.
+/// The eraser's settings (Android's `EraserPanel`): whole strokes or precise, its size, and which pens it erases.
 struct EraserPanel: View {
   @Binding var precise: Bool
   @Binding var size: Float
+  @Binding var affects: PenFilter
   @Environment(\.tali) private var c
 
   var body: some View {
@@ -529,9 +571,17 @@ struct EraserPanel: View {
       Spacer().frame(height: 14)
       HStack(spacing: 0) {
         Text(L("size")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).frame(width: 44, alignment: .leading)
-        StepSlider(value: $size, range: 6...64, step: 1, lessLabel: L("size"), moreLabel: L("size"))
+        StepSlider(value: $size, range: 6...64, step: 1)
         Circle().fill(c.sunken).overlay(Circle().stroke(c.inkFaint, lineWidth: 1))
           .frame(width: CGFloat(min(size, 40)), height: CGFloat(min(size, 40))).frame(width: 44, height: 44)
+      }
+      Spacer().frame(height: 10)
+      SectionLabel(text: L("erases"))
+      Spacer().frame(height: 8)
+      PenFilterChips(filter: $affects, images: nil)
+      if !PhoneWriting.onPhone {
+        Spacer().frame(height: 14)
+        Text(L("tip_double_tap_apple_pencil")).font(TaliType.bodySmall).foregroundStyle(c.inkFaint)
       }
     }
   }

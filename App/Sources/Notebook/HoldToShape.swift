@@ -29,8 +29,8 @@ final class StrokeWatcher: UIGestureRecognizer {
       }
       tracked = t
       began(t, event)
-    } else if tracked != nil {
-      // A second finger: a pinch or scroll, not writing.
+    } else if let t = tracked, t.type != .pencil {
+      // A second finger: a pinch or scroll, not writing. The pencil carries on: what lands beside it is the hand.
       tracked = nil
       ended(true)
       state = .failed
@@ -50,10 +50,13 @@ final class StrokeWatcher: UIGestureRecognizer {
   }
 
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
-    if tracked != nil {
-      tracked = nil
-      ended(true)
+    // Only when it's the touch being followed: the system also cancels a palm it has recognised.
+    guard let t = tracked, touches.contains(t) else {
+      if tracked == nil { state = .failed }
+      return
     }
+    tracked = nil
+    ended(true)
     state = .failed
   }
 
@@ -112,7 +115,7 @@ extension NoteCanvas.Coordinator {
   /// Whether this touch writes with the pen (not the eraser or lasso, not a finger that only
   /// scrolls, not a touch that took hold of the selection).
   private func writes(_ t: UITouch) -> Bool {
-    guard case .pen = parent.tool else { return false }
+    guard let canvas, case .pen = parent.tool, canvas.drawingGestureRecognizer.isEnabled || tracesOwnInk else { return false }
     return draws(t) && claim(t) == nil
   }
 
@@ -215,12 +218,14 @@ extension NoteCanvas.Coordinator {
       let geometry = ShapeRecognizer.recognize(hold.points, custom: ShapeSettings.customShapes, packs: ShapeSettings.starredShapes)
     else { return }
     let pen = currentPen
-    let shape = ShapeRow(geometry: geometry, pen: pen.type.rawValue, color: pen.color, size: pen.size)
+    let shape = ShapeRow(geometry: geometry, pen: pen.type.rawValue, color: pen.color, size: pen.size, line: pen.lineStyle.rawValue)
     // PencilKit lets go of the stroke it was drawing (switching its recogniser off and on cancels
     // it); should it hand the stroke in anyway, `sync` drops it.
     hold.dropSince = hold.began.addingTimeInterval(-0.2)
-    canvas.drawingGestureRecognizer.isEnabled = false
-    canvas.drawingGestureRecognizer.isEnabled = true
+    if canvas.drawingGestureRecognizer.isEnabled {
+      canvas.drawingGestureRecognizer.isEnabled = false
+      canvas.drawingGestureRecognizer.isEnabled = true
+    }
     hold.live = shape
     hold.base = shape
     hold.liveAnchor = hold.points.last ?? .zero
@@ -261,13 +266,13 @@ extension NoteCanvas.Coordinator {
     }
     let z = canvas.zoomScale
     let path = CGMutablePath()
-    for line in shape.geometry.paths(shape.size) where line.count > 1 {
+    for line in shape.strokes {
       path.addLines(between: line.map { CGPoint(x: CGFloat($0.x) * z, y: CGFloat($0.y) * z) })
     }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     hold.layer.path = path
-    hold.layer.strokeColor = UIColor(argb: shape.color).cgColor
+    hold.layer.strokeColor = UIColor(argb: shape.inkColor).cgColor
     hold.layer.lineWidth = CGFloat(shape.size) * z
     CATransaction.commit()
   }

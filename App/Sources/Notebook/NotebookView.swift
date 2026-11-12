@@ -25,7 +25,7 @@ struct NotebookView: View {
   @Environment(Library.self) private var lib
   @Environment(\.tali) private var c
   @Environment(\.colorScheme) private var scheme
-  @State private var tool: Tool = .pen(PenStore.load().first?.id ?? "p1")
+  @State private var tool: Tool = .pen(PenStore.activePen)
   @State private var pens: [PenSlot] = PenStore.load()
   @State private var panel: PanelKind?
   /// What the Shapes tool draws (Android's `lastShape`), and the standard shape last chosen.
@@ -37,8 +37,12 @@ struct NotebookView: View {
   @State private var browsingShapes = false
   /// What's picked up, as the shape being named before it joins My shapes.
   @State private var savingShape: ShapeGeometry?
+  /// The tool in use before this one, for Apple Pencil's double-tap to go back to.
+  @State private var toolBefore: Tool?
   @AppStorage("eraserPrecise") private var eraserPrecise = false
-  @AppStorage("eraserSize") private var eraserSize: Double = 20
+  @AppStorage("eraserSize") private var eraserSize: Double = 16
+  @State private var eraserAffects = PenFilters.load("eraserAffects")
+  @State private var lassoPicks = LassoSettings(affects: PenFilters.load("lassoAffects"), images: UserDefaults.standard.object(forKey: "lassoSelectsImages") as? Bool ?? true)
   @State private var canUndo = false
   @State private var canRedo = false
   @State private var pageCount = 1
@@ -99,7 +103,8 @@ struct NotebookView: View {
           settings: CanvasSettings(
             paper: paperSpec, fingerDraws: fingerDraws, smartUndo: smartUndo, between: between, pageGuides: PaperSettings.shared.pageGuides),
           bridge: bridge,
-          eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize)),
+          eraser: EraserSettings(precise: eraserPrecise, size: Float(eraserSize), affects: eraserAffects),
+          lassoPicks: lassoPicks,
           shape: shapeSource,
           onUndoState: { u, r in
             canUndo = u
@@ -109,6 +114,7 @@ struct NotebookView: View {
           onSelection: { r in withAnimation(.easeOut(duration: 0.14)) { selection = r } },
           onHint: { show($0) },
           onPasteOffer: { p in withAnimation(.easeOut(duration: 0.16)) { pasteOffer = p } },
+          onPencil: pencilGesture,
           onView: { p, z in
             page = p
             zoom = z
@@ -179,9 +185,11 @@ struct NotebookView: View {
             Group {
               switch shown {
               case .pen:
-                if let i = activePenIndex { PenPanel(pen: $pens[i]) }
+                if let i = activePenIndex { PenPanel(pen: $pens[i], onAddPen: addPen, onRemovePen: pens.count > 1 ? { removePen(pens[i].id) } : nil) }
               case .eraser:
-                EraserPanel(precise: $eraserPrecise, size: Binding(get: { Float(eraserSize) }, set: { eraserSize = Double($0) }))
+                EraserPanel(precise: $eraserPrecise, size: Binding(get: { Float(eraserSize) }, set: { eraserSize = Double($0) }), affects: $eraserAffects)
+              case .lasso:
+                LassoPanel(settings: $lassoPicks)
               case .shapes:
                 ShapesPanel(picker: shapePicker, pen: shapePen, compact: geo.size.width < 660) {
                   withAnimation(Ease.outStrong(duration: 0.24)) { browsingShapes = true }
@@ -195,6 +203,8 @@ struct NotebookView: View {
               .asymmetric(
                 insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)).combined(with: .offset(y: -6)),
                 removal: .opacity.combined(with: .scale(scale: 0.98, anchor: .top))))
+            // Clear of the page and zoom chips, so a tall panel scrolls instead of running under them.
+            .padding(.bottom, 56)
           }
         }
         .padding(.horizontal, 16)
@@ -352,7 +362,16 @@ struct NotebookView: View {
     }
     .onChange(of: pens) { _, new in PenStore.save(new) }
     .onChange(of: paperColumn) { _, p in try? lib.db.run("UPDATE notebooks SET paper=? WHERE id=?", [.text(p), .text(notebook.id)]) }
-    .onChange(of: tool) { old, _ in if case .pen(let id) = old { lastPenId = id } }
+    .onChange(of: tool) { old, new in
+      toolBefore = old
+      if case .pen(let id) = old { lastPenId = id }
+      if case .pen(let id) = new { PenStore.activePen = id }
+    }
+    .onChange(of: eraserAffects) { _, new in PenFilters.save(new, "eraserAffects") }
+    .onChange(of: lassoPicks) { _, new in
+      PenFilters.save(new.affects, "lassoAffects")
+      UserDefaults.standard.set(new.images, forKey: "lassoSelectsImages")
+    }
     .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
     .statusBarHidden(fullScreen)
     .persistentSystemOverlays(fullScreen ? .hidden : .automatic)
@@ -433,6 +452,34 @@ struct NotebookView: View {
     }
   }
 
+  private func pencilGesture(_ preference: PencilGesture.Preference) {
+    switch PencilGesture.action(for: preference, erasing: tool == .eraser) {
+    case .none: break
+    case .eraser:
+      panel = nil
+      withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { tool = .eraser }
+    case .previousTool:
+      panel = nil
+      withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { tool = toolBefore ?? .pen(PenStore.activePen) }
+    case .penSettings:
+      if activePenIndex == nil { tool = .pen(PenStore.activePen) }
+      withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .pen ? nil : .pen }
+    }
+  }
+
+  private func addPen() {
+    let id = String(UUID().uuidString.prefix(8))
+    guard let more = PenSlot.adding(id: id, firstColor: Palettes.shared.saved.first, to: pens) else { return }
+    pens = more
+    tool = .pen(id)
+  }
+
+  private func removePen(_ id: String) {
+    guard let fewer = PenSlot.removing(id, from: pens), let first = fewer.first else { return }
+    tool = .pen(first.id)
+    pens = fewer
+  }
+
   private var activePenIndex: Int? {
     if case .pen(let id) = tool { return pens.firstIndex { $0.id == id } }
     return nil
@@ -504,8 +551,10 @@ struct NotebookView: View {
           .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 6)
           .contentShape(Rectangle())
           .onTapGesture { renaming = true }
+          .accessibilityElement(children: .combine)
           .accessibilityAddTraits(.isButton)
           .accessibilityHint(L("rename"))
+          .accessibilityIdentifier("notebook-title")
         }
       }
       FloatingBar(crown: .softEdge) {
@@ -645,11 +694,34 @@ enum ViewOnly {
 
 /// The pens, kept between launches.
 enum PenStore {
+  private static let reset: Void = {
+    if ProcessInfo.processInfo.arguments.contains("-uitest"), !ProcessInfo.processInfo.arguments.contains("-keep-pens") {
+      for key in ["pens", "activePen", "savedColors", "highlighterColors", "eraserAffects", "lassoAffects", "lassoSelectsImages", "eraserPrecise", "eraserSize"] {
+        UserDefaults.standard.removeObject(forKey: key)
+      }
+    }
+  }()
+
+  /// A UI test starts from a new install's pens, colours and eraser unless it asks to keep them:
+  /// what an earlier run left on the simulator (Freehand, another pen in use) changed what a test drew.
+  static func resetForTests() { _ = reset }
+
+  /// Android's `activePen`: the pen she last wrote with, or the first.
+  static var activePen: String {
+    get {
+      let pens = load()
+      let saved = UserDefaults.standard.string(forKey: "activePen")
+      return pens.first { $0.id == saved }?.id ?? pens.first?.id ?? "p1"
+    }
+    set { UserDefaults.standard.set(newValue, forKey: "activePen") }
+  }
+
   static func load() -> [PenSlot] {
+    resetForTests()
     guard let d = UserDefaults.standard.data(forKey: "pens"), let p = try? JSONDecoder().decode([PenSlot].self, from: d), !p.isEmpty else {
       return PenSlot.defaults
     }
-    return p
+    return PenSlot.migrated(p)
   }
   static func save(_ p: [PenSlot]) {
     if let d = try? JSONEncoder().encode(p) { UserDefaults.standard.set(d, forKey: "pens") }
