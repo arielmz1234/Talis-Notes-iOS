@@ -186,6 +186,8 @@ struct ShapeEraser {
   var watcher: StrokeWatcher?
   var before: [ShapeRow]?
   var textsBefore: [TextRow]?
+  /// Fills under the eraser (see FillEraser.swift).
+  var fills = FillErasing()
 }
 
 extension NoteCanvas.Coordinator {
@@ -213,6 +215,7 @@ extension NoteCanvas.Coordinator {
     let q = t.location(in: canvas)
     let p = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
     let reach = parent.eraser.size / 2
+    eraseFills(at: p, reach: reach)
     // Text boxes go when the eraser passes over them, like a shape (Android's eraser takes them whole).
     let textHits = texts.filter { !$0.locked && TextLook.frame($0).insetBy(dx: -CGFloat(reach), dy: -CGFloat(reach)).contains(CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))) }
     if !textHits.isEmpty {
@@ -233,6 +236,7 @@ extension NoteCanvas.Coordinator {
   }
 
   private func eraseEnded() {
+    finishFillErase()
     if let tb = shapeEraser.textsBefore {
       shapeEraser.textsBefore = nil
       if tb != texts { registerTextsChange(from: tb, to: texts) }

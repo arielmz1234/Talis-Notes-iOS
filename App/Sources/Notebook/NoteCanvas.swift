@@ -417,6 +417,11 @@ struct NoteCanvas: UIViewRepresentable {
     func mask(for s: InkStroke) -> UIBezierPath? {
       guard paged, let first = s.inputs.points.first else { return nil }
       guard let r = layout.clip(anchorY: first.y, count: pageCount, between: parent.settings.between) else { return nil }
+      // Only a stroke that runs off its page is masked: PencilKit's stroke eraser takes a masked
+      // stroke when it touches anywhere inside the mask (a touch on the page took every stroke that
+      // had been moved, copied or loaded).
+      let b = s.bounds
+      if b.left >= r.left && b.top >= r.top && b.right <= r.right && b.bottom <= r.bottom { return nil }
       return UIBezierPath(rect: CGRect(x: CGFloat(r.left), y: CGFloat(r.top), width: CGFloat(r.width), height: CGFloat(r.height)))
     }
 

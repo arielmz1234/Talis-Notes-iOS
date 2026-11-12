@@ -234,6 +234,11 @@ struct SelectionMenuLayer: View {
       let below = rect.maxY + gap + (info.rotatable ? 48 : 0)
       let y = above >= topLimit ? above : (below <= bottomLimit ? below : min(max(rect.minY + gap, topLimit), max(bottomLimit, topLimit)))
       let x = min(max(rect.midX - (SelectionMenu.foldedWidth(info) + 2 * SelectionMenu.padding) / 2, gap), max(geo.size.width - width - gap, gap))
+      // Where what's picked up is, for VoiceOver (the frame itself is drawn on the canvas).
+      Color.clear.frame(width: max(rect.width, 1), height: max(rect.height, 1)).offset(x: rect.minX, y: rect.minY)
+        .accessibilityElement().accessibilityLabel(info.rotatable ? L("drag_to_move_corner_dot_to") : L("drag_to_move_corner_dot_to_2"))
+        .accessibilityIdentifier("selection-frame")
+        .allowsHitTesting(false)
       SelectionMenu(info: info, maxWidth: geo.size.width - 2 * gap, more: $more, onSaveShape: onSaveShape, onCrop: onCrop, onCommand: onCommand)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         .frame(width: width, alignment: .leading)
