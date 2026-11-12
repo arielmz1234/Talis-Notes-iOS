@@ -184,7 +184,8 @@ extension NoteCanvas.Coordinator {
 
   /// Shapes and text boxes on screen now, apart from [ids]. Handwriting isn't snapped to.
   func snapTargets(skipping ids: Set<String>) -> [SnapFeatures] {
-    guard let canvas else { return [] }
+    // *Snap to other shapes* off: nothing to snap to.
+    guard let canvas, ShapeLook.snaps else { return [] }
     let z = canvas.zoomScale
     let b = canvas.bounds
     let view = Rect(Float(b.minX / z), Float(b.minY / z), Float(b.maxX / z), Float(b.maxY / z))

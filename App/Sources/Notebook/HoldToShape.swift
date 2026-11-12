@@ -181,6 +181,7 @@ extension NoteCanvas.Coordinator {
 
   private func scheduleHold() {
     stopHoldTimer()
+    guard ShapeLook.holdToShape else { return }
     hold.timer = Timer.scheduledTimer(withTimeInterval: Self.holdDelay, repeats: false) { [weak self] _ in
       MainActor.assumeIsolated { self?.snapToShape() }
     }

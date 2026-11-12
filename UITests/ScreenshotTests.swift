@@ -115,6 +115,15 @@ final class ScreenshotTests: XCTestCase {
       app.buttons["tool-shapes"].firstMatch.tap()
       settle()
       shot("4e-shapes-panel")
+      // The Style tab: the Shapes tool's own colour, size, opacities, line style and fill.
+      let tabs = app.descendants(matching: .any)["shapes-tabs"].firstMatch
+      if tabs.exists {
+        tabs.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).tap()
+        settle()
+        shot("4e2-shape-style")
+        tabs.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).tap()
+        settle()
+      }
       if app.buttons["shape-ELLIPSE"].exists {
         app.buttons["shape-ELLIPSE"].firstMatch.tap()
         settle()

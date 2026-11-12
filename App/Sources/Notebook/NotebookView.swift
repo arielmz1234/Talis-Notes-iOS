@@ -24,6 +24,8 @@ struct NotebookView: View {
   @Environment(\.colorScheme) private var scheme
   @State private var tool: Tool = .pen(PenStore.load().first?.id ?? "p1")
   @State private var pens: [PenSlot] = PenStore.load()
+  /// The pen last picked (shapes "Like the pen" follow it while the Shapes tool is on).
+  @State private var lastPenId: String? = PenStore.load().first?.id
   @State private var panel: PanelKind?
   /// The Shapes tool's shape (Android's `lastShape`).
   @AppStorage("lastShape") private var shapeKindRaw = ShapeKind.RECTANGLE.rawValue
@@ -146,7 +148,7 @@ struct NotebookView: View {
               case .eraser:
                 EraserPanel(precise: $eraserPrecise, size: Binding(get: { Float(eraserSize) }, set: { eraserSize = Double($0) }))
               case .shapes:
-                ShapesPanel(kind: Binding(get: { shapeKind }, set: { shapeKindRaw = $0.rawValue })) {
+                ShapesPanel(kind: Binding(get: { shapeKind }, set: { shapeKindRaw = $0.rawValue }), pens: pens, activePen: lastPenId) {
                   // Choosing a shape closes the panel so she can draw it straight away.
                   withAnimation(.easeOut(duration: 0.12)) { panel = nil }
                 }
@@ -222,6 +224,7 @@ struct NotebookView: View {
       }
     }
     .onChange(of: pens) { _, new in PenStore.save(new) }
+    .onChange(of: tool) { _, t in if case .pen(let id) = t { lastPenId = id } }
     .onChange(of: paper) { _, p in try? lib.db.run("UPDATE notebooks SET paper=? WHERE id=?", [.text(p.rawValue), .text(notebook.id)]) }
     .onChange(of: dark) { _, d in try? lib.db.run("UPDATE notebooks SET dark=? WHERE id=?", [.int(d ? 1 : 0), .text(notebook.id)]) }
     .statusBarHidden(fullScreen)

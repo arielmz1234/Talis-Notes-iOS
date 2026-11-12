@@ -114,8 +114,12 @@ extension NoteCanvas.Coordinator {
     }
     let (end, guides) = result
     showSnap((shapeTool.startStuck ? [SnapGuide.touch(start)] : []) + shapeTool.startGuides + guides)
-    let pen = shapePen
-    shapeTool.preview = ShapeRow(geometry: kind.drawn(start, end, keepEnd: !guides.isEmpty), pen: pen.type == .HIGHLIGHTER ? "FINELINER" : pen.type.rawValue, color: pen.color | Int32(bitPattern: 0xFF00_0000), size: pen.type == .HIGHLIGHTER ? 2.5 : pen.size)
+    // The Shapes tool has its own style (its panel's Style tab), apart from the pen in use.
+    let look = ShapeLook.look(parent.pens.first { $0.id == lastPenId }, parent.pens)
+    let geometry = kind.drawn(start, end, keepEnd: !guides.isEmpty)
+    shapeTool.preview = ShapeRow(
+      geometry: geometry, pen: "FINELINER", color: look.outlineArgb, size: look.size,
+      fill: geometry.closed ? look.fillArgb : nil, line: look.line)
     drawShapePreview()
   }
 
@@ -148,5 +152,8 @@ extension NoteCanvas.Coordinator {
     shapeTool.layer.path = path
     shapeTool.layer.strokeColor = UIColor(argb: s.color).cgColor
     shapeTool.layer.lineWidth = CGFloat(s.size) * z
+    // Its fill under the outline, and its line style, as it will be on the page.
+    shapeTool.layer.fillColor = s.fill.map { UIColor(argb: $0).cgColor } ?? UIColor.clear.cgColor
+    shapeTool.layer.lineDashPattern = LineDash.pattern(s.line, width: CGFloat(s.size) * z)?.map { NSNumber(value: Double($0)) }
   }
 }

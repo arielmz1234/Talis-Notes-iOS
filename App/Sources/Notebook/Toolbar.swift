@@ -570,3 +570,41 @@ struct ZoomChip: View {
     .accessibilityIdentifier("zoom-chip")
   }
 }
+
+/// The Shapes tool's own look (Android's `AppSettings.shapeStyle`, `shapeFollowsPen`, `shapeLook`),
+/// kept as JSON with Android's field names under "shapeStyle".
+enum ShapeLook {
+  static var firstColor: Int32 { Int32(bitPattern: PenSlot.defaultColors[0]) }
+
+  static func decode(_ raw: String) -> ShapeStyle? {
+    raw.data(using: .utf8).flatMap { try? JSONDecoder().decode(ShapeStyle.self, from: $0) }
+  }
+
+  static func encode(_ s: ShapeStyle) -> String {
+    (try? JSONEncoder().encode(s)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+  }
+
+  /// Its own style, as she set it (or the first pen's starting colour and 2.4).
+  static var own: ShapeStyle {
+    ShapeStyle.own(decode(UserDefaults.standard.string(forKey: "shapeStyle") ?? ""), firstColor: firstColor)
+  }
+
+  static var followsPen: Bool { UserDefaults.standard.bool(forKey: "shapeFollowsPen") }
+
+  /// The pen shapes follow (Android's `shapeSlot`): the pen in use, unless that's a highlighter,
+  /// then the first writing pen.
+  static func slot(_ active: PenSlot?, _ pens: [PenSlot]) -> PenSlot {
+    if let active, active.type != .HIGHLIGHTER { return active }
+    return pens.first { $0.type != .HIGHLIGHTER } ?? active ?? PenSlot.defaults[0]
+  }
+
+  /// How the Shapes tool draws now.
+  static func look(_ active: PenSlot?, _ pens: [PenSlot]) -> ShapeStyle {
+    let p = slot(active, pens)
+    return ShapeStyle.look(own: own, followsPen: followsPen, penColor: p.color, penSize: p.size)
+  }
+
+  /// Snapping to other shapes and hold-to-shape (Android's `snapShapes`, `holdToShape`; both on at first).
+  static var snaps: Bool { UserDefaults.standard.object(forKey: "snapShapes") as? Bool ?? true }
+  static var holdToShape: Bool { UserDefaults.standard.object(forKey: "holdToShape") as? Bool ?? true }
+}
