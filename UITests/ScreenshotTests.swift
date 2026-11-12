@@ -135,6 +135,13 @@ final class ScreenshotTests: XCTestCase {
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.36)), withVelocity: .slow, thenHoldForDuration: 0.05)
           settle()
           shot("4f3-dot-dragged")
+          // The rotate handle hangs about 40 pt below the ellipse's middle; dragging it sideways turns it.
+          let h = max(app.frame.height, 1)
+          let handleY = 0.42 + 40 / h
+          app.coordinate(withNormalizedOffset: CGVector(dx: 0.785, dy: handleY))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.70, dy: handleY - 0.02)), withVelocity: .slow, thenHoldForDuration: 0.05)
+          settle()
+          shot("4f4-rotated")
         }
       }
       app.buttons["pen-p1"].firstMatch.tap()

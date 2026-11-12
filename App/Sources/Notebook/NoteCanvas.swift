@@ -352,6 +352,7 @@ struct NoteCanvas: UIViewRepresentable {
     var archive: [StrokeKey: InkStroke] = [:]
     /// The lasso and what it picked up (see Selection.swift).
     var lasso = LassoState()
+    var rotate = RotateState()
     /// Hold-to-shape (see HoldToShape.swift).
     var hold = HoldState()
     /// The eraser on shapes (see ShapeSelection.swift).

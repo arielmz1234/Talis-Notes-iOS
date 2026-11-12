@@ -36,7 +36,8 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 - [x] Canvas: PKCanvasView over a tiled page layer (paper, Android shapes and pictures), zoom, pages grow as you write
 - [x] Ink: PencilKit live drawing, every stroke stored as an Android ink row (round trip tested)
 - [x] Pens (fineliner, fountain, pencil, calligraphy, highlighter), type/colour/thickness panel
-- [ ] Line styles (dashes) for ink, quick colours and three sizes in the toolbar
+- [x] Quick colours and three sizes in the toolbar
+- [ ] Line styles (dashes) for ink
 - [x] Eraser and lasso (PencilKit's own for now), undo/redo
 - [x] Our own lasso and selection menu (with ⋯), page overview, Export PDF
 - [ ] Precise eraser of our own; lasso UI test picking up
@@ -58,6 +59,7 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 - [x] Hold-to-shape (recogniser ported with its tests; shapes stored the Android way)
 - [x] Shapes in the eraser and lasso; Shapes tool and panel (standard + civil symbols)
 - [x] Shape dots (every kind's `withHandle`, tests ported) and snapping (`Snap`, `SnapTest` ported); dots snap
-- [ ] Snapping when moving/drawing shapes; resize/move chips and rotate handle; Shapes Style tab; fill; subject packs
+- [x] Snapping when moving/drawing shapes; resize and move chips; rotate handle (written, not yet compiled)
+- [ ] Soft selection after drawing a shape; Shapes Style tab; fill; subject packs
 ### 7. iPhone layout throughout (view-only by default, Write button)
 ### 8. App Store readiness (icon done from `tools/icon-source.png`; privacy manifest, screenshots, store text)

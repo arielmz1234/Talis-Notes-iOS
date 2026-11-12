@@ -45,6 +45,9 @@ struct LassoState {
   var scaleBounds: CGRect?
   let chipLayer = CAShapeLayer()
   let chipArrow = CAShapeLayer()
+  /// The move chip (bottom-left, a four-way arrow), Android's `moveChip`.
+  let moveChipLayer = CAShapeLayer()
+  let moveChipArrow = CAShapeLayer()
   var snapMoving: SnapFeatures?
   var snapTargets: [SnapFeatures] = []
   /// The dot drag's snapping and its guides.
@@ -102,6 +105,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     v.layer.addSublayer(lasso.shapeLayer)
     installShapeDots(on: v)
     installResizeChip(on: v)
+    installRotateHandle(on: v)
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
@@ -152,11 +156,15 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
       if phase == .changed { resize(to: p) } else if phase != .began { endResize() }
       return
     }
+    if rotate.active {
+      if phase == .changed { rotateTo(p) } else if phase != .began { endRotate() }
+      return
+    }
     switch phase {
     case .began:
-      if beginDotDrag(at: p) || beginResize(at: p) { return }
+      if beginDotDrag(at: p) || beginResize(at: p) || beginRotate(at: p) { return }
       let pad = 8 / canvas.zoomScale
-      if let b = lasso.bounds, b.insetBy(dx: -pad, dy: -pad).contains(p) {
+      if let b = lasso.bounds, b.insetBy(dx: -pad, dy: -pad).contains(p) || onMoveChip(p) {
         lasso.moving = true
         lasso.dotsLayer.path = nil
         drawResizeChip(nil)
@@ -453,7 +461,7 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   }
 
   /// The bounds of [strokes] together.
-  private func unionOf(_ strokes: [InkStroke]) -> CGRect? {
+  func unionOf(_ strokes: [InkStroke]) -> CGRect? {
     var out: CGRect?
     for s in strokes {
       let r = CGRect(s.bounds)

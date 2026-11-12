@@ -365,11 +365,40 @@ Done:
   (`Snap.scale` lines it up), one undo step. Hidden while moving or dragging a dot.
 
 Verified: run 43095374946 compiled the core and all TaliCore tests passed (the new shape tests
-included) before it was replaced. Everything after it goes through run 43096074844: see below.
+included) before it was replaced. Everything after it (incl. hold-to-shape snapping) goes through run 43096187925: see below.
 
 Not done (next):
-- Hold-to-shape's snapping (its line end onto edges, as `lineEndAt`).
-- The move chip and the rotate handle; Android's "a shape stays picked up after it's drawn" (soft
+- (Done: hold-to-shape snapping — a held line starts on the shape it was drawn from, its end locks on or lines up.)
+- (Done in session 4: the move chip and the rotate handle.) Android's "a shape stays picked up after it's drawn" (soft
   selection) — on iOS a selection only exists under the lasso tool.
 - Picture snapping (pictures aren't items of their own on iOS yet).
 - Subject shapes (`param`) still aren't drawn (templates not ported), so they can't be picked up.
+
+## Session 4 (12 Nov 2026, ~01:10 UTC, scheduled run, owner's Windows PC)
+
+Found: the five CI runs pushed at the end of session 3 (43095374946 … 43096187925) had sat in
+*queued* for 4h40m with no jobs (a macOS runner never picked them up). Cancelling them from here
+was refused by the permission check, so they were left; this session's push makes a new run (the
+concurrency group should replace the pending ones). If runs keep sitting in queued, it's on
+GitHub's side (macos-26 runners), see OWNER_TODO.
+
+Done (not compiled yet: no Swift on this PC, CI was stuck):
+- The move chip (`SelectionChips.swift`, Android's `moveChip`/`drawMoveChip`): a white round chip
+  with a four-way arrow 14 pt off the frame's bottom-left; dragging it moves the selection the same
+  way as dragging inside the frame (snapping included). Hidden while resizing.
+- The chips come back after a move, a dot drag or a resize with Android's 160 ms fade and small
+  grow (`CHIP_BACK_MS`), instead of popping in.
+- The rotate handle (`SelectionRotate.swift`, Android's `rotateHandle`, `Mode.ROTATE_SELECTION`):
+  hangs 30 pt below the frame's middle on a dashed stem (lower when a lone shape's own dot sits
+  there), a small white handle with a turning arrow. Dragging turns ink and shapes about the
+  middle, the frame turning with them; 45° steps within 5° by the way it faces on the page
+  (`facing`: a line's direction, a poly's/ellipse's rotation, triangle/group turn, a param's
+  placement, a curve's chord, a load's direction; handwriting and arcs remember how far they were
+  turned this session, `turnedBy`); the angle in a blue badge at the middle (lines 0–179°, the rest
+  −180…180°, anticlockwise positive); a tick on each snap; one undo step. Not offered with a text
+  box picked up (Android: no pictures or text).
+- UI test: `4f4-rotated` drags the handle under the ellipse sideways.
+
+Next: check the CI run of this push (compile errors first: `gh run view <id> --log-failed | grep error:`),
+then look at `4f2`/`4f3`/`4f4` and the chips; then soft selection after drawing a shape, the
+Shapes Style tab, line styles.

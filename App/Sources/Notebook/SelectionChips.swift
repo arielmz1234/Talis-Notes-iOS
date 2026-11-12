@@ -30,6 +30,55 @@ extension NoteCanvas.Coordinator {
     arrow.lineJoin = .round
     l.addSublayer(arrow)
     v.layer.addSublayer(l)
+    // The move chip, styled the same.
+    let m = lasso.moveChipLayer
+    m.zPosition = 11
+    m.fillColor = l.fillColor
+    m.strokeColor = l.strokeColor
+    m.lineWidth = l.lineWidth
+    m.shadowColor = l.shadowColor
+    m.shadowOpacity = l.shadowOpacity
+    m.shadowRadius = l.shadowRadius
+    m.shadowOffset = l.shadowOffset
+    let mArrow = lasso.moveChipArrow
+    mArrow.fillColor = nil
+    mArrow.strokeColor = l.strokeColor
+    mArrow.lineWidth = 1.6
+    mArrow.lineCap = .round
+    mArrow.lineJoin = .round
+    m.addSublayer(mArrow)
+    v.layer.addSublayer(m)
+  }
+
+  /// Where the move chip's middle is (content coordinates): off the frame's bottom-left corner.
+  private func moveChipCentre(_ b: CGRect) -> CGPoint {
+    let z = canvas?.zoomScale ?? 1
+    let r = CGRect(x: b.minX * z, y: b.minY * z, width: b.width * z, height: b.height * z).insetBy(dx: -8, dy: -8)
+    return CGPoint(x: r.minX - Self.chipOffset, y: r.maxY + Self.chipOffset)
+  }
+
+  /// Whether a touch at [p] (world units) lands on the move chip: dragging it moves the selection,
+  /// handy for shapes that are mostly lines, where grabbing the shape itself is fiddly.
+  func onMoveChip(_ p: CGPoint) -> Bool {
+    guard let canvas, !parent.viewOnly, let b = lasso.bounds, !lasso.moveChipLayer.isHidden else { return false }
+    let z = canvas.zoomScale
+    let c = moveChipCentre(b)
+    return hypot(p.x * z - c.x, p.y * z - c.y) < Self.chipHit
+  }
+
+  /// The chips come back after a move or a dot drag quickly: a fade and a small grow (Android's `CHIP_BACK_MS`, 160 ms).
+  private func fadeBack(_ l: CALayer) {
+    let fade = CABasicAnimation(keyPath: "opacity")
+    fade.fromValue = 0
+    fade.toValue = 1
+    let grow = CABasicAnimation(keyPath: "transform.scale")
+    grow.fromValue = 0.85
+    grow.toValue = 1
+    let g = CAAnimationGroup()
+    g.animations = [fade, grow]
+    g.duration = 0.16
+    g.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
+    l.add(g, forKey: "back")
   }
 
   /// Where the chip's middle is, in the canvas's content coordinates, for selection bounds [b] (world units).
@@ -44,13 +93,18 @@ extension NoteCanvas.Coordinator {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     defer { CATransaction.commit() }
-    guard let b, !lasso.moving, lasso.handle == nil, !parent.viewOnly else {
+    drawRotateHandle(b)
+    guard let b, !lasso.moving, lasso.handle == nil, !parent.viewOnly, !rotate.active else {
       lasso.chipLayer.isHidden = true
+      lasso.moveChipLayer.isHidden = true
       return
     }
     let c = chipCentre(b)
     let r = Self.chipRadius
+    let wasHidden = lasso.chipLayer.isHidden
     lasso.chipLayer.isHidden = false
+    drawMoveChip(b, comingBack: wasHidden)
+    if wasHidden { fadeBack(lasso.chipLayer) }
     lasso.chipLayer.frame = CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
     lasso.chipLayer.path = UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: 2 * r, height: 2 * r)).cgPath
     let a: CGFloat = 4.6, h: CGFloat = 3.2
@@ -67,6 +121,36 @@ extension NoteCanvas.Coordinator {
     lasso.chipArrow.path = p
   }
 
+  /// The move chip: a four-way arrow, an arrowhead on each end (Android's `drawMoveChip`). Not while resizing.
+  private func drawMoveChip(_ b: CGRect, comingBack: Bool) {
+    let l = lasso.moveChipLayer
+    guard !lasso.scaling else {
+      l.isHidden = true
+      return
+    }
+    let wasHidden = l.isHidden
+    let c = moveChipCentre(b)
+    let r = Self.chipRadius
+    l.isHidden = false
+    l.frame = CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
+    l.path = UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: 2 * r, height: 2 * r)).cgPath
+    let a: CGFloat = 7.2, h: CGFloat = 2.1
+    let m = CGPoint(x: r, y: r)
+    let p = CGMutablePath()
+    p.move(to: CGPoint(x: m.x - a, y: m.y))
+    p.addLine(to: CGPoint(x: m.x + a, y: m.y))
+    p.move(to: CGPoint(x: m.x, y: m.y - a))
+    p.addLine(to: CGPoint(x: m.x, y: m.y + a))
+    for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] as [(CGFloat, CGFloat)] {
+      let tx = m.x + dx * a, ty = m.y + dy * a
+      p.move(to: CGPoint(x: tx - dx * h - dy * h, y: ty - dy * h - dx * h))
+      p.addLine(to: CGPoint(x: tx, y: ty))
+      p.addLine(to: CGPoint(x: tx - dx * h + dy * h, y: ty - dy * h + dx * h))
+    }
+    lasso.moveChipArrow.path = p
+    if wasHidden || comingBack { fadeBack(l) }
+  }
+
   /// A touch landing at [p] (world units) on the chip starts resizing what's picked up.
   func beginResize(at p: CGPoint) -> Bool {
     guard let canvas, !parent.viewOnly, let b = lasso.bounds else { return false }
@@ -74,6 +158,7 @@ extension NoteCanvas.Coordinator {
     let c = chipCentre(b)
     guard hypot(p.x * z - c.x, p.y * z - c.y) < Self.chipHit else { return false }
     lasso.scaling = true
+    lasso.moveChipLayer.isHidden = true
     lasso.scaleBy = 1
     lasso.moveStart = p
     lasso.scaleBounds = b
