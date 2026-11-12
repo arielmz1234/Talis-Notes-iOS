@@ -399,6 +399,15 @@ Done (not compiled yet: no Swift on this PC, CI was stuck):
   box picked up (Android: no pictures or text).
 - UI test: `4f4-rotated` drags the handle under the ellipse sideways.
 
-Next: check the CI run of this push (compile errors first: `gh run view <id> --log-failed | grep error:`),
+Verified: run 43133066028 is green (TaliCore tests, app build, UI tests, .ipa), so the move chip
+and rotate handle compile. **Not seen working:** the screenshot test never reaches a selection. On
+iPad the Shapes panel stays open and the tool stays on Shapes after the lasso tap, so the
+"lasso" drags draw more ellipses (`ipad-light-4f2`…`4f4`). On iPhone the lasso is on but no
+ellipse was drawn first (`iphone-light-4f4`: only the earlier lines). So `4f2`/`4f3`/`4f4` show
+nothing about dots, chips or rotation. Fix the test next: close the Shapes panel (tap the Shapes
+button again) before tapping the lasso; on iPhone check that the ellipse drag lands below the
+toolbars.
+
+Old: next was to check the CI run of this push (compile errors first: `gh run view <id> --log-failed | grep error:`),
 then look at `4f2`/`4f3`/`4f4` and the chips; then soft selection after drawing a shape, the
 Shapes Style tab, line styles.
