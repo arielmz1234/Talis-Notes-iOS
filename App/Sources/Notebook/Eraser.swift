@@ -37,8 +37,9 @@ struct EraserSweep {
 
 /// The eraser (Android's `startErase`, `eraseSegment`, `finishErase`). PencilKit's own knows neither
 /// pen types, shapes nor fills, and what its precise eraser leaves can't be stored as the strokes it
-/// came from, so the notebook erases by itself. Locked things are left alone: locked writing isn't
-/// in PencilKit's drawing at all (the page draws it).
+/// came from, so the notebook erases by itself. Typed text and pictures have no pen, so it leaves
+/// them alone (Android's `eraserHits`). Locked things too: locked writing isn't in PencilKit's
+/// drawing at all (the page draws it).
 extension NoteCanvas.Coordinator {
   private static let cursorFill = UIColor(argb: Int32(bitPattern: 0x22D1_AEFF))
   private static let cursorEdge = UIColor(argb: Int32(bitPattern: 0xAA5E_4B8B))
@@ -150,21 +151,16 @@ extension NoteCanvas.Coordinator {
       }
     }
 
-    let reach = CGFloat(radius)
-    let at = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
-    let goneTexts = Set(texts.filter { !$0.locked && TextLook.frame($0).insetBy(dx: -reach, dy: -reach).contains(at) }.map(\.id))
-
     let fillsChanged = eraseFills(from: a, to: p, reach: radius, rubbed: &sweep.rubbed)
 
     if shapesChanged { setShapes(keptShapes) }
-    if !goneTexts.isEmpty { setTexts(texts.filter { !goneTexts.contains($0.id) }) }
     if inkChanged {
       sweep.ink = ink
       loading = true
       canvas.drawing = PKDrawing(strokes: ink.map(\.pk))
       loading = false
     }
-    sweep.changed = sweep.changed || inkChanged || shapesChanged || !goneTexts.isEmpty || fillsChanged
+    sweep.changed = sweep.changed || inkChanged || shapesChanged || fillsChanged
     erasing.sweep = sweep
   }
 
