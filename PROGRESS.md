@@ -449,3 +449,23 @@ Not done (next):
 - Soft selection after hold-to-shape and a pen tap on a shape's outline (pen tool): needs the pen
   to write through a soft selection (Android's `writesThrough`) while a finger moves it.
 - Fill tool; subject packs; line styles for ink.
+
+Verified (run 43169074931, green; after a build fix: SwiftUI has its own `ShapeStyle`, so the app
+says `TaliCore.ShapeStyle`):
+- `ShapeStyleTests` pass with the other core tests.
+- `ipad-light-4e2-shape-style`: the Style tab looks like Android's (two columns, preview, colours,
+  None fill ringed, Its own / Like the pen, glass size slider, opacity, faded fill opacity, six line
+  styles, both switches on). `iphone-dark-4e2`: columns stacked, scrolling.
+- `ipad-light-4f-shape-drawn`: the ellipse just drawn stays picked up: frame, four dots, move and
+  resize chips, rotate handle, menu above it (soft selection works).
+- `4f4-rotated` on iPad and iPhone: the rotate handle turns the ellipse; on iPhone the menu now sits
+  below the handle and chips instead of on them.
+
+Found, not fixed:
+- iPad `4f4`: after the rotate, a rectangle of the page bottom-right (about 690×200 pt) shows no grid
+  (lilac desk colour): a page tile not redrawn after the turn. Look at how `endRotate` asks the tiled
+  page layer to redraw (probably only the old/new bounds, or a tile dropped while hidden).
+- iPhone Style tab ran under the page and zoom chips: its scroll height is now 400 (was 470); not
+  yet seen.
+
+Next: the tile glitch above; soft selection for hold-to-shape and pen taps on shapes; fill tool.

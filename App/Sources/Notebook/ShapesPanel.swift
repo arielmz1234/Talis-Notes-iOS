@@ -135,7 +135,7 @@ struct ShapeStylePicker: View {
           right
         }
       }
-      .frame(maxHeight: 470)
+      .frame(maxHeight: 400)
       .padding(.top, 10)
     } else {
       HStack(alignment: .top, spacing: 20) {
