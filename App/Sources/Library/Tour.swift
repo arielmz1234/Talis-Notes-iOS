@@ -49,9 +49,9 @@ struct StepsCard: View {
         if !last {
           Button(action: onDone) {
             Text(L("tour_skip")).font(TaliType.labelLarge).foregroundStyle(c.accent)
-              .padding(.horizontal, 10).padding(.vertical, 6).contentShape(RoundedRectangle(cornerRadius: 10))
+              .padding(.horizontal, 10).padding(.vertical, 6).contentShape(Rectangle())
           }
-          .buttonStyle(.plain)
+          .buttonStyle(.plain).contentShape(Rectangle())
           .accessibilityIdentifier("tour-skip")
         }
       }

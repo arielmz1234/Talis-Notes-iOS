@@ -45,9 +45,7 @@ final class SelectingTests: ShotCase {
   }
 
   private func tool(_ app: XCUIApplication, _ id: String) {
-    showTool(app, id)
-    XCTAssertTrue(app.buttons[id].firstMatch.waitForExistence(timeout: 3), "\(id) is in the toolbar")
-    app.buttons[id].firstMatch.tap()
+    tapTool(app, id)
     settle()
   }
 
@@ -201,6 +199,82 @@ final class SelectingTests: ShotCase {
     point(app, CGPoint(x: copy.maxX - 8, y: copy.midY)).tap()
     settle()
     XCTAssertTrue(app.buttons["selection-delete"].exists, "still picked up: it was copied, not cut")
+  }
+
+  /// A tap just inside a control's right side is that control's, not its neighbour's: a rounded
+  /// touch shape answered taps up to 22 pt to its left. One of each kind of neighbours.
+  func testTapsStayOnTheControlUnderThem() {
+    let app = openNewNotebook()
+    func tapRightSide(_ e: XCUIElement) {
+      XCTAssertTrue(e.waitForExistence(timeout: 3), "\(e) is there")
+      point(app, CGPoint(x: e.frame.maxX - 4, y: e.frame.midY)).tap()
+      settle()
+    }
+    func penPanel() {
+      app.buttons["pen-p1"].firstMatch.tap()
+      settle()
+      if !app.buttons["Add a pen"].exists { app.buttons["pen-p1"].firstMatch.tap() }
+      settle()
+    }
+    // A pen beside the arrow to the pens' settings, while they're open.
+    penPanel()
+    tapRightSide(app.buttons["pen-p5"].firstMatch)
+    XCTAssertTrue(app.buttons["pen-p5"].firstMatch.isSelected, "the right side of the last pen picks that pen")
+    // Line styles, and the two buttons at the foot of the pen's panel.
+    penPanel()
+    app.buttons["Dotted"].firstMatch.tap()
+    settle()
+    tapRightSide(app.buttons["Solid"].firstMatch)
+    XCTAssertTrue(app.buttons["Solid"].firstMatch.isSelected, "the right side of Solid chooses Solid")
+    if !app.buttons["colour-D83A3A"].firstMatch.isHittable { at(app, 0.5, 0.7).press(forDuration: 0.05, thenDragTo: at(app, 0.5, 0.5)) }
+    tapRightSide(app.buttons["colour-D83A3A"].firstMatch)
+    XCTAssertTrue(app.buttons["colour-D83A3A"].firstMatch.isSelected, "the right side of a colour picks that colour")
+    let pens = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "pen-"))
+    let before = pens.count
+    if !app.buttons["Add a pen"].firstMatch.isHittable { at(app, 0.5, 0.7).press(forDuration: 0.05, thenDragTo: at(app, 0.5, 0.3)) }
+    tapRightSide(app.buttons["Add a pen"].firstMatch)
+    XCTAssertEqual(pens.count, before + 1, "the right side of Add a pen adds one (it doesn't remove this one)")
+    app.buttons["Remove this pen"].firstMatch.tap()
+    settle()
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
+    // Shape tiles.
+    tool(app, "tool-shapes")
+    if !app.buttons["shape-ARROW"].exists { tool(app, "tool-shapes") }
+    app.buttons["shape-ARROW"].firstMatch.tap()
+    settle()
+    tool(app, "tool-shapes")
+    if !app.buttons["shape-LINE"].exists { tool(app, "tool-shapes") }
+    tapRightSide(app.buttons["shape-LINE"].firstMatch)
+    tool(app, "tool-shapes")
+    if !app.buttons["shape-LINE"].exists { tool(app, "tool-shapes") }
+    XCTAssertTrue(app.buttons["shape-LINE"].firstMatch.isSelected, "the right side of Line chooses the line")
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
+    // The ⋯ menu: its tiles, the papers, the two chips.
+    func more() {
+      app.buttons["more"].firstMatch.tap()
+      settle()
+    }
+    more()
+    tapRightSide(app.buttons["Dark paper"].firstMatch)
+    XCTAssertTrue(app.buttons["Dark paper"].firstMatch.isSelected, "the right side of Dark paper turns the paper dark")
+    XCTAssertFalse(app.buttons["Endless canvas"].firstMatch.isSelected, "and leaves the pages as they are")
+    app.buttons["Dark paper"].firstMatch.tap()
+    tapRightSide(app.descendants(matching: .any)["paper-BLANK"].firstMatch)
+    XCTAssertTrue(app.descendants(matching: .any)["paper-BLANK"].firstMatch.isSelected, "the right side of Blank chooses blank paper")
+    tapRightSide(app.buttons["Pages"].firstMatch)
+    XCTAssertTrue(app.buttons["Look at page 1"].waitForExistence(timeout: 3), "the right side of Pages opens the pages")
+    app.buttons["Done"].firstMatch.tap()
+    settle()
+    // A card's buttons.
+    more()
+    app.buttons["Export PDF"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["export-share"].waitForExistence(timeout: 8), "the export card")
+    settle()
+    tapRightSide(app.buttons["Cancel"].firstMatch)
+    XCTAssertFalse(app.buttons["export-share"].exists, "the right side of Cancel closes the card")
+    shot("k1-every-tap-its-own")
   }
 
   func testLock() {
@@ -447,6 +521,48 @@ final class SelectingTests: ShotCase {
     tool(app, "tool-eraser")
   }
 
+  /// A fill's outline cut by the precise eraser still belongs to the fill: the pieces travel with
+  /// the fill and the rest of its outline.
+  func testACutOutlineStaysWithItsFill() {
+    let app = openNewNotebook()
+    let window = app.windows.firstMatch.frame
+    drag(app, (0.16, 0.42), (0.40, 0.42))
+    drag(app, (0.38, 0.40), (0.38, 0.62))
+    drag(app, (0.40, 0.60), (0.16, 0.60))
+    drag(app, (0.18, 0.62), (0.18, 0.40))
+    tool(app, "tool-fill")
+    if !app.buttons["no-fill"].exists { tool(app, "tool-fill") }
+    app.buttons["fill-colour-4"].firstMatch.tap()
+    tool(app, "tool-fill")
+    at(app, 0.28, 0.51).tap()
+    Thread.sleep(forTimeInterval: 2.5)
+    // The top side cut in two, a quarter of the way along.
+    tool(app, "tool-eraser")
+    if !app.buttons["option-true"].exists { tool(app, "tool-eraser") }
+    app.buttons["option-true"].firstMatch.tap()
+    tool(app, "tool-eraser")
+    foldTools(app)
+    drag(app, (0.24, 0.395), (0.24, 0.43))
+    calmShot("c1-outline-cut")
+    // Picked up by its right side and carried away: both pieces of the cut side go too.
+    func topSide(shiftedBy dx: CGFloat) -> Int {
+      Pixels().count(rows: 0.405...0.435, from: 0.20 + dx, to: 0.36 + dx) { $0.r < 110 && $0.g < 110 && $0.b < 125 }
+    }
+    XCTAssertGreaterThan(topSide(shiftedBy: 0), 20, "the cut side is still drawn")
+    lasso(app)
+    drag(app, (0.37, 0.50), (0.39, 0.52))
+    let f = selectionFrame(app)
+    drag(app, CGPoint(x: f.midX, y: f.midY), CGPoint(x: f.midX + window.width * 0.4, y: f.midY))
+    at(app, 0.5, 0.85).tap()
+    calmShot("c2-carried-with-its-cut-side")
+    XCTAssertEqual(topSide(shiftedBy: 0), 0, "nothing of the cut side stays behind")
+    XCTAssertGreaterThan(topSide(shiftedBy: 0.4), 20, "its pieces went with the fill")
+    tool(app, "tool-eraser")
+    if !app.buttons["option-false"].exists { tool(app, "tool-eraser") }
+    app.buttons["option-false"].firstMatch.tap()
+    tool(app, "tool-eraser")
+  }
+
   func testTypedTextInTheLasso() {
     let app = openNewNotebook()
     tool(app, "tool-keyboard")
@@ -499,6 +615,94 @@ final class SelectingTests: ShotCase {
     at(app, 0.5, 0.2).tap()
     XCTAssertFalse(app.textViews["text-editor"].waitForExistence(timeout: 1.5), "a tap elsewhere finishes the text")
     calmShot("t7-kept")
+  }
+
+  /// The small bar above a text box being typed in: size, colour, delete and done.
+  func testTextBar() {
+    let app = openNewNotebook()
+    let window = app.windows.firstMatch.frame
+    tool(app, "tool-keyboard")
+    guard app.keyboards.firstMatch.waitForExistence(timeout: 4) else { return XCTFail("the keyboard came") }
+    if app.buttons["Continue"].exists { app.buttons["Continue"].firstMatch.tap() }
+    app.typeText("Shear V = 6 kN")
+    let editor = app.textViews["text-editor"].firstMatch
+    for id in ["text-smaller", "text-bigger", "text-colour-0", "text-delete", "text-done"] {
+      let b = app.buttons[id].firstMatch
+      XCTAssertTrue(b.waitForExistence(timeout: 3) && b.isHittable, "\(id) is in the bar")
+      XCTAssertTrue(window.contains(b.frame), "\(id) is on the screen, at \(b.frame)")
+      XCTAssertLessThan(b.frame.maxY, editor.frame.minY, "the bar sits above the box")
+    }
+    XCTAssertGreaterThan(app.buttons["text-smaller"].firstMatch.frame.minY, app.buttons["pen-p1"].firstMatch.frame.maxY, "and below the toolbars")
+    shot("b1-text-bar")
+    let small = editor.frame.height
+    for _ in 0..<4 { app.buttons["text-bigger"].firstMatch.tap() }
+    settle()
+    XCTAssertGreaterThan(editor.frame.height, small * 1.5, "A+ makes the text bigger")
+    app.buttons["text-smaller"].firstMatch.tap()
+    settle()
+    XCTAssertTrue(app.keyboards.firstMatch.exists, "the keyboard stays while the bar is used")
+    // Her fourth colour is red.
+    app.buttons["text-colour-3"].firstMatch.tap()
+    settle()
+    let box = editor.frame
+    shot("b2-bigger-and-red")
+    app.buttons["text-done"].firstMatch.tap()
+    XCTAssertFalse(app.textViews["text-editor"].waitForExistence(timeout: 1.5), "Done finishes the text")
+    XCTAssertFalse(app.buttons["text-done"].exists, "and the bar goes with it")
+    func redText() -> Int {
+      Pixels().count(rows: (box.minY / window.height)...(box.maxY / window.height), from: box.minX / window.width, to: min(box.maxX / window.width, 0.99)) { $0.r > 170 && $0.g < 110 && $0.b < 110 }
+    }
+    Thread.sleep(forTimeInterval: 2)
+    shot("b3-done")
+    XCTAssertGreaterThan(redText(), 8, "the text is on the page in the colour chosen")
+    // Opened again from its menu, the bar's bin deletes it; undo brings it back.
+    lasso(app)
+    point(app, CGPoint(x: box.minX + 16, y: box.midY)).press(forDuration: 0.05)
+    openMore(app)
+    menuButton(app, "selection-edit-text").tap()
+    XCTAssertTrue(app.buttons["text-delete"].waitForExistence(timeout: 3), "the bar comes with the box picked up")
+    shot("b4-opened-again")
+    app.buttons["text-delete"].firstMatch.tap()
+    XCTAssertFalse(app.textViews["text-editor"].waitForExistence(timeout: 1.5))
+    Thread.sleep(forTimeInterval: 2)
+    shot("b5-deleted")
+    XCTAssertEqual(redText(), 0, "the bin deletes the text")
+    app.buttons["undo"].firstMatch.tap()
+    Thread.sleep(forTimeInterval: 2)
+    XCTAssertGreaterThan(redText(), 8, "undo brings it back")
+  }
+
+  /// What's picked up, carried to the bottom of the screen and rested there, scrolls the page along
+  /// and stays under the finger.
+  func testCarryingToAnEdgeScrollsThePage() {
+    let app = openNewNotebook()
+    let window = app.windows.firstMatch.frame
+    func onPage(_ n: Int) -> Bool { app.buttons.matching(NSPredicate(format: "label == %@", "\(n) / 3")).firstMatch.exists }
+    // Three pages, so there's somewhere to scroll to on any screen.
+    app.buttons.matching(NSPredicate(format: "label == %@", "1 / 1")).firstMatch.tap()
+    settle()
+    app.buttons["Add a page"].firstMatch.tap()
+    app.buttons["Add a page"].firstMatch.tap()
+    app.buttons["Done"].firstMatch.tap()
+    settle()
+    drag(app, (0.30, 0.44), (0.52, 0.45))
+    lasso(app)
+    drag(app, (0.40, 0.38), (0.44, 0.56))
+    let f = selectionFrame(app)
+    XCTAssertTrue(onPage(1), "it starts on page 1 of 3")
+    // Across the bottom edge's zone and straight back: passing through doesn't scroll.
+    let grab = CGPoint(x: f.midX, y: f.midY)
+    point(app, grab).press(forDuration: 0.05, thenDragTo: point(app, CGPoint(x: grab.x, y: window.height * 0.6)), withVelocity: .fast, thenHoldForDuration: 0.05)
+    settle()
+    XCTAssertTrue(onPage(1), "carried about in the middle of the screen, the page stays")
+    let now = selectionFrame(app)
+    shot("g1-resting-at-the-edge", after: 2.5) {
+      self.point(app, CGPoint(x: now.midX, y: now.midY)).press(
+        forDuration: 0.05, thenDragTo: self.point(app, CGPoint(x: now.midX, y: window.height - 20)), withVelocity: .slow, thenHoldForDuration: 4)
+    }
+    XCTAssertFalse(onPage(1), "rested at the bottom edge, the page scrolled along")
+    XCTAssertGreaterThan(selectionFrame(app).midY, window.height * 0.7, "and what's carried stayed under the finger")
+    calmShot("g2-carried-to-a-later-page")
   }
 
   func testSnapping() {

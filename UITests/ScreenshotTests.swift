@@ -14,12 +14,10 @@ final class ScreenshotTests: ShotCase {
   }
 
   private func pickShape(_ app: XCUIApplication, _ kind: String) {
-    showTool(app, "tool-shapes")
-    app.buttons["tool-shapes"].firstMatch.tap()
+    tapTool(app, "tool-shapes")
     settle()
     if !app.buttons["shape-\(kind)"].exists {
-      showTool(app, "tool-shapes")
-      app.buttons["tool-shapes"].firstMatch.tap()
+      tapTool(app, "tool-shapes")
       settle()
     }
     // The phone's folded tools stay open while the tool doesn't change, over the panel's tiles: fold them away.
@@ -109,8 +107,7 @@ final class ScreenshotTests: ShotCase {
     // Through the pen: with the Shapes tool on, a tap on the lasso opens the Shapes panel instead.
     app.buttons["pen-p1"].firstMatch.tap()
     settle()
-    showTool(app, "tool-lasso")
-    app.buttons["tool-lasso"].firstMatch.tap()
+    tapTool(app, "tool-lasso")
     settle()
     drag(app, pt(0.66, 0.28), pt(0.80, 0.56))
     shot("s12-lasso")
@@ -132,23 +129,20 @@ final class ScreenshotTests: ShotCase {
     settle()
     shot("s16-turn-undone")
 
-    showTool(app, "pen-p1")
-    app.buttons["pen-p1"].firstMatch.tap()
+    tapTool(app, "pen-p1")
     settle()
     at(app, CGPoint(x: centre.x, y: centre.y - radius / 2)).press(forDuration: 0.05)
     settle()
     shot("s17-pen-tap")
 
-    showTool(app, "tool-keyboard")
-    app.buttons["tool-keyboard"].firstMatch.tap()
+    tapTool(app, "tool-keyboard")
     settle()
     guard app.keyboards.firstMatch.waitForExistence(timeout: 3) else { return }
     // A fresh simulator first explains slide-to-type.
     if app.buttons["Continue"].exists { app.buttons["Continue"].firstMatch.tap() }
     app.typeText("Reaction R = 12 kN")
     let box = app.textViews["text-editor"].firstMatch.frame
-    showTool(app, "tool-lasso")
-    app.buttons["tool-lasso"].firstMatch.tap()
+    tapTool(app, "tool-lasso")
     settle()
     guard !box.isEmpty else { return }
     at(app, CGPoint(x: box.midX, y: box.midY)).press(forDuration: 0.05)
@@ -210,55 +204,45 @@ final class ScreenshotTests: ShotCase {
     app.buttons["pen-p1"].firstMatch.tap()
     settle()
     // The lasso: a loop round the strokes picks them up and shows the selection menu.
-    showTool(app, "tool-lasso")
-    if app.buttons["tool-lasso"].exists {
-      app.buttons["tool-lasso"].firstMatch.tap()
-      settle()
-      // A slow drag so the loop gets plenty of points (a fast one is just its two ends).
-      let a = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.38))
-      a.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.72)), withVelocity: .slow, thenHoldForDuration: 0.05)
-      settle()
-      shot("4d-lasso")
-      app.buttons["pen-p1"].firstMatch.tap()
-      settle()
-    }
+    tapTool(app, "tool-lasso")
+    settle()
+    // A slow drag so the loop gets plenty of points (a fast one is just its two ends).
+    let a = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.38))
+    a.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.72)), withVelocity: .slow, thenHoldForDuration: 0.05)
+    settle()
+    shot("4d-lasso")
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
     // The Shapes tool: its panel opens, an ellipse is chosen and dragged out.
-    showTool(app, "tool-shapes")
-    if app.buttons["tool-shapes"].exists {
-      app.buttons["tool-shapes"].firstMatch.tap()
+    tapTool(app, "tool-shapes")
+    settle()
+    shot("4e-shapes-panel")
+    if app.buttons["shape-ELLIPSE"].exists {
+      app.buttons["shape-ELLIPSE"].firstMatch.tap()
       settle()
-      shot("4e-shapes-panel")
-      if app.buttons["shape-ELLIPSE"].exists {
-        app.buttons["shape-ELLIPSE"].firstMatch.tap()
-        settle()
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.62, dy: 0.3))
-          .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.42)), withVelocity: .slow, thenHoldForDuration: 0.05)
-        settle()
-        shot("4f-shape-drawn")
-      }
-      app.buttons["pen-p1"].firstMatch.tap()
+      app.coordinate(withNormalizedOffset: CGVector(dx: 0.62, dy: 0.3))
+        .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.42)), withVelocity: .slow, thenHoldForDuration: 0.05)
       settle()
+      shot("4f-shape-drawn")
     }
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
     // Typed text: the keyboard opens a box below what's written; the lasso tool puts it down.
-    showTool(app, "tool-keyboard")
-    if app.buttons["tool-keyboard"].exists {
-      app.buttons["tool-keyboard"].firstMatch.tap()
-      settle()
-      // The box sits inside PencilKit's canvas, which hides its subviews from accessibility:
-      // type into whatever has the keyboard, as a person would.
-      if app.keyboards.firstMatch.waitForExistence(timeout: 3) {
-        app.typeText("Sum of moments = 0\nReaction R = 12 kN")
-      } else {
-        XCTFail("no keyboard for the new text box")
-      }
-      shot("4g-typing")
-      showTool(app, "tool-lasso")
-      if app.buttons["tool-lasso"].exists { app.buttons["tool-lasso"].firstMatch.tap() }
-      settle()
-      shot("4h-text")
-      app.buttons["pen-p1"].firstMatch.tap()
-      settle()
+    tapTool(app, "tool-keyboard")
+    settle()
+    // The box sits inside PencilKit's canvas, which hides its subviews from accessibility:
+    // type into whatever has the keyboard, as a person would.
+    if app.keyboards.firstMatch.waitForExistence(timeout: 3) {
+      app.typeText("Sum of moments = 0\nReaction R = 12 kN")
+    } else {
+      XCTFail("no keyboard for the new text box")
     }
+    shot("4g-typing")
+    tapTool(app, "tool-lasso")
+    settle()
+    shot("4h-text")
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
     if app.buttons["more"].exists {
       app.buttons["more"].firstMatch.tap()
       settle()

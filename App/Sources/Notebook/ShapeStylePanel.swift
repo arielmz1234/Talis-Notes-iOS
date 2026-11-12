@@ -199,7 +199,7 @@ struct NoneDot: View {
       .overlay(Circle().stroke(c.accent, lineWidth: 2).opacity(selected ? 1 : 0))
       .animation(.spring(response: 0.25, dampingFraction: 0.8), value: selected)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.plain).contentShape(Rectangle())
     .accessibilityLabel(L("no_fill"))
     .accessibilityAddTraits(selected ? .isSelected : [])
     .accessibilityIdentifier("no-fill")

@@ -112,7 +112,7 @@ final class TextBoxHandle: UIView, UIGestureRecognizerDelegate {
 /// text keeps its size (A− / A+ change that). In world units, so it's the same at any zoom.
 extension NoteCanvas.Coordinator {
   /// The box's frame stands this far off the text (Android's 6 dp), and the chips this far off its corners.
-  private static let textPad: CGFloat = 6
+  static let textPad: CGFloat = 6
   private static let chipGap: CGFloat = 10
 
   func installTextBoxHandles(on canvas: PKCanvasView, around v: UITextView) {

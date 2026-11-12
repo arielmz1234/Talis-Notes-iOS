@@ -23,8 +23,8 @@ struct EraserSweep {
     var pk: PKStroke
     var stroke: InkStroke
     var box: TaliCore.Rect
-    /// Cut this sweep, so not stored yet.
-    var piece = false
+    /// A piece cut this sweep, so not stored yet: the id of the stroke or shape the sweep found whole.
+    var cutFrom: String?
   }
 
   let before: PageState
@@ -37,8 +37,9 @@ struct EraserSweep {
 
 /// The eraser (Android's `startErase`, `eraseSegment`, `finishErase`). PencilKit's own knows neither
 /// pen types, shapes nor fills, and what its precise eraser leaves can't be stored as the strokes it
-/// came from, so the notebook erases by itself. Locked things are left alone: locked writing isn't
-/// in PencilKit's drawing at all (the page draws it).
+/// came from, so the notebook erases by itself. Typed text and pictures have no pen, so it leaves
+/// them alone (Android's `eraserHits`). Locked things too: locked writing isn't in PencilKit's
+/// drawing at all (the page draws it).
 extension NoteCanvas.Coordinator {
   private static let cursorFill = UIColor(argb: Int32(bitPattern: 0x22D1_AEFF))
   private static let cursorEdge = UIColor(argb: Int32(bitPattern: 0xAA5E_4B8B))
@@ -101,12 +102,12 @@ extension NoteCanvas.Coordinator {
     var inkChanged = false
     var ink: [EraserSweep.Ink] = []
     ink.reserveCapacity(sweep.ink.count)
-    func cut(_ stroke: InkStroke, into pieces: [InkInputs]) {
+    func cut(_ stroke: InkStroke, from root: String, into pieces: [InkInputs]) {
       inkChanged = true
       for inputs in pieces {
         for kept in onItsPage(inputs, of: stroke) {
           let piece = InkStroke(id: newId(), z: stroke.z, pen: stroke.pen, tags: stroke.tags, color: stroke.color, size: stroke.size, inputs: kept)
-          ink.append(EraserSweep.Ink(pk: piece.pkStroke(mask: mask(for: piece)), stroke: piece, box: piece.bounds, piece: true))
+          ink.append(EraserSweep.Ink(pk: piece.pkStroke(mask: mask(for: piece)), stroke: piece, box: piece.bounds, cutFrom: root))
         }
       }
     }
@@ -119,7 +120,7 @@ extension NoteCanvas.Coordinator {
       switch Eraser.hit(s.inputs, size: s.size, mode: mode, from: a, to: p, radius: radius) {
       case .missed: ink.append(item)
       case .whole: inkChanged = true
-      case .pieces(let left): cut(s, into: left)
+      case .pieces(let left): cut(s, from: item.cutFrom ?? s.id, into: left)
       }
     }
 
@@ -143,28 +144,23 @@ extension NoteCanvas.Coordinator {
       let asInk = InkStroke(id: "", z: shape.z, pen: pen, color: shape.inkColor, size: shape.size, inputs: InkInputs(points: []))
       for (line, hit) in zip(lines, hits) {
         switch hit {
-        case .missed: cut(asInk, into: [line])
+        case .missed: cut(asInk, from: shape.id, into: [line])
         case .whole: break
-        case .pieces(let left): cut(asInk, into: left)
+        case .pieces(let left): cut(asInk, from: shape.id, into: left)
         }
       }
     }
 
-    let reach = CGFloat(radius)
-    let at = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
-    let goneTexts = Set(texts.filter { !$0.locked && TextLook.frame($0).insetBy(dx: -reach, dy: -reach).contains(at) }.map(\.id))
-
     let fillsChanged = eraseFills(from: a, to: p, reach: radius, rubbed: &sweep.rubbed)
 
     if shapesChanged { setShapes(keptShapes) }
-    if !goneTexts.isEmpty { setTexts(texts.filter { !goneTexts.contains($0.id) }) }
     if inkChanged {
       sweep.ink = ink
       loading = true
       canvas.drawing = PKDrawing(strokes: ink.map(\.pk))
       loading = false
     }
-    sweep.changed = sweep.changed || inkChanged || shapesChanged || !goneTexts.isEmpty || fillsChanged
+    sweep.changed = sweep.changed || inkChanged || shapesChanged || fillsChanged
     erasing.sweep = sweep
   }
 
@@ -187,9 +183,25 @@ extension NoteCanvas.Coordinator {
       return
     }
     finishFillErase(sweep.rubbed, from: sweep.before.fills)
-    for item in sweep.ink where item.piece { pending[StrokeKey(item.pk)] = item.stroke }
+    regroupFills(after: sweep)
+    for item in sweep.ink where item.cutFrom != nil { pending[StrokeKey(item.pk)] = item.stroke }
     record(sweep.before)
     sync(canvas.drawing)
     reportUndo()
+  }
+
+  /// A fill whose outline was cut keeps outlining the pieces that are left, so they still travel with it.
+  private func regroupFills(after sweep: EraserSweep) {
+    let left = Set(sweep.ink.filter { $0.cutFrom == nil }.map(\.stroke.id)).union(shapes.map(\.id))
+    let gone = Set(sweep.before.stored.map(\.stroke.id) + sweep.before.shapes.map(\.id)).subtracting(left)
+    if gone.isEmpty { return }
+    var pieces: [String: String] = [:]
+    for item in sweep.ink { pieces[item.stroke.id] = item.cutFrom }
+    setFills(fills.map { fill in
+      guard let walls = FillGroup.wallsAfterErasing(fill.row.walls, gone: gone, pieces: pieces) else { return fill }
+      var p = fill.picture
+      p.walls = walls
+      return fill.with(p)
+    })
   }
 }

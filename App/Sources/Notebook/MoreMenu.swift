@@ -97,10 +97,11 @@ struct MoreMenu<Papers: View>: View {
       .padding(.horizontal, 10).frame(minHeight: 38)
       .background(RoundedRectangle(cornerRadius: 12).fill(on ? c.accentSoft : .clear))
       .overlay(RoundedRectangle(cornerRadius: 12).stroke(on ? .clear : c.line, lineWidth: 1))
-      .contentShape(RoundedRectangle(cornerRadius: 12))
+      .contentShape(Rectangle())
       .animation(.easeOut(duration: 0.2), value: on)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.plain).contentShape(Rectangle())
+    .accessibilityAddTraits(on ? .isSelected : [])
   }
 
   /// A one-line setting: a tick when on, or a value for a three-way one.
@@ -118,6 +119,6 @@ struct MoreMenu<Papers: View>: View {
       }
       .padding(.horizontal, 6).frame(minHeight: 40).contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.plain).contentShape(Rectangle())
   }
 }

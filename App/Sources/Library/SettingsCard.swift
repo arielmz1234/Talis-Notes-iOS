@@ -103,7 +103,7 @@ struct SettingsCard: View {
             Spacer().frame(height: 2)
           }
           .padding(5)
-          .contentShape(RoundedRectangle(cornerRadius: 20))
+          .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle(scale: 0.96))
         .frame(maxWidth: .infinity)

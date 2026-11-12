@@ -15,6 +15,21 @@ struct PagesTests {
   @Test func stayPut() { #expect(order(3, 1, 1) == [0, 1, 2]) }
   @Test func deleteSome() { #expect(Pages.withoutPages(5, [1, 3]) == [0, 2, 4]) }
   @Test func deleteAll() { #expect(Pages.withoutPages(3, [0, 1, 2]) == []) }
+
+  @Test func aHeldPageBringsItsPickedRun() {
+    #expect(Pages.carried(with: 2, picked: [1, 2, 3]) == [1, 2, 3])
+    #expect(Pages.carried(with: 3, picked: [1, 3]) == [3], "picked pages with a gap between them don't move together")
+    #expect(Pages.carried(with: 0, picked: [1, 2]) == [0], "a page that isn't picked goes alone")
+    #expect(Pages.carried(with: 4, picked: nil) == [4])
+  }
+
+  @Test func aBlockOfPagesMovesAsOne() {
+    #expect(Pages.moving([1, 2], in: [0, 1, 2, 3, 4], onto: 4) == [0, 3, 4, 1, 2], "dragged down, it lands after the page it's over")
+    #expect(Pages.moving([3, 4], in: [0, 1, 2, 3, 4], onto: 0) == [3, 4, 0, 1, 2], "dragged up, before it")
+    #expect(Pages.moving([2], in: [0, 1, 2, 3], onto: 3) == [0, 1, 3, 2])
+    #expect(Pages.moving([1, 2], in: [0, 3, 4, 1, 2], onto: 3) == [0, 1, 2, 3, 4], "and back again")
+    #expect(Pages.moving([1, 2], in: [0, 1, 2, 3], onto: 2) == [0, 1, 2, 3], "over itself, nothing moves")
+  }
   @Test func copiesSitAfterTheirPage() { #expect(Pages.withCopies(4, [1, 3]) == [0, 1, 1, 2, 3, 3]) }
 
   @Test func a4MatchesAndroid() {

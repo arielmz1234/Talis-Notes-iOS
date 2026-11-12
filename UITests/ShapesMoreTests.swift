@@ -35,9 +35,7 @@ final class ShapesMoreTests: ShotCase {
   }
 
   private func tool(_ app: XCUIApplication, _ id: String) {
-    showTool(app, id)
-    XCTAssertTrue(app.buttons[id].firstMatch.waitForExistence(timeout: 3), "\(id) is in the toolbar")
-    app.buttons[id].firstMatch.tap()
+    tapTool(app, id)
     settle()
   }
 

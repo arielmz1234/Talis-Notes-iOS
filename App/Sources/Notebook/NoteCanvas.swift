@@ -264,6 +264,8 @@ struct NoteCanvas: UIViewRepresentable {
   var onSelection: (SelectionInfo?) -> Void = { _ in }
   /// A short message at the bottom ("Copied — hold anywhere to paste it").
   var onHint: (String) -> Void = { _ in }
+  /// The text box being typed in, for the bar above it, or nil.
+  var onTextBar: (TextBarInfo?) -> Void = { _ in }
   /// A hold on the page offering Paste there (window coordinates), or nil.
   var onPasteOffer: (CGPoint?) -> Void = { _ in }
   /// Apple Pencil was double-tapped or squeezed, with what the system's settings say it should do.
@@ -717,6 +719,7 @@ struct NoteCanvas: UIViewRepresentable {
       reportView()
       if lasso.bounds != nil { drawChrome() }
       reportSelection()
+      if textEdit.view != nil { reportTextBar() }
     }
 
     // MARK: Keeping the store in step

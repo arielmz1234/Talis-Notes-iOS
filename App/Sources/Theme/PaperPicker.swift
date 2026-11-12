@@ -151,7 +151,7 @@ struct PaperPicker: View {
     .padding(.vertical, 6)
     .frame(width: tileWidth)
     .slidingOption(p, in: glide)
-    .contentShape(RoundedRectangle(cornerRadius: 10))
+    .contentShape(Rectangle())
     .onTapGesture {
       if on, let onEditCurrent { onEditCurrent() } else { withAnimation(.easeOut(duration: 0.2)) { choice = p } }
     }
@@ -178,7 +178,7 @@ struct PaperPicker: View {
       .frame(width: tileWidth)
       .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.plain).contentShape(Rectangle())
     .accessibilityIdentifier("paper-more")
   }
 
@@ -194,7 +194,7 @@ struct PaperPicker: View {
       .frame(width: tileWidth)
       .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.plain).contentShape(Rectangle())
     .accessibilityIdentifier("paper-own")
   }
 }

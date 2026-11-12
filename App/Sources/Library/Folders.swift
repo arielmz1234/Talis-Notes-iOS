@@ -118,9 +118,9 @@ struct Breadcrumb: View {
       Button { onSelect(id) } label: {
         Text(label).font(TaliType.labelLarge).foregroundStyle(c.accent).lineLimit(1)
           .padding(.horizontal, 4).padding(.vertical, 2)
-          .contentShape(RoundedRectangle(cornerRadius: 8))
+          .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).contentShape(Rectangle())
       Image(systemName: "chevron.forward").font(.system(size: 11, weight: .semibold)).foregroundStyle(c.inkFaint).frame(width: 16, height: 16)
     }
   }
@@ -189,7 +189,7 @@ struct FolderTile: View {
     )
     .overlay(RoundedRectangle(cornerRadius: 18).stroke(c.line, lineWidth: 1))
     .shadow(color: c.accent.opacity(0.16), radius: 8, y: 4)
-    .contentShape(RoundedRectangle(cornerRadius: 18))
+    .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("folder-\(folder.name)")
   }
@@ -210,7 +210,7 @@ struct NewFolderTile: View {
       .padding(.horizontal, 16)
       .frame(height: 76)
       .overlay(RoundedRectangle(cornerRadius: 18).inset(by: 0.75).stroke(c.inkFaint.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [8, 6])))
-      .contentShape(RoundedRectangle(cornerRadius: 18))
+      .contentShape(Rectangle())
     }
     .buttonStyle(PressStyle(scale: 0.97))
     .accessibilityIdentifier("new-folder-tile")

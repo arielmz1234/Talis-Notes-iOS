@@ -61,6 +61,24 @@ public struct Pages: Hashable, Sendable {
   /// Every page, each one in [copied] followed straight after by its copy.
   public static func withCopies(_ count: Int, _ copied: Set<Int>) -> [Int] { (0..<count).flatMap { copied.contains($0) ? [$0, $0] : [$0] } }
 
+  /// The pages carried when [page] is held in the overview (Android's `runWith`): the picked pages
+  /// when it's one of them and they sit together with no gap, else just [page].
+  public static func carried(with page: Int, picked: Set<Int>?) -> [Int] {
+    guard let picked, picked.contains(page) else { return [page] }
+    let run = picked.sorted()
+    return run[run.count - 1] - run[0] == run.count - 1 ? run : [page]
+  }
+
+  /// [order] with the [carried] pages moved as one block to where page [target] is (Android's
+  /// `dragBy`): after it when it lay further on, before it otherwise.
+  public static func moving(_ carried: [Int], in order: [Int], onto target: Int) -> [Int] {
+    guard let first = carried.first, let from = order.firstIndex(of: first), let over = order.firstIndex(of: target), !carried.contains(target) else { return order }
+    var rest = order.filter { !carried.contains($0) }
+    let at = (rest.firstIndex(of: target) ?? 0) + (over > from ? 1 : 0)
+    rest.insert(contentsOf: carried, at: min(at, rest.count))
+    return rest
+  }
+
   /// Where page [p] ends up when page [from] is moved to position [to].
   public static func movedIndex(_ p: Int, from: Int, to: Int) -> Int {
     if p == from { return to }

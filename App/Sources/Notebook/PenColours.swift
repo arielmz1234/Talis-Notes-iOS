@@ -68,7 +68,8 @@ struct ReorderableColors: View {
       ForEach(Array(shown.enumerated()), id: \.element) { i, color in
         let lifted = dragging == color
         let home = CGPoint(x: CGFloat(layout.colors[i].x), y: CGFloat(layout.colors[i].y))
-        ColorDotFace(color: Color(argb: color), selected: color | 0xFF00_0000 == selected | 0xFF00_0000)
+        let chosen = color | 0xFF00_0000 == selected | 0xFF00_0000
+        ColorDotFace(color: Color(argb: color), selected: chosen)
           .scaleEffect(lifted ? 1.18 : 1)
           .offset(x: lifted ? dragAt.x - Self.dot / 2 : home.x, y: lifted ? dragAt.y - Self.dot / 2 : home.y)
           .zIndex(lifted ? 1 : 0)
@@ -86,7 +87,7 @@ struct ReorderableColors: View {
             .presentationCompactAdaptation(.popover)
             .presentationBackground(c.surface)
           }
-          .accessibilityAddTraits(.isButton)
+          .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
           .accessibilityLabel(L("colour"))
           .accessibilityIdentifier(String(format: "colour-%06X", color & 0xFF_FFFF))
       }
@@ -103,7 +104,7 @@ struct ReorderableColors: View {
         .frame(width: Self.dot, height: Self.dot)
         .contentShape(Circle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).contentShape(Rectangle())
       .accessibilityLabel(L("add_a_colour"))
       .offset(x: CGFloat(layout.add.x), y: CGFloat(layout.add.y))
     }

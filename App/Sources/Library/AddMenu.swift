@@ -73,7 +73,7 @@ private struct AddRow: View {
         Spacer(minLength: 0)
       }
       .padding(.horizontal, 10).padding(.vertical, 9)
-      .contentShape(RoundedRectangle(cornerRadius: 16))
+      .contentShape(Rectangle())
     }
     .buttonStyle(RowPressStyle())
     .opacity(shown ? 1 : 0)
@@ -100,6 +100,7 @@ struct RowPressStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .background(RoundedRectangle(cornerRadius: 16).fill(c.ink.opacity(configuration.isPressed ? 0.06 : 0)))
+      .contentShape(Rectangle())
       .animation(.easeOut(duration: configuration.isPressed ? 0.05 : 0.2), value: configuration.isPressed)
   }
 }

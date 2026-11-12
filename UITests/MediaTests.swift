@@ -48,11 +48,9 @@ final class MediaTests: ShotCase {
     open(app, "Lab report")
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.45))
       .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.55)))
-    showTool(app, "tool-keyboard")
-    app.buttons["tool-keyboard"].firstMatch.tap()
+    tapTool(app, "tool-keyboard")
     if app.keyboards.firstMatch.waitForExistence(timeout: 3) { app.typeText("Typed text stays text") }
-    showTool(app, "tool-lasso")
-    app.buttons["tool-lasso"].firstMatch.tap()
+    tapTool(app, "tool-lasso")
     settle()
     app.buttons["more"].firstMatch.tap()
     settle()
@@ -74,15 +72,13 @@ extension MediaTests {
     let app = launch(["-fakePickers"])
     settle()
     open(app, "Truss problems")
-    showTool(app, "tool-insert")
-    app.buttons["tool-insert"].firstMatch.tap()
+    tapTool(app, "tool-insert")
     settle()
     shot("i1-insert-menu")
     app.buttons["insert-picture"].firstMatch.tap()
     settle()
     shot("i2-picture")
-    showTool(app, "tool-insert")
-    app.buttons["tool-insert"].firstMatch.tap()
+    tapTool(app, "tool-insert")
     settle()
     app.buttons["insert-pdf"].firstMatch.tap()
     Thread.sleep(forTimeInterval: 0.4)
@@ -115,8 +111,7 @@ extension MediaTests {
     }
     settle()
     open(app, "Fluid mechanics")
-    showTool(app, "tool-voice")
-    app.buttons["tool-voice"].firstMatch.tap()
+    tapTool(app, "tool-voice")
     let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     let allow = springboard.buttons["Allow"]
     if allow.waitForExistence(timeout: 2) { allow.tap() }
@@ -147,6 +142,76 @@ extension MediaTests {
 }
 
 extension MediaTests {
+  /// A memo goes with its page: copied when the page is duplicated, moved when it's moved, gone
+  /// when it's deleted, and back with undo.
+  func testMemosFollowTheirPages() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
+    let app = launch()
+    settle()
+    open(app, "Fluid mechanics")
+    tapTool(app, "tool-voice")
+    let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow"]
+    if allow.waitForExistence(timeout: 2) { allow.tap() }
+    Thread.sleep(forTimeInterval: 2.5)
+    app.buttons["memo-done"].firstMatch.tap()
+    settle()
+    app.buttons["memo-add"].firstMatch.tap()
+    settle()
+    let memos = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Open voice memo'"))
+    XCTAssertEqual(memos.count, 1, "the memo sits beside page 1")
+    let home = memos.firstMatch.frame
+    func overview() {
+      app.buttons.matching(NSPredicate(format: "label MATCHES %@", "[0-9]+ / [0-9]+")).firstMatch.tap()
+      settle()
+    }
+    func closeOverview() {
+      app.buttons["Done"].firstMatch.tap()
+      settle()
+    }
+    // Duplicated with its page.
+    overview()
+    app.buttons["Add a page"].firstMatch.tap()
+    settle()
+    app.buttons["pages-select"].firstMatch.tap()
+    app.buttons["Pick page 1"].firstMatch.tap()
+    app.buttons["Duplicate"].firstMatch.tap()
+    settle()
+    closeOverview()
+    shot("v7-memo-copied-with-its-page")
+    XCTAssertEqual(memos.count, 2, "the page's copy has a copy of its memo")
+    app.buttons["undo"].firstMatch.tap()
+    settle()
+    XCTAssertEqual(memos.count, 1, "undo takes the copy away again")
+    // Moved with its page: page 1 dragged after page 2.
+    overview()
+    app.buttons["Look at page 1"].firstMatch.press(forDuration: 1.0, thenDragTo: app.buttons["Look at page 2"].firstMatch)
+    settle()
+    closeOverview()
+    shot("v8-memo-moved-with-its-page")
+    XCTAssertTrue(!memos.firstMatch.exists || memos.firstMatch.frame.minY > home.minY + 100, "the memo went down with its page")
+    app.buttons["undo"].firstMatch.tap()
+    settle()
+    XCTAssertEqual(memos.firstMatch.frame.minY, home.minY, accuracy: 4, "undo brings the page and its memo back")
+    // Deleted with its page.
+    overview()
+    app.buttons["Look at page 1"].firstMatch.tap()
+    settle()
+    app.buttons["Delete page"].firstMatch.tap()
+    settle()
+    let confirm = app.buttons.matching(NSPredicate(format: "label == 'Delete page'"))
+    confirm.element(boundBy: confirm.count - 1).tap()
+    Thread.sleep(forTimeInterval: 1.5)
+    closeOverview()
+    shot("v9-memo-gone-with-its-page")
+    XCTAssertEqual(memos.count, 0, "the deleted page's memo went with it")
+    app.buttons["undo"].firstMatch.tap()
+    settle()
+    XCTAssertEqual(memos.count, 1, "and comes back with it")
+  }
+}
+
+extension MediaTests {
   /// The camera with a drawn photo of a tilted page (-cameraPicture; the simulator has no camera):
   /// the look step, Crop with the corners dragged onto the page (held, for the magnifier), Next,
   /// Document, then Save puts it on the page.
@@ -156,8 +221,7 @@ extension MediaTests {
     let app = launch(["-cameraPicture"])
     settle()
     open(app, "Exam revision")
-    showTool(app, "tool-insert")
-    app.buttons["tool-insert"].firstMatch.tap()
+    tapTool(app, "tool-insert")
     settle()
     app.buttons["insert-photo"].firstMatch.tap()
     settle()
@@ -273,8 +337,7 @@ extension MediaTests {
     let app = launch(["-fakePickers"])
     settle()
     open(app, "Week 3 lecture")
-    showTool(app, "tool-insert")
-    app.buttons["tool-insert"].firstMatch.tap()
+    tapTool(app, "tool-insert")
     settle()
     app.buttons["insert-picture"].firstMatch.tap()
     settle()
