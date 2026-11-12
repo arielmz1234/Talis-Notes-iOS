@@ -44,9 +44,10 @@ public enum SelectionHandles {
     return i
   }
 
-  public static func scale(_ bounds: Rect, from start: Pt, to now: Pt) -> Affine {
+  /// [adjust] may nudge the scale (snapping its far side or middle onto other shapes).
+  public static func scale(_ bounds: Rect, from start: Pt, to now: Pt, adjust: (Float) -> Float = { $0 }) -> Affine {
     let anchor = Pt(bounds.left, bounds.top), corner = Pt(bounds.right, bounds.bottom)
-    let s = min(max(now.dist(anchor) / max(1, start.dist(anchor)), 0.1), 10)
+    let s = min(max(adjust(min(max(now.dist(anchor) / max(1, start.dist(anchor)), 0.1), 10)), 0.1), 10)
     // Never down to nothing.
     if corner.dist(anchor) * s < 4 { return .identity }
     return .scaleAround(anchor, s)

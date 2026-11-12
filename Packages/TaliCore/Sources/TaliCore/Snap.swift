@@ -564,7 +564,107 @@ public enum Snap {
   }
 }
 
+// How the canvas uses these while a dot is dragged, a shape is drawn out, or a line just made by
+// hold-to-shape follows the pen (Android's `HANDLE_DRAG`, `SHAPE_CREATE` and `updateLiveShape`).
+extension Snap {
+  private static func tidyEnd(_ fixed: Pt, _ raw: Pt) -> Pt {
+    if case let .line(_, b, _, _, _) = ShapeRecognizer.snappedLine(fixed, raw) { return b }
+    return raw
+  }
+
+  /// Where a new shape's first point goes: onto another shape's corner or edge ([stuck]), else lined
+  /// up with other shapes' sides, middles and corners.
+  public static func shapeStart(_ p: Pt, _ targets: [SnapFeatures], contact: Float, align: Float) -> (at: Pt, stuck: Bool, guides: [SnapGuide]) {
+    if let q = point(p, targets, SnapSession(contact, align: align)) { return (q, true, []) }
+    let lined = alignPoint(p, targets, SnapSession(contact, align: align))
+    return (lined.at, false, lined.guides)
+  }
+
+  /// Where the drag that draws a shape ends: a line's end (and a point load's tip, a fixed support's
+  /// wall) onto an edge or corner; a box's corner onto a corner or edge, or lined up with other
+  /// shapes. Shapes drawn out from a point (supports, moments) only snap where they start. With
+  /// guides, the end is kept exactly (a line doesn't go back to its tidy angle).
+  public static func shapeEnd(start: Pt, raw: Pt, fromPoint: Bool, asLine: Bool, _ targets: [SnapFeatures], _ s: SnapSession) -> (at: Pt, guides: [SnapGuide]) {
+    if fromPoint { return (raw, []) }
+    if asLine {
+      let end = lineEnd(fixed: start, raw: raw, targets, s)
+      if end.on { return (end.at, [.touch(end.at)]) }
+      // On a tidy angle already: it keeps it, sliding along to line up with other shapes.
+      // Otherwise its end lines up like any corner.
+      if end.at.dist(raw) > 0.01 {
+        let along = alongAngle(start, end.at, targets, s)
+        return along.guides.isEmpty ? (raw, []) : along
+      }
+      return alignPoint(raw, targets, s)
+    }
+    if let q = point(raw, targets, s) { return (q, [.touch(q)]) }
+    return alignPoint(raw, targets, s)
+  }
+
+  /// A line just made by hold-to-shape, its end following the pen: onto another shape's corner or
+  /// edge, else on its tidy angle, sliding along to line up with other shapes.
+  public static func liveLineEnd(from a: Pt, pen: Pt, _ targets: [SnapFeatures], _ s: SnapSession) -> (at: Pt, guides: [SnapGuide]) {
+    let end = lineEnd(fixed: a, raw: pen, targets, s)
+    if end.on { return (end.at, [.touch(end.at)]) }
+    let lined = alongAngle(a, end.at, targets, s)
+    return lined.guides.isEmpty ? (tidyEnd(a, pen), []) : lined
+  }
+}
+
 extension ShapeGeometry {
+  /// The other corners of the shape while its dot [index] is dragged, for its corner to line up with
+  /// (a triangle's or polygon's corner level with another). Only shapes whose dot moves its own
+  /// corner alone: a rectangle's side moves two corners, which would line up with themselves.
+  private func ownCorners(_ index: Int) -> [SnapFeatures] {
+    let corners: [Pt]
+    switch self {
+    case let .triangle(a, b, c, _): corners = [a, b, c]
+    case let .poly(points, _, false, _, _) where !isRect: corners = points
+    default: return []
+    }
+    return [SnapFeatures(points: corners.enumerated().filter { $0.offset != index }.map(\.element), segments: [], box: nil)]
+  }
+
+  /// Dot [index] dragged to [raw]: onto another shape's corner or edge when it's near one (a line
+  /// meeting a line); else lined up with other shapes' sides, middles and corners (and its own other
+  /// corners); else as `dragging(_:to:)` leaves it. Returns the shape and the guides to show.
+  public func dragging(_ index: Int, to raw: Pt, snappingTo targets: [SnapFeatures], _ s: SnapSession) -> (shape: ShapeGeometry, guides: [SnapGuide]) {
+    // A line's or a distributed load's end: the other end, which it turns about.
+    let lineFixed: Pt?
+    switch self {
+    case let .line(a, b, _, _, _): lineFixed = index == 0 ? b : a
+    case let .load(a, b, _, _) where index < 2: lineFixed = index == 0 ? b : a
+    default: lineFixed = nil
+    }
+    var stuck: Pt?
+    if let lineFixed {
+      let end = Snap.lineEnd(fixed: lineFixed, raw: raw, targets, s)
+      if end.on { stuck = end.at }
+    } else {
+      stuck = Snap.point(raw, targets, s)
+    }
+    var aligned: (at: Pt, guides: [SnapGuide])?
+    if stuck == nil {
+      // A line's end on a tidy angle keeps the angle and slides along the line to line up.
+      let tidy = lineFixed.map { ShapeRecognizer.snappedLine($0, raw) }.flatMap { g -> Pt? in
+        if case let .line(_, b, _, _, _) = g, b.dist(raw) > 0.01 { return b }
+        return nil
+      }
+      let found = if let lineFixed, let tidy { Snap.alongAngle(lineFixed, tidy, targets, s) } else { Snap.alignPoint(raw, targets + ownCorners(index), s) }
+      if !found.guides.isEmpty { aligned = found }
+    }
+    guard let at = stuck ?? aligned?.at else { return (dragging(index, to: raw), []) }
+    let guides = stuck.map { [SnapGuide.touch($0)] } ?? aligned?.guides ?? []
+    switch self {
+    case let .triangle(a, b, c, turn):
+      return (.triangle(a: index == 0 ? at : a, b: index == 1 ? at : b, c: index >= 2 ? at : c, turn: turn), guides)
+    case let .line(a, b, arrowStart, arrowEnd, ticks):
+      return (.line(a: index == 0 ? at : a, b: index == 0 ? b : at, arrowStart: arrowStart, arrowEnd: arrowEnd, ticks: ticks), guides)
+    default:
+      return (withHandle(index, at), guides)
+    }
+  }
+
   /// What this shape offers for snapping: its ends, corners, side middles and centre, its edges (a
   /// curve as short pieces), and the box of its outline. Arrow barbs and dimension marks aren't
   /// edges to snap to; the line itself is.

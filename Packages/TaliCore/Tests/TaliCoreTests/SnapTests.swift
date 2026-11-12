@@ -248,6 +248,48 @@ struct SnapTests {
     #expect(!free.on && close(free.at.y, 300))
   }
 
+  @Test func aLinesDotLocksOntoAnotherShapesCorner() {
+    let box = [rect(100, 100, 200, 160).snapFeatures()]
+    let (g, guides) = line(Pt(0, 0), Pt(50, 50)).dragging(1, to: Pt(97, 102), snappingTo: box, SnapSession(10))
+    #expect(g == line(Pt(0, 0), Pt(100, 100)))
+    #expect(guides == [.touch(Pt(100, 100))])
+    // Away from everything it's as if nothing were there: free, on its tidy angle.
+    let free = line(Pt(0, 0), Pt(50, 50)).dragging(1, to: Pt(60, 1), snappingTo: box, SnapSession(10))
+    #expect(free.shape == line(Pt(0, 0), Pt(50, 50)).dragging(1, to: Pt(60, 1)) && free.guides.isEmpty)
+  }
+
+  @Test func aTrianglesCornerLinesUpWithItsOtherCorners() {
+    let triangle = ShapeGeometry.triangle(a: Pt(0, 100), b: Pt(200, 100), c: Pt(90, 0))
+    // The top corner dragged nearly level with nothing else around: it lines up above corner a (x = 0).
+    let (g, guides) = triangle.dragging(2, to: Pt(3, -40), snappingTo: [], SnapSession(10))
+    guard case let .triangle(_, _, c, _) = g else {
+      Issue.record("not a triangle any more")
+      return
+    }
+    #expect(close(c.x, 0) && close(c.y, -40))
+    #expect(guides.count == 1 && !guides[0].isTouch)
+  }
+
+  @Test func aNewBoxsCornerGoesOntoACornerOrLinesUp() {
+    let box = [rect(100, 100, 200, 160).snapFeatures()]
+    let on = Snap.shapeEnd(start: Pt(300, 300), raw: Pt(203, 158), fromPoint: false, asLine: false, box, SnapSession(10))
+    #expect(on.at == Pt(200, 160) && on.guides == [.touch(Pt(200, 160))])
+    // Shapes drawn out from a point only snap where they start.
+    let support = Snap.shapeEnd(start: Pt(300, 300), raw: Pt(203, 158), fromPoint: true, asLine: false, box, SnapSession(10))
+    #expect(support.at == Pt(203, 158) && support.guides.isEmpty)
+    // A new shape starts on the corner it's begun at.
+    let start = Snap.shapeStart(Pt(98, 103), box, contact: 10, align: 5)
+    #expect(start.at == Pt(100, 100) && start.stuck)
+  }
+
+  @Test func aLiveLinesEndStopsOnAnEdgeItReaches() {
+    let wall = [line(Pt(100, 0), Pt(100, 200)).snapFeatures()]
+    let end = Snap.liveLineEnd(from: Pt(0, 50), pen: Pt(96, 51), wall, SnapSession(10))
+    #expect(close(end.at.x, 100) && close(end.at.y, 50) && end.guides.contains { $0.isTouch })
+    let free = Snap.liveLineEnd(from: Pt(0, 50), pen: Pt(40, 51), wall, SnapSession(10))
+    #expect(close(free.at.y, 50) && free.guides.isEmpty)
+  }
+
   @Test func aPictureOffersItsCornersSidesAndMiddle() {
     let f = SnapFeatures.ofBox(Rect(10, 20, 110, 80))
     #expect(f.points.count == 5 && f.points.contains(Pt(60, 50)))
