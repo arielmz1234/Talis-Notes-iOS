@@ -295,6 +295,85 @@ extension MediaTests {
   }
 }
 
+extension MediaTests {
+  /// Export writes the writing as lines: one with each pen (fineliner, fountain pen, pencil,
+  /// calligraphy, a dashed fineliner, the highlighter), shot as stored after reopening, then the
+  /// notebook's pages exported, on white and then on dark paper (the run renders the PDF zoomed in).
+  func testExportWriting() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
+    let app = launch()
+    settle()
+    app.buttons["add"].firstMatch.tap()
+    settle()
+    app.buttons["add-notebook"].firstMatch.tap()
+    settle()
+    app.buttons["create"].firstMatch.tap()
+    settle()
+    if app.buttons["write"].exists {
+      app.buttons["write"].firstMatch.tap()
+      settle()
+    }
+    func pen(_ id: String, _ option: String? = nil) {
+      app.buttons["pen-\(id)"].firstMatch.tap()
+      settle()
+      guard let option else { return }
+      if !app.buttons[option].waitForExistence(timeout: 1.5) { app.buttons["pen-\(id)"].firstMatch.tap() }
+      XCTAssertTrue(app.buttons[option].waitForExistence(timeout: 3), "no \(option) in the pen's settings")
+      app.buttons[option].firstMatch.tap()
+      settle()
+      app.buttons["pen-\(id)"].firstMatch.tap()
+      settle()
+    }
+    func line(_ y: CGFloat) {
+      app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: y))
+        .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.62, dy: y + 0.004)), withVelocity: .slow, thenHoldForDuration: 0.05)
+      settle()
+    }
+    pen("p1")
+    line(0.3)
+    pen("p2")
+    line(0.36)
+    pen("p4", "Pencil")
+    line(0.42)
+    pen("p4", "Calligraphy")
+    line(0.48)
+    pen("p1", "Short dash")
+    line(0.54)
+    pen("p5")
+    line(0.6)
+    app.buttons["back"].firstMatch.tap()
+    settle()
+    app.descendants(matching: .any)["notebook-New notebook"].firstMatch.tap()
+    settle()
+    if app.buttons["write"].exists {
+      app.buttons["write"].firstMatch.tap()
+      settle()
+    }
+    shot("w1-page")
+    app.buttons["more"].firstMatch.tap()
+    settle()
+    app.buttons[L10n.exportPDF].firstMatch.tap()
+    settle()
+    waitForSize(app)
+    shot("w2-export")
+    app.buttons["Cancel"].firstMatch.tap()
+    settle()
+    app.buttons["more"].firstMatch.tap()
+    settle()
+    app.buttons["Dark paper"].firstMatch.tap()
+    settle()
+    if !app.buttons[L10n.exportPDF].isHittable {
+      app.buttons["more"].firstMatch.tap()
+      settle()
+    }
+    app.buttons[L10n.exportPDF].firstMatch.tap()
+    settle()
+    waitForSize(app)
+    shot("w3-dark-export")
+  }
+}
+
 /// English labels the tests tap.
 enum L10n {
   static let exportPDF = "Export PDF"

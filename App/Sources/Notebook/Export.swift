@@ -1,4 +1,3 @@
-import PencilKit
 import SwiftUI
 import TaliCore
 import UniformTypeIdentifiers
@@ -29,14 +28,6 @@ enum PdfQuality: CaseIterable {
     case .light: 75 / 160
     }
   }
-  /// Pixels per PDF point for the writing.
-  var sharpness: CGFloat {
-    switch self {
-    case .best: 4
-    case .balanced: 2.5
-    case .light: 1.4
-    }
-  }
 }
 
 /// The export dialog's main choice (Android's `ExportChoice`): a quality, or one long page.
@@ -57,7 +48,8 @@ enum ExportChoice: CaseIterable {
 /// Everything an export needs, read from the canvas on the main thread so the PDF can be made off it.
 struct ExportSource: @unchecked Sendable {
   var rows: [ItemRow]
-  var drawing: PKDrawing
+  /// The writing, highlighter first as on the page, each with the page it shows on (nil: anywhere).
+  var ink: [(stroke: InkStroke, page: CGRect?)]
   var layout: Pages
   /// Set for a paged notebook.
   var pageCount: Int?
@@ -68,7 +60,7 @@ struct ExportSource: @unchecked Sendable {
 
   /// The PDF (Android's `Exporter.pdf`): pages cut by [layout], each exactly its size in points (A4 is
   /// 595 × 842), the paper, pictures at [quality]'s resolution (Best draws slides from the PDF itself),
-  /// shapes, typed text as real text, then the writing.
+  /// shapes, typed text as real text, then the writing as lines.
   func pdf(_ layout: PdfLayout, _ quality: PdfQuality) -> Data {
     let drawn = rows.filter { $0.kind != MemoRow.kind }
     let items = drawn.map { ExportPages.Item(Rect($0.l, $0.t, $0.r, $0.b), pdfPage: PictureRow($0)?.pdfPage ?? false) }
@@ -109,8 +101,13 @@ struct ExportSource: @unchecked Sendable {
       cg.clip(to: world)
       if !ownPages { PaperPainter.draw(paper, area: world, endless: pageCount == nil, in: cg, scale: scale, print: true, picture: layer.picture) }
       layer.paint(in: cg, scale: scale, print: true)
+      for (stroke, page) in ink where CGRect(stroke.bounds).intersects(world) {
+        cg.saveGState()
+        if let page { cg.clip(to: page) }
+        stroke.draw(in: cg, dark: paper.dark)
+        cg.restoreGState()
+      }
       cg.restoreGState()
-      drawing.image(from: world, scale: size.width / world.width * quality.sharpness).draw(in: CGRect(origin: .zero, size: size))
     }
     UIGraphicsEndPDFContext()
     return data as Data
@@ -119,10 +116,10 @@ struct ExportSource: @unchecked Sendable {
 
 extension NoteCanvas.Coordinator {
   var exportSource: ExportSource? {
-    guard let canvas else { return nil }
-    return ExportSource(
-      rows: (try? parent.db.items(of: parent.notebook.id)) ?? [], drawing: canvas.drawing, layout: layout, pageCount: paged ? pageCount : nil,
-      paper: parent.settings.paper)
+    guard canvas != nil else { return nil }
+    let rows = (try? parent.db.items(of: parent.notebook.id)) ?? []
+    let ink = Self.highlighterFirst(rows.compactMap { InkStroke(row: $0) }) { $0 }.map { ($0, mask(for: $0)?.bounds) }
+    return ExportSource(rows: rows, ink: ink, layout: layout, pageCount: paged ? pageCount : nil, paper: parent.settings.paper)
   }
 }
 
