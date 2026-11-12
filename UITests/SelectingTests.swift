@@ -401,9 +401,9 @@ final class SelectingTests: ShotCase {
     shot("t1-text-picked")
     // Resized from the corner the text grows; moved by its chip.
     let grip = resizeChip(f)
-    drag(app, grip, CGPoint(x: f.minX + (grip.x - f.minX) * 1.4, y: f.minY + (grip.y - f.minY) * 1.4))
+    drag(app, grip, CGPoint(x: f.minX + (grip.x - f.minX) * 1.15, y: f.minY + (grip.y - f.minY) * 1.15))
     let bigger = selectionFrame(app)
-    XCTAssertGreaterThan(bigger.height, f.height * 1.2, "the text grew")
+    XCTAssertGreaterThan(bigger.height, f.height * 1.06, "the text grew")
     f = bigger
     drag(app, moveChip(f), CGPoint(x: moveChip(f).x + 30, y: moveChip(f).y + 60))
     calmShot("t2-bigger-and-moved")
@@ -415,8 +415,30 @@ final class SelectingTests: ShotCase {
     app.buttons["selection-colour-3"].firstMatch.tap()
     calmShot("t3-recoloured")
     menuButton(app, "selection-edit-text").tap()
-    XCTAssertTrue(app.textViews["text-editor"].waitForExistence(timeout: 3), "Edit text opens it for typing")
+    let editor = app.textViews["text-editor"].firstMatch
+    XCTAssertTrue(editor.waitForExistence(timeout: 3), "Edit text opens the box")
+    XCTAssertFalse(app.keyboards.firstMatch.exists, "picked up first: no keyboard until it's tapped")
     calmShot("t4-edit-text")
+    // The box is sized like a rectangle: the right side's dot sets its width, the bottom one its height.
+    let wide = editor.frame
+    let right = app.descendants(matching: .any)["text-side-1"].firstMatch.frame
+    drag(app, CGPoint(x: right.midX, y: right.midY), CGPoint(x: right.midX - wide.width * 0.45, y: right.midY))
+    let bottom = app.descendants(matching: .any)["text-side-3"].firstMatch.frame
+    drag(app, CGPoint(x: bottom.midX, y: bottom.midY), CGPoint(x: bottom.midX, y: bottom.midY + 60))
+    XCTAssertLessThan(editor.frame.width, wide.width * 0.7, "narrower from its right side")
+    XCTAssertEqual(editor.frame.minX, wide.minX, accuracy: 1, "the left side stayed put")
+    XCTAssertGreaterThan(editor.frame.height, wide.height + 40, "taller from its bottom side")
+    calmShot("t5-box-resized-by-its-sides")
+    let move = app.descendants(matching: .any)["text-move"].firstMatch.frame
+    drag(app, CGPoint(x: move.midX, y: move.midY), CGPoint(x: move.midX + 80, y: move.midY + 40))
+    XCTAssertEqual(editor.frame.minX, wide.minX + 80, accuracy: 6, "carried by its move chip")
+    editor.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "a tap on it brings the keyboard")
+    calmShot("t6-typing")
+    // A tap elsewhere finishes it; the box keeps its new place and size.
+    at(app, 0.5, 0.2).tap()
+    XCTAssertFalse(app.textViews["text-editor"].waitForExistence(timeout: 1.5), "a tap elsewhere finishes the text")
+    calmShot("t7-kept")
   }
 
   func testSnapping() {

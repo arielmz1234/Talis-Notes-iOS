@@ -117,6 +117,9 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
     if g === lasso.hold { return !Clipboard.items.isEmpty && !parent.viewOnly && textEdit.view == nil }
+    // A text box picked up but not yet typed in is carried by a drag and opened by a tap; once
+    // typing, touches in it are the text's own.
+    if let v = textEdit.view, g.view === v { return !textEdit.typing }
     return true
   }
 

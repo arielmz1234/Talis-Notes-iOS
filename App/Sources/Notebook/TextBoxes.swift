@@ -15,9 +15,15 @@ struct TextEditState {
   var tap: UITapGestureRecognizer?
   /// A− / A+ above the box (Android's editor `SizeButton`s).
   var sizeBar: UIView?
+  /// A new box opens for typing; one opened from the page is first just picked up (to move or size
+  /// it), and a tap on it brings the keyboard.
+  var typing = true
+  /// The dots on its sides and the chips at its corners (see TextBoxHandles.swift), and its dashed frame.
+  var handles: [TextBoxHandle] = []
+  let frame = CAShapeLayer()
 
   /// The editor's own views: a touch on one of them is the editor's, not "done".
-  var ownViews: [UIView] { [view, sizeBar].compactMap { $0 } }
+  var ownViews: [UIView] { [view, sizeBar].compactMap { $0 } + handles }
 }
 
 extension NoteCanvas.Coordinator: UITextViewDelegate {
@@ -36,6 +42,10 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     guard let canvas else { return }
     if textEdit.view != nil {
       finishText()
+      // Tapping another text box goes straight on to that one.
+      let q = g.location(in: canvas)
+      let at = CGPoint(x: q.x / canvas.zoomScale, y: q.y / canvas.zoomScale)
+      if !parent.viewOnly, let other = texts.last(where: { !$0.locked && TextLook.frame($0).contains(at) }) { editText(other) }
       return
     }
     // The finger that just unlocked something by holding isn't tapping as it lifts.
@@ -100,7 +110,7 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     }
     t.id = newId()
     textEdit.original = nil
-    beginEditing(t)
+    beginEditing(t, typing: true)
   }
 
   /// Opens an existing box to type in.
@@ -109,30 +119,35 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     // It's drawn by the editor meanwhile, not by the page.
     pages?.pages.under.texts.removeAll { $0.id == t.id }
     pages?.layer.setNeedsDisplay()
-    beginEditing(t)
+    beginEditing(t, typing: false)
   }
 
-  private func beginEditing(_ t: TextRow) {
+  private func beginEditing(_ t: TextRow, typing: Bool) {
     guard let canvas else { return }
     textEdit.editing = t
+    textEdit.typing = typing
     let v = UITextView()
     v.backgroundColor = .clear
     v.textContainerInset = .zero
     v.textContainer.lineFragmentPadding = 0
     v.isScrollEnabled = false
     v.delegate = self
-    v.layer.borderColor = UIColor(argb: Int32(bitPattern: 0x667A_4ED6)).cgColor
-    v.layer.borderWidth = 1
-    v.layer.cornerRadius = 4
     v.accessibilityIdentifier = "text-editor"
     canvas.addSubview(v)
     textEdit.view = v
     textEdit.sizeBar = makeSizeBar()
     if let bar = textEdit.sizeBar { canvas.addSubview(bar) }
-    (canvas as? NoteCanvasView)?.typing = [v, textEdit.sizeBar].compactMap { $0 }
+    installTextBoxHandles(on: canvas, around: v)
+    (canvas as? NoteCanvasView)?.typing = textEdit.ownViews
     layoutTextEditor()
     v.attributedText = NSAttributedString(string: t.text, attributes: editorAttributes(t))
     TextLook.setDirections(v.textStorage)
+    guard typing else {
+      // Picked up, not yet typing: the whole box moves when dragged, and a tap starts typing.
+      v.isEditable = false
+      v.isSelectable = false
+      return
+    }
     v.becomeFirstResponder()
     // Comfortably below the toolbars and above the keyboard (Android's `showForTyping`).
     let clearance = parent.topClearance
@@ -158,7 +173,8 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     let fit = v.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height
     let h = max(fit, CGFloat(max(t.fontSize * TextRow.line, t.height)) * z)
     v.frame = CGRect(x: CGFloat(t.x) * z, y: CGFloat(t.y) * z, width: w, height: h)
-    if let bar = textEdit.sizeBar { bar.frame.origin = CGPoint(x: v.frame.maxX - bar.frame.width, y: v.frame.minY - bar.frame.height - 6) }
+    if let bar = textEdit.sizeBar { bar.frame.origin = CGPoint(x: v.frame.maxX - bar.frame.width, y: v.frame.minY - bar.frame.height - 12) }
+    layoutTextBoxHandles(around: v.frame)
     let attrs = editorAttributes(t)
     v.typingAttributes = attrs
     if let text = v.attributedText, text.length > 0, (text.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)?.pointSize != (attrs[.font] as? UIFont)?.pointSize {
@@ -216,6 +232,7 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
     v.removeFromSuperview()
     textEdit.sizeBar?.removeFromSuperview()
     textEdit.sizeBar = nil
+    removeTextBoxHandles()
     (canvas as? NoteCanvasView)?.typing = []
     let text = v.text.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
     t.text = text
