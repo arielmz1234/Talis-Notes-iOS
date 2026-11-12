@@ -68,7 +68,7 @@ extension NoteCanvas.Coordinator {
   }
 
   /// Whether what's picked up can be turned (Android's `canRotateSelection`).
-  private var canRotate: Bool {
+  var canRotate: Bool {
     (!lasso.picked.isEmpty || !lasso.pickedShapes.isEmpty) && lasso.pickedTexts.isEmpty && !parent.viewOnly
   }
 

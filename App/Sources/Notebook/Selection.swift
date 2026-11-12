@@ -336,7 +336,9 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     guard let canvas else { return }
     guard let b = lasso.bounds, !lasso.moving else { return }
     let z = canvas.zoomScale
-    let content = CGRect(x: b.minX * z, y: b.minY * z, width: b.width * z, height: b.height * z).insetBy(dx: -8, dy: -8)
+    var content = CGRect(x: b.minX * z, y: b.minY * z, width: b.width * z, height: b.height * z).insetBy(dx: -8, dy: -8)
+    // A menu placed below leaves room for the rotate handle hanging under the frame (Android: 48 dp).
+    if canRotate { content.size.height += 48 }
     parent.onSelection(canvas.convert(content, to: nil))
   }
 

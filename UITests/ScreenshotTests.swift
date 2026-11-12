@@ -123,6 +123,8 @@ final class ScreenshotTests: XCTestCase {
         settle()
         shot("4f-shape-drawn")
         // The lasso picks the ellipse up on its own: its four dots show; the right one stretches it.
+        // (Straight from the Shapes tool, the iPad's lasso tap landed on the Shapes button; via a pen it works.)
+        if app.buttons["pen-p1"].exists { app.buttons["pen-p1"].firstMatch.tap(); settle() }
         showTool(app, "tool-lasso")
         if app.buttons["tool-lasso"].exists {
           app.buttons["tool-lasso"].firstMatch.tap()
@@ -137,9 +139,9 @@ final class ScreenshotTests: XCTestCase {
           shot("4f3-dot-dragged")
           // The rotate handle hangs about 40 pt below the ellipse's middle; dragging it sideways turns it.
           let h = max(app.frame.height, 1)
-          let handleY = 0.42 + 40 / h
-          app.coordinate(withNormalizedOffset: CGVector(dx: 0.785, dy: handleY))
-            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.70, dy: handleY - 0.02)), withVelocity: .slow, thenHoldForDuration: 0.05)
+          let handleY = 0.42 + 38 / h
+          app.coordinate(withNormalizedOffset: CGVector(dx: 0.735, dy: handleY))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: handleY - 0.02)), withVelocity: .slow, thenHoldForDuration: 0.05)
           settle()
           shot("4f4-rotated")
         }
