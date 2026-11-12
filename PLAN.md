@@ -97,6 +97,8 @@ simulators and its own UI test class (`UITests/<Area>Tests.swift` on `ShotCase`;
       matcher), one rectangle tool with the square snap (38). Merged 12 Nov. Left: snapping (49),
       fills following the lasso and eraser, joint dots (with shape editing), Save as shape on a phone
       (the selection menu runs off the edge).
-- [ ] Selecting, more: lock and Unlock all (27), free form (36), screenshot lasso, the folding menu
-      and paste beside the selection (42), typed text picked up, resized, recoloured (46)
+- [x] Selecting, more: lock and Unlock all (27), free form (36), screenshot lasso, the folding menu
+      that scrolls on a phone (42), pictures and fills in the lasso, typed text picked up, resized,
+      recoloured (46), snapping (49) and joint dots. Merged 12 Nov with pens unified (one eraser,
+      one undo step, one Picks up).
 - [ ] Phone layout pass over all of the above (67, 73)
