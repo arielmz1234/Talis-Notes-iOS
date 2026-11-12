@@ -182,7 +182,7 @@ extension NoteCanvas.Coordinator {
     let shape = FillTap.shape(at: p, in: all)
     let split = shape.map { s in
       let box = s.geometry.bounds(s.size)
-      let near = stored.map(\.stroke).filter { st in box.map { $0.intersects(st.bounds) } ?? false }
+      let near = (stored.map(\.stroke) + lockedInk).filter { st in box.map { $0.intersects(st.bounds) } ?? false }
       return FillTap.runsThrough(s, ink: near.map { $0.inputs.points.map { Pt($0.x, $0.y) } }, shapes: all)
     } ?? false
     if let shape, !split || (colour == nil && shape.fill != nil) {
@@ -203,12 +203,13 @@ extension NoteCanvas.Coordinator {
     let inWindow = stored.indices.filter { $0 < strokes.count && stored[$0].stroke.bounds.intersects(window) }
     let wallShapes = all.filter { $0.geometry.bounds($0.size)?.intersects(window) ?? false }
     let frame = CGRect(window)
+    // Locked writing closes an area in like any other (it's drawn by the page, not by PencilKit).
+    let wallInk = inWindow.map { stored[$0].stroke } + lockedInk.filter { $0.bounds.intersects(window) }
     let walls = FillWalls(
-      window: window, ink: PKDrawing(strokes: inWindow.map { strokes[$0] }), shapes: wallShapes, texts: texts.filter { TextLook.frame($0).intersects(frame) },
-      lines: inWindow.map { i in
-        let s = stored[i].stroke
-        return AreaFill.Wall(id: s.id, paths: [s.inputs.points.map { Pt($0.x, $0.y) }], size: s.size)
-      } + wallShapes.map { AreaFill.Wall(id: $0.id, paths: $0.geometry.paths($0.size), size: $0.size) })
+      window: window, ink: PKDrawing(strokes: inWindow.map { strokes[$0] } + lockedInk.filter { $0.bounds.intersects(window) }.map { $0.pkStroke(mask: mask(for: $0)) }),
+      shapes: wallShapes, texts: texts.filter { TextLook.frame($0).intersects(frame) },
+      lines: wallInk.map { s in AreaFill.Wall(id: s.id, paths: [s.inputs.points.map { Pt($0.x, $0.y) }], size: s.size) }
+        + wallShapes.map { AreaFill.Wall(id: $0.id, paths: $0.geometry.paths($0.size), size: $0.size) })
     // A shape split by a line: filling nearly all of it (90%) still gives it a fill of its own.
     let whole = shape.map { abs(Geo.polygonArea($0.outline)) * 0.9 }
     let id = newId()
@@ -240,15 +241,16 @@ extension NoteCanvas.Coordinator {
     }
   }
 
-  /// Makes [newFills] the notebook's fill pictures: new ones are saved, missing ones removed.
-  private func setFills(_ newFills: [FillPicture]) {
+  /// Makes [newFills] the notebook's fill pictures: new and changed ones are saved, missing ones removed.
+  func setFills(_ newFills: [FillPicture]) {
     guard let pages else { return }
     let before = pages.pages.under.fills
     if before == newFills { return }
-    let keep = Set(newFills.map(\.row.id)), had = Set(before.map(\.row.id))
+    let keep = Set(newFills.map(\.row.id))
+    let had = Dictionary(before.map { ($0.row.id, $0.row) }, uniquingKeysWith: { a, _ in a })
     do {
       for f in before where !keep.contains(f.row.id) { try parent.db.removeItem(f.row.id) }
-      for f in newFills where !had.contains(f.row.id) { try parent.db.put(f.row.row, in: parent.notebook.id) }
+      for f in newFills where had[f.row.id] != f.row { try parent.db.put(f.row.row, in: parent.notebook.id) }
     } catch {
       CrashNote.log("saving fills: \(error)")
     }

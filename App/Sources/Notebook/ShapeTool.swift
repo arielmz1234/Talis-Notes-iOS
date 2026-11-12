@@ -57,7 +57,7 @@ extension NoteCanvas.Coordinator {
     guard let canvas else { return }
     let q = t.location(in: canvas)
     shapeTool.startScreen = q
-    shapeTool.start = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
+    shapeTool.start = snapShapeStart(Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale)))
     shapeTool.drawing = false
     shapeTool.preview = nil
   }
@@ -69,8 +69,8 @@ extension NoteCanvas.Coordinator {
       guard hypot(q.x - shapeTool.startScreen.x, q.y - shapeTool.startScreen.y) >= Self.shapeStartSlide else { return }
       shapeTool.drawing = true
     }
-    let p = Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale))
-    shapeTool.preview = shapeLook.row(parent.shape.drawn(start, p))
+    let end = snapShapeEnd(from: start, to: Pt(Float(q.x / canvas.zoomScale), Float(q.y / canvas.zoomScale)), source: parent.shape)
+    shapeTool.preview = shapeLook.row(parent.shape.drawn(start, end.at, keepEnd: end.keepEnd))
     drawShapePreview()
   }
 
@@ -81,6 +81,7 @@ extension NoteCanvas.Coordinator {
     shapeTool.drawing = false
     shapeTool.preview = nil
     drawShapePreview()
+    endSnap()
     if let shape {
       selectShape(addShape(shape), soft: true)
     } else if let tapped, case let .shape(under)? = item(at: tapped) {

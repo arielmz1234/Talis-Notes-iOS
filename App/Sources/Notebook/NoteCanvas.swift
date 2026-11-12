@@ -27,6 +27,14 @@ struct UnderItems: @unchecked Sendable {
   var texts: [TextRow] = []
   /// Filled areas: pictures behind the writing and the shapes (see FillTool.swift).
   var fills: [FillPicture] = []
+  /// Locked writing, kept out of PencilKit's drawing (see PageItems.swift), and how it's drawn.
+  private(set) var lockedInk: [InkStroke] = []
+  private(set) var lockedDrawing = PKDrawing()
+
+  mutating func setLockedInk(_ strokes: [InkStroke], mask: (InkStroke) -> UIBezierPath?) {
+    lockedInk = strokes
+    lockedDrawing = PKDrawing(strokes: strokes.map { $0.pkStroke(mask: mask($0)) })
+  }
 }
 
 /// Paper, pictures and shapes for the page column, drawn in tiles off the main thread so they stay
@@ -65,7 +73,8 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
       }
     }
     for p in under.pdfPages where p.rect.intersects(rect) { p.page.draw(in: p.rect, cg) }
-    for pic in under.pictures where pic.rect.intersects(rect) {
+    func draw(_ pic: PlacedPicture) {
+      guard pic.rect.intersects(rect) else { return }
       cg.saveGState()
       cg.translateBy(x: pic.rect.minX, y: pic.rect.maxY)
       cg.scaleBy(x: 1, y: -1)
@@ -73,13 +82,16 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
       cg.draw(pic.image, in: CGRect(origin: .zero, size: pic.rect.size))
       cg.restoreGState()
     }
+    // Pictures sit behind everything like paper until they're brought to the front; then they're
+    // drawn among the shapes and text by their place in the stack (Android's `drawAll`).
+    for pic in under.pictures where !pic.row.front { draw(pic) }
     for f in under.fills where CGRect(f.row.rect).intersects(rect) { f.draw(in: cg) }
     cg.setLineCap(.round)
     cg.setLineJoin(.round)
-    for s in under.shapes {
+    func draw(_ s: ShapeRow) {
       let path = CGMutablePath()
       for line in s.strokes { path.addLines(between: line.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) }) }
-      guard path.boundingBox.insetBy(dx: -CGFloat(s.size) * 2, dy: -CGFloat(s.size) * 2).intersects(rect) else { continue }
+      guard path.boundingBox.insetBy(dx: -CGFloat(s.size) * 2, dy: -CGFloat(s.size) * 2).intersects(rect) else { return }
       if let fill = s.fill, s.geometry.closed, let outline = s.geometry.paths(s.size).first, outline.count > 2 {
         let f = CGMutablePath()
         f.addLines(between: outline.map { CGPoint(x: CGFloat($0.x), y: CGFloat($0.y)) })
@@ -93,14 +105,41 @@ final class PagesLayer: CATiledLayer, @unchecked Sendable {
       cg.setLineWidth(CGFloat(s.size))
       cg.strokePath()
     }
-    if !under.texts.isEmpty {
+    func draw(_ text: TextRow) {
+      var t = text
+      let box = TextLook.frame(t)
+      guard box.intersects(rect) else { return }
+      if paper.dark { t.color = DarkInk.onDarkPaper(t.color) }
       UIGraphicsPushContext(cg)
-      for var t in under.texts {
-        let box = TextLook.frame(t)
-        guard box.intersects(rect) else { continue }
-        if paper.dark { t.color = DarkInk.onDarkPaper(t.color) }
-        TextLook.attributed(t).draw(with: CGRect(x: box.minX, y: box.minY, width: box.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil)
+      TextLook.attributed(t).draw(with: CGRect(x: box.minX, y: box.minY, width: box.width, height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil)
+      UIGraphicsPopContext()
+    }
+    let front = under.pictures.filter(\.row.front)
+    if front.isEmpty {
+      under.shapes.forEach(draw)
+      under.texts.forEach(draw)
+    } else {
+      // Equal places keep shapes under text under pictures, each in its own order.
+      var stack: [(z: Int64, kind: Int, index: Int)] = under.shapes.indices.map { (under.shapes[$0].z, 0, $0) }
+      stack += under.texts.indices.map { (under.texts[$0].z, 1, $0) }
+      stack += front.indices.map { (front[$0].row.z, 2, $0) }
+      for item in stack.sorted(by: { ($0.z, $0.kind, $0.index) < ($1.z, $1.kind, $1.index) }) {
+        switch item.kind {
+        case 0: draw(under.shapes[item.index])
+        case 1: draw(under.texts[item.index])
+        default: draw(front[item.index])
+        }
       }
+    }
+    let locked = under.lockedDrawing
+    if !locked.strokes.isEmpty, locked.bounds.intersects(rect) {
+      // PencilKit draws ink for the interface style in force: the paper's own, as on the canvas.
+      var image: UIImage?
+      UITraitCollection(userInterfaceStyle: paper.dark ? .dark : .light).performAsCurrent {
+        image = locked.image(from: rect, scale: max(abs(cg.ctm.a), 0.05))
+      }
+      UIGraphicsPushContext(cg)
+      image?.draw(in: rect)
       UIGraphicsPopContext()
     }
   }
@@ -217,7 +256,6 @@ struct NoteCanvas: UIViewRepresentable {
   /// Lets the notebook screen ask for page pictures.
   var bridge: CanvasBridge? = nil
   var eraser = EraserSettings()
-  var lassoPicks = LassoSettings()
   /// The shape the Shapes tool draws.
   var shape: ShapeSource = .kind(.LINE)
   var onUndoState: (Bool, Bool) -> Void
@@ -230,6 +268,8 @@ struct NoteCanvas: UIViewRepresentable {
   var onPasteOffer: (CGPoint?) -> Void = { _ in }
   /// Apple Pencil was double-tapped or squeezed, with what the system's settings say it should do.
   var onPencil: (PencilGesture.Preference) -> Void = { _ in }
+  /// A picture just taken with the screenshot lasso, to save, share or copy.
+  var onScreenshot: (URL) -> Void = { _ in }
   /// The page in the middle of the screen and the zoom, as they change (for the page and zoom chips).
   var onView: (Int, CGFloat) -> Void = { _, _ in }
   @Binding var command: CanvasCommand?
@@ -372,6 +412,11 @@ struct NoteCanvas: UIViewRepresentable {
       return UIBezierPath(rect: page)
     }
 
+    /// Highlighter under the writing, as Android draws it; each keeps its own order.
+    static func highlighterFirst<T>(_ items: [T], _ stroke: (T) -> InkStroke) -> [T] {
+      items.filter { stroke($0).pen.isHighlighter } + items.filter { !stroke($0).pen.isHighlighter }
+    }
+
     func load() {
       guard let canvas else { return }
       loading = true
@@ -379,6 +424,7 @@ struct NoteCanvas: UIViewRepresentable {
       var inks: [InkStroke] = []
       shapeZ = 0
       var under = UnderItems()
+      var lockedStrokes: [InkStroke] = []
       for row in rows {
         if let text = TextRow(row) {
           under.texts.append(text)
@@ -402,11 +448,12 @@ struct NoteCanvas: UIViewRepresentable {
           under.pictures.append(pic)
           continue
         }
-        if let ink = InkStroke(row: row) { inks.append(ink) }
+        guard let ink = InkStroke(row: row) else { continue }
+        if ink.locked { lockedStrokes.append(ink) } else { inks.append(ink) }
       }
+      under.setLockedInk(lockedStrokes) { self.mask(for: $0) }
       pages?.pages.under = under
-      // Highlighter under the writing, as Android draws it.
-      let drawn = (inks.filter(\.pen.isHighlighter) + inks.filter { !$0.pen.isHighlighter }).map { ($0.pkStroke(mask: mask(for: $0)), $0) }
+      let drawn = Self.highlighterFirst(inks) { $0 }.map { ($0.pkStroke(mask: mask(for: $0)), $0) }
       stored = drawn.map { (StrokeKey($0.0), $0.1) }
       canvas.drawing = PKDrawing(strokes: drawn.map(\.0))
       loading = false
@@ -415,7 +462,7 @@ struct NoteCanvas: UIViewRepresentable {
       reportUndo()
     }
 
-    /// Strokes added by the app itself (duplicate, paste, a box), waiting to be stored with their own pen.
+    /// What the eraser left of the strokes it cut, waiting to be stored with their own pen.
     var pending: [StrokeKey: InkStroke] = [:]
     /// Strokes that were in the drawing at some point this session, by their key.
     var archive: [StrokeKey: InkStroke] = [:]
@@ -537,9 +584,14 @@ struct NoteCanvas: UIViewRepresentable {
       case .boxSelection: boxSelection()
       case .paste: pasteAtOffer()
       case .recolourSelection(let c): recolourSelection(c)
-      case .thickenSelection(let v): thickenSelection(v)
+      case .thickenSelection(let v): restyleSelection(size: v, line: nil)
       case .mirrorSelection(let h): mirrorSelection(horizontal: h)
       case .arrangeSelection(let f): arrangeSelection(toFront: f)
+      case .previewThickness(let v): previewThickness(v)
+      case .lineSelection(let line): restyleSelection(size: nil, line: line)
+      case .lockSelection: lockSelection()
+      case .unlockAll: unlockAll()
+      case .editText(let id): editPickedText(id)
       case .deletePage(let i): deletePage(i)
       case .rearrangePages(let order): rearrangePages(order)
       case .setEndless(let on): setEndless(on)
@@ -706,14 +758,14 @@ struct NoteCanvas: UIViewRepresentable {
             next.append((key, s))
           }
         } else if var s = pending.removeValue(forKey: key) ?? archive[key] {
-          // Put there by the app (a copy, a box, an eraser's piece) or brought back by undo: it keeps
-          // its own pen, and its place in the stack when it has one (a new stroke goes on top).
+          // An eraser's piece, or brought back by PencilKit's undo: it keeps its own pen, and its
+          // place in the stack when it has one (a new stroke goes on top).
           if s.z == 0 {
             s.z = z
             z += 1
           }
           changed.append(s)
-          growPages(for: s)
+          if let box = s.inputs.bounds { growPages(toHold: box) }
           rebuilt.append(pk)
           next.append((key, s))
         } else if isSnappedStroke(pk) || parent.tool == .lasso || parent.tool == .shape || parent.tool == .fill {
@@ -730,7 +782,7 @@ struct NoteCanvas: UIViewRepresentable {
           }
           z += 1
           changed.append(s)
-          growPages(for: s)
+          if let box = s.inputs.bounds { growPages(toHold: box) }
           let m = mask(for: s)
           if let m, !m.bounds.contains(CGRect(s.bounds)) {
             // It runs off its page: draw it hidden past the edge, as it will be from now on.
@@ -745,10 +797,9 @@ struct NoteCanvas: UIViewRepresentable {
           }
         }
       }
-      // Highlighter stays under the writing however late it was added (Android draws it first).
-      let highlights = next.indices.filter { next[$0].stroke.pen.isHighlighter }
-      if let last = highlights.last, last >= highlights.count {
-        let order = highlights + next.indices.filter { !next[$0].stroke.pen.isHighlighter }
+      // A highlight added late still goes under the writing.
+      let order = Self.highlighterFirst(Array(next.indices)) { next[$0].stroke }
+      if order != Array(next.indices) {
         next = order.map { next[$0] }
         rebuilt = order.map { rebuilt[$0] }
         needsRebuild = true
@@ -779,17 +830,6 @@ struct NoteCanvas: UIViewRepresentable {
     var currentPen: PenSlot {
       if case .pen(let id) = parent.tool, let p = parent.pens.first(where: { $0.id == id }) { return p }
       return PenSlot.defaults[0]
-    }
-
-    /// Writing on the last page adds another below it, as pages "keep coming as you write".
-    private func growPages(for s: InkStroke) {
-      guard paged, let b = s.inputs.bounds else { return }
-      let need = layout.needed(b)
-      if need > pageCount {
-        pageCount = need
-        updateContent()
-        persistPages()
-      }
     }
 
     func persistPages() {
@@ -842,6 +882,8 @@ enum CanvasCommand: Equatable {
   case undo, redo, addPage, fitZoom, newText
   case copySelection, cutSelection, duplicateSelection, deleteSelection, boxSelection, paste
   case recolourSelection(UInt32), thickenSelection(Float), mirrorSelection(Bool), arrangeSelection(Bool)
+  /// The thickness slider moving (nothing saved yet), a line style, lock or unlock, and Edit text.
+  case previewThickness(Float), lineSelection(String), lockSelection, unlockAll, editText(String)
   case deletePage(Int)
   /// The pages laid out again: old page numbers, top to bottom.
   case rearrangePages([Int])

@@ -11,18 +11,13 @@ dev=$(sh scripts/sim.sh "$name" "$kind")
 [ -n "$dev" ] || { echo "no simulator named $name"; exit 1; }
 mkdir -p build shots
 [ -f TalisNotes.xcodeproj/project.pbxproj ] || xcodegen generate
-if [ "${NO_BUILD:-0}" != 1 ]; then
-  xcodebuild build-for-testing -project TalisNotes.xcodeproj -scheme TalisNotes \
-    -destination 'generic/platform=iOS Simulator' -derivedDataPath build/dd \
-    CODE_SIGNING_ALLOWED=NO > build/build-log.txt 2>&1 \
-    || { grep -E "error:" build/build-log.txt | sort -u | head -40; exit 1; }
-fi
+[ "${NO_BUILD:-0}" = 1 ] || sh scripts/app-build.sh
 xcrun simctl boot "$dev" 2>/dev/null || true
 xcrun simctl bootstatus "$dev" -b > /dev/null
 rm -f shots/"$tag"-*.png
 rm -rf build/"$tag".xcresult
-# A runner left alive by the last run (xcodebuild is stopped below) would run its old tests again.
-xcrun simctl terminate "$dev" com.tali.notes.uitests.xctrunner 2>/dev/null || true
+# A runner left by the last run (xcodebuild is stopped below) would run its old tests again.
+xcrun simctl uninstall "$dev" com.tali.notes.uitests.xctrunner 2>/dev/null || true
 TEST_RUNNER_SHOT_DIR="$PWD/shots" TEST_RUNNER_SHOT_TAG="$tag" TEST_RUNNER_SHOT_DARK="$dark" TEST_RUNNER_SHOT_LANG="$lang" \
   xcodebuild test-without-building -project TalisNotes.xcodeproj -scheme TalisNotes \
   -destination "id=$dev" -derivedDataPath build/dd -resultBundlePath "build/$tag.xcresult" \

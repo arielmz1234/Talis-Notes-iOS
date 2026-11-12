@@ -2,7 +2,7 @@ import SwiftUI
 import TaliCore
 
 /// Which pens the eraser and the lasso act on, kept between launches as Android keeps them
-/// (`eraserAffects`, `lassoAffects`, `lassoSelectsImages`).
+/// (`eraserAffects`, `lassoAffects`).
 enum PenFilters {
   static func load(_ key: String) -> PenFilter {
     PenStore.resetForTests()
@@ -12,12 +12,6 @@ enum PenFilters {
   static func save(_ filter: PenFilter, _ key: String) {
     UserDefaults.standard.set(filter.choices, forKey: key)
   }
-}
-
-struct LassoSettings: Equatable {
-  var affects = PenFilter()
-  /// Android's `lassoSelectsImages`: everything that isn't written with a pen.
-  var images = true
 }
 
 /// Android's `FilterChip`: a compact on/off chip, blue with a tick when on, a quiet outline when off.
@@ -35,7 +29,7 @@ struct FilterChip: View {
     .padding(.leading, on ? 8 : 12).padding(.trailing, 12).padding(.vertical, 7)
     .background(RoundedRectangle(cornerRadius: 12).fill(on ? c.blueSoft : .clear))
     .overlay(RoundedRectangle(cornerRadius: 12).stroke(on ? c.sky : c.line, lineWidth: 1))
-    .contentShape(RoundedRectangle(cornerRadius: 12))
+    .contentShape(Rectangle())
     .onTapGesture {
       withAnimation(.easeOut(duration: 0.2)) { onChange(!on) }
     }
@@ -89,24 +83,6 @@ struct PenFilterChips: View {
           .accessibilityIdentifier("filter-\(type.rawValue)")
       }
       if let images { FilterChip(label: L("images"), on: images.wrappedValue) { images.wrappedValue = $0 } }
-    }
-  }
-}
-
-/// The lasso's settings (the part of Android's `LassoPanel` about what it picks up).
-struct LassoPanel: View {
-  @Binding var settings: LassoSettings
-  @Environment(\.tali) private var c
-
-  var body: some View {
-    ToolPanel(width: 340) {
-      Text(L("select")).font(TaliType.titleLarge).foregroundStyle(c.ink)
-      Spacer().frame(height: 14)
-      Text(L("circle_anything_to_move_resize_recolour")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted)
-      Spacer().frame(height: 14)
-      SectionLabel(text: L("picks_up"))
-      Spacer().frame(height: 8)
-      PenFilterChips(filter: $settings.affects, images: $settings.images)
     }
   }
 }

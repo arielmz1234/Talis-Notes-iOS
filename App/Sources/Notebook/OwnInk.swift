@@ -166,13 +166,8 @@ extension NoteCanvas.Coordinator {
   }
 
   private func keep(_ pen: PenSlot, _ inputs: InkInputs) {
-    guard let canvas, !inputs.points.isEmpty else { return }
-    let stroke = InkStroke(id: newId(), z: 0, pen: pen.type, tags: InkStroke.tags(for: pen), color: pen.inkColor, size: pen.size, inputs: inputs)
-    let before = canvas.drawing
-    let pk = stroke.pkStroke(mask: mask(for: stroke))
-    pending[StrokeKey(pk)] = stroke
-    record(before)
-    canvas.drawing = PKDrawing(strokes: before.strokes + [pk])
-    reportUndo()
+    guard !inputs.points.isEmpty else { return }
+    let stroke = InkStroke(id: newId(), z: topZ + 1, pen: pen.type, tags: InkStroke.tags(for: pen), color: pen.inkColor, size: pen.size, inputs: inputs)
+    commit(remove: [], add: [.ink(stroke)])
   }
 }

@@ -63,6 +63,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: "The camera is used only while it's open, for a photo of the board or a page. Photos stay on this device."
         NSMicrophoneUsageDescription: "The microphone is used only while you record a voice memo. Recordings stay on this device."
+        NSPhotoLibraryAddUsageDescription: "A screenshot you take with the screenshot lasso is saved to your photos only when you tap Save."
   TalisNotesUITests:
     type: bundle.ui-testing
     platform: iOS

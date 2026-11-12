@@ -82,7 +82,16 @@ struct InkStroke {
 
   var square: Bool { tags.contains("SQUARE") }
 
-  var locked: Bool { tags.contains("LOCKED") }
+  /// The same stroke [size] thick in [line] style (Android's `InkItem.restyled`): the old dashed
+  /// pen's strokes become fineliner strokes in that line, and a highlighter stays solid.
+  func restyled(size: Float, line: LineStyle) -> InkStroke {
+    var s = self
+    if pen == .DASHED { s.pen = .FINELINER }
+    s.size = size
+    let style = s.pen.takesLineStyle ? line : .SOLID
+    s.tags = (style == .SOLID ? [] : [style.rawValue]) + tags.filter { LineStyle(rawValue: $0) == nil }
+    return s
+  }
 
   /// Android's pen column: "PEN/STYLE" for a dotted or dashed stroke, "HIGHLIGHTER/SQUARE" for the square tip.
   static func tags(for pen: PenSlot) -> [String] {

@@ -8,8 +8,6 @@ import TaliCore
 /// opened up again later.
 @MainActor @Observable
 final class CropModel {
-  /// A picture just added: Crop is offered beside it, as Android's menu offers it first.
-  private(set) var offered: PictureRow?
   private(set) var edit: CropEdit?
   private(set) var dragging = false
   private(set) var image: UIImage?
@@ -21,13 +19,6 @@ final class CropModel {
   @ObservationIgnored private var grab = -1
   @ObservationIgnored private var from = Rect(0, 0, 0, 0)
 
-  func offer(_ p: PictureRow?) {
-    guard let p, CropEdit.croppable(p) else { return }
-    offered = p
-  }
-
-  func dismissOffer() { offered = nil }
-
   func cameraMoved() {
     guard let canvas = bridge?.coordinator?.canvas else { return }
     zoom = canvas.zoomScale
@@ -38,9 +29,10 @@ final class CropModel {
     CGRect(x: CGFloat(r.left) * zoom + origin.x, y: CGFloat(r.top) * zoom + origin.y, width: CGFloat(r.width) * zoom, height: CGFloat(r.height) * zoom)
   }
 
-  func start() {
-    guard let p = offered.flatMap({ bridge?.coordinator?.storedPicture($0.id) }) ?? offered else { return }
-    offered = nil
+  /// Crop the picture picked up (the selection menu's first button for one).
+  func start(_ p: PictureRow) {
+    guard CropEdit.croppable(p) else { return }
+    bridge?.coordinator?.clearSelection()
     cameraMoved()
     var whole = p
     whole.crop = nil
@@ -57,6 +49,8 @@ final class CropModel {
     image = nil
     let done = e.finished
     if keep, done.rect != e.picture.rect || done.crop != e.picture.crop { bridge?.coordinator?.replacePicture(e.picture, with: done) }
+    // Picked up again, cropped or not, as it was when Crop was tapped.
+    bridge?.coordinator?.setSelection([e.picture.id], menu: true)
   }
 
   /// A touch at [p] (screen): a handle or the frame is picked up, off the picture the crop is kept.
@@ -165,27 +159,5 @@ struct CropBar: View {
     .cloudSurface(radius: 22, crown: .softEdge)
     .padding(.bottom, 24)
     .transition(.opacity.combined(with: .offset(y: 20)))
-  }
-}
-
-/// Crop, offered beside a picture just added (Android's menu shows it first then).
-struct CropOffer: View {
-  var crop: CropModel
-  @Environment(\.tali) private var c
-
-  var body: some View {
-    if let p = crop.offered {
-      let r = crop.screen(p.rect)
-      FloatingBar(crown: .none, height: 48) {
-        Button { crop.start() } label: {
-          Label(L("crop"), systemImage: "crop").font(TaliType.labelLarge).foregroundStyle(c.ink).padding(.horizontal, 10).frame(height: 40)
-        }
-        .buttonStyle(PressStyle(scale: 0.95))
-        .accessibilityIdentifier("crop-offer")
-      }
-      .fixedSize()
-      .position(x: r.midX, y: max(r.minY - 34, 30))
-      .transition(.opacity)
-    }
   }
 }

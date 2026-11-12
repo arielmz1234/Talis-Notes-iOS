@@ -163,6 +163,7 @@ extension NoteCanvas.Coordinator {
 
   private func holdEnded(_ cancelled: Bool) {
     stopHoldTimer()
+    if hold.live != nil { endSnap() }
     if let shape = hold.live {
       hold.live = nil
       hold.base = nil
@@ -218,7 +219,12 @@ extension NoteCanvas.Coordinator {
       let geometry = ShapeRecognizer.recognize(hold.points, custom: ShapeSettings.customShapes, packs: ShapeSettings.starredShapes)
     else { return }
     let pen = currentPen
-    let shape = ShapeRow(geometry: geometry, pen: pen.type.rawValue, color: pen.color, size: pen.size, line: pen.lineStyle.rawValue)
+    // A line drawn from another shape starts exactly on it.
+    var snapped = geometry
+    if case let .line(a, b, arrowStart, false, ticks) = geometry {
+      snapped = .line(a: snapLiveLineStart(a), b: b, arrowStart: arrowStart, arrowEnd: false, ticks: ticks)
+    }
+    let shape = ShapeRow(geometry: snapped, pen: pen.type.rawValue, color: pen.color, size: pen.size, line: pen.lineStyle.rawValue)
     // PencilKit lets go of the stroke it was drawing (switching its recogniser off and on cancels
     // it); should it hand the stroke in anyway, `sync` drops it.
     hold.dropSince = hold.began.addingTimeInterval(-0.2)
@@ -238,8 +244,8 @@ extension NoteCanvas.Coordinator {
   private func followLive(_ p: CGPoint) {
     guard let canvas, let base = hold.base else { return }
     let pen = Pt(Float(p.x), Float(p.y))
-    if case let .line(a, _, _, false, _) = base.geometry {
-      hold.live?.geometry = ShapeRecognizer.snappedLine(a, pen)
+    if case let .line(a, _, arrowStart, false, ticks) = base.geometry {
+      hold.live?.geometry = .line(a: a, b: snapLiveLineEnd(from: a, pen: pen), arrowStart: arrowStart, arrowEnd: false, ticks: ticks)
     } else {
       let z = Float(canvas.zoomScale)
       if !hold.following && pen.dist(hold.liveAnchor) * z < 10 { return }

@@ -14,15 +14,24 @@ enum SelectionDrag {
   case dot(index: Int, grab: Pt, base: ShapeRow, live: ShapeRow)
 }
 
+/// What's picked up, for the selection menu (Android's `SelectionInfo`).
 struct SelectionInfo: Equatable {
+  /// Where it is on screen (window coordinates).
   var rect: CGRect
+  var count: Int
   var rotatable: Bool
-}
-
-enum TappedItem {
-  case stroke(String)
-  case shape(ShapeRow)
-  case text(TextRow)
+  var hasImage = false
+  /// Writing or shapes are among it (it can be saved as a shape).
+  var hasDrawing = false
+  /// The one text box picked up, if that's all there is.
+  var textId: String?
+  var color: UInt32?
+  var lineSize: Float?
+  var line: String?
+  /// Everything picked up is locked (the lasso can be set to pick locked things up).
+  var locked = false
+  /// One picture that can be cropped.
+  var croppable = false
 }
 
 extension Pt {
@@ -44,15 +53,25 @@ extension NoteCanvas.Coordinator {
 
   var zoom: Float { Float(canvas?.zoomScale ?? 1) }
 
-  var selectionCount: Int { lasso.picked.count + lasso.pickedShapes.count + lasso.pickedTexts.count }
+  var selectionCount: Int { lasso.picked.count }
 
-  /// Typed text stays upright, so the rotate handle only shows without it.
-  var canRotate: Bool { selectionCount > 0 && lasso.pickedTexts.isEmpty }
+  /// Pictures and typed text stay upright, so the rotate handle only shows without them.
+  var canRotate: Bool {
+    let items = pickedItems
+    return !items.isEmpty && !items.contains { item in
+      switch item {
+      case .picture, .text: true
+      case .ink, .shape: false
+      }
+    }
+  }
+
+  var pickedShapeRows: [ShapeRow] { pickedItems.compactMap(\.shape) }
 
   var activeShape: ShapeRow? {
     if case let .dot(_, _, _, live)? = lasso.drag { return live }
-    guard lasso.picked.isEmpty, lasso.pickedTexts.isEmpty, lasso.pickedShapes.count == 1, let id = lasso.pickedShapes.first else { return nil }
-    return (lasso.shapesBefore ?? shapes).first { $0.id == id }
+    guard lasso.picked.count == 1, let id = lasso.picked.first else { return nil }
+    return (lasso.lifted?.shapes ?? shapes).first { $0.id == id }
   }
 
   var fingersDraw: Bool {
@@ -127,10 +146,14 @@ extension NoteCanvas.Coordinator {
     return grab
   }
 
+  /// Whether the lasso's watcher follows this touch: one that took hold of the selection, or one
+  /// that draws while the lasso is the tool (a finger that only scrolls still scrolls).
   func takes(_ t: UITouch) -> Bool {
+    if t.type == .pencil { lasso.lock.lastPencilAt = Date() }
+    if textEdit.view != nil { return false }
     if claim(t) != nil { return true }
     lasso.editSince = nil
-    if parent.tool == .lasso { return true }
+    if parent.tool == .lasso, draws(t) { return true }
     if draws(t), lasso.bounds != nil { clearSelection() }
     return false
   }
@@ -139,13 +162,19 @@ extension NoteCanvas.Coordinator {
 
   func beginDrag(_ grab: SelectionGrab, at p: Pt) {
     guard let canvas, let b = lasso.bounds else { return }
+    endThicknessPreview()
     switch grab {
-    case .resize: lasso.drag = .scale(from: p)
-    case .move: lasso.drag = .move(from: p)
+    case .resize:
+      lasso.drag = .scale(from: p)
+      startMoveSnap()
+    case .move:
+      lasso.drag = .move(from: p)
+      startMoveSnap()
     case .turn: lasso.drag = .turn(from: p, pivot: Pt(CGPoint(x: b.midX, y: b.midY)), facing: selectionFacing(), angle: 0)
     case let .dot(i, shape):
       // Where on the dot she grabbed it is kept, so the shape doesn't jump to the pen tip.
       lasso.drag = .dot(index: i, grab: shape.geometry.handles()[i] - p, base: shape, live: shape)
+      startSnap(skipping: [shape.id])
     }
     // The pen doesn't write while it edits; should PencilKit hand a stroke in anyway, `sync` drops it.
     lasso.editSince = Date().addingTimeInterval(-0.2)
@@ -161,22 +190,43 @@ extension NoteCanvas.Coordinator {
   func continueDrag(to p: Pt) {
     guard let canvas, let drag = lasso.drag, let b = lasso.bounds else { return }
     switch drag {
-    case let .move(from): lasso.transform = .translate(p.x - from.x, p.y - from.y)
-    case let .scale(from): lasso.transform = SelectionHandles.scale(TaliCore.Rect(b), from: from, to: p)
+    case let .move(from):
+      // Carried so the point she grabbed is under the pen, locking onto nearby shapes.
+      var by = p - from
+      if let moving = lasso.snap.moving {
+        let r = Snap.move(moving.moved(by.x, by.y), lasso.snap.targets, lasso.snap.session)
+        by = by + r.offset
+        showSnap(r.guides)
+      }
+      lasso.transform = .translate(by.x, by.y)
+    case let .scale(from):
+      let box = TaliCore.Rect(b)
+      lasso.transform = SelectionHandles.scale(box, from: from, to: p) { s in
+        // Its far side or middle lines up with nearby shapes as it grows or shrinks.
+        guard let moving = lasso.snap.moving, let own = moving.box else { return s }
+        let snapped = Snap.scale(own, anchor: Pt(box.left, box.top), s, lasso.snap.targets, lasso.snap.session, middleOnly: moving.middleOnly)
+        showSnap(snapped.guides)
+        return snapped.scale
+      }
     case let .turn(from, pivot, facing, _):
       let angle = SelectionHandles.turn(about: pivot, from: from, to: p, facing: facing)
       lasso.drag = .turn(from: from, pivot: pivot, facing: facing, angle: angle)
       lasso.transform = .rotateAround(pivot, angle)
     case let .dot(index, grab, base, _):
+      // A dot dragged onto another shape's corner or edge locks on there; else it lines up with
+      // other shapes' sides, middles and corners.
+      let dragged = base.geometry.dragging(index, to: p + grab, snappingTo: lasso.snap.targets, lasso.snap.session)
       var live = base
-      live.geometry = base.geometry.dragging(index, to: p + grab)
+      live.geometry = dragged.shape
+      live.locked = false
       lasso.drag = .dot(index: index, grab: grab, base: base, live: live)
+      showSnap(dragged.guides)
       showLive(live)
       drawChrome()
       return
     }
     let t = lasso.transform
-    if let before = lasso.before, !lasso.picked.isEmpty {
+    if let before = lasso.before, stored.contains(where: { lasso.picked.contains($0.stroke.id) }) {
       let by = CGAffineTransform(a: CGFloat(t.a), b: CGFloat(t.b), c: CGFloat(t.c), d: CGFloat(t.d), tx: CGFloat(t.tx), ty: CGFloat(t.ty))
       loading = true
       canvas.drawing = PKDrawing(strokes: before.strokes.enumerated().map { i, s in
@@ -194,77 +244,79 @@ extension NoteCanvas.Coordinator {
   func endDrag(cancelled: Bool) {
     guard let canvas, let drag = lasso.drag else { return }
     let t = lasso.transform
+    let items = pickedItems
     lasso.drag = nil
     lasso.transform = .identity
-    let shapesBefore = lasso.shapesBefore ?? shapes, textsBefore = lasso.textsBefore ?? texts
-    let before = lasso.before
-    lasso.before = nil
     canvas.drawingGestureRecognizer.isEnabled = inkOn
+    // Everything back where it was, then the change is made in one step (nothing is drawn in between).
+    if let before = lasso.before {
+      lasso.before = nil
+      loading = true
+      canvas.drawing = before
+      loading = false
+    }
+    restoreLifted()
+    endSnap()
     // nil leaves the menu as it was; an edit keeps it away for a moment; a tap brings it back.
     var menu: Bool?
-    var changed = false
     switch drag {
     case let .dot(_, _, base, live):
       lasso.chipsBackAt = Date()
       if !cancelled, live != base {
-        let after = shapesBefore.map { $0.id == live.id ? live : $0 }
-        setShapes(after)
-        registerShapesChange(from: shapesBefore, to: after)
-        changed = true
+        commit(remove: [.shape(base)], add: [.shape(live)])
         menu = false
+      } else {
+        showLive(base)
       }
     case .move, .scale, .turn:
       if case .move = drag { lasso.chipsBackAt = Date() }
-      if !cancelled, t != .identity, let before {
-        let movedDrawing = canvas.drawing
-        record(before, shapes: shapesBefore, texts: textsBefore)
-        sync(movedDrawing)
-        setShapes(shapesBefore.map { lasso.pickedShapes.contains($0.id) ? moved($0, by: t) : $0 })
-        setTexts(textsBefore.map { lasso.pickedTexts.contains($0.id) ? $0.transformed(t) : $0 })
-        if case let .turn(_, _, _, angle) = drag { noteTurn(angle) }
-        reportUndo()
-        changed = true
+      if !cancelled, t != .identity {
+        if case let .turn(_, _, _, angle) = drag { noteTurn(angle, items) }
+        var moved = items.map { $0.transformed(t) }
+        // Pictures land back on a page (in the same undo step).
+        if let nudge = pageNudge(moved) { moved = moved.map { $0.transformed(nudge) } }
+        commit(remove: items, add: moved)
         menu = false
       } else if !cancelled {
         menu = true
       }
     }
-    if !changed {
-      if let before, !lasso.picked.isEmpty {
-        loading = true
-        canvas.drawing = before
-        loading = false
-      }
-      restoreLifted()
-    }
     dropShapes()
-    setSelection(strokes: lasso.picked, shapes: lasso.pickedShapes, texts: lasso.pickedTexts, menu: menu)
+    setSelection(lasso.picked, menu: menu)
+  }
+
+  /// On A4 pages, pictures stay on a page: moved off (to the side or into a gap), the selection is
+  /// nudged so its pictures sit in the nearest place on the page they overlap most. Writing picked
+  /// up with them moves the same way, so nothing comes apart.
+  private func pageNudge(_ items: [PageItem]) -> Affine? {
+    guard paged else { return nil }
+    let rects = items.compactMap(\.picture).filter { !$0.isFill }.map(\.rect)
+    guard let u = rects.dropFirst().reduce(rects.first, { $0?.union($1) }) else { return nil }
+    let on = Placing.ontoPage(u, pages: layout, count: pageCount)
+    let dx = on.left - u.left, dy = on.top - u.top
+    return dx == 0 && dy == 0 ? nil : .translate(dx, dy)
   }
 
   private func selectionFacing() -> Float {
     func area(_ s: ShapeRow) -> Float { s.geometry.bounds(s.size).map { $0.width * $0.height } ?? 0 }
     if let own = pickedShapeRows.filter({ $0.geometry.facing != nil }).max(by: { area($0) < area($1) }), let f = own.geometry.facing { return f }
-    let first = pickedStrokes.first?.id ?? pickedShapeRows.first?.id
-    return first.flatMap { lasso.turnedBy[$0] } ?? 0
+    return pickedItems.first.flatMap { lasso.turnedBy[$0.id] } ?? 0
   }
 
-  private func noteTurn(_ angle: Float) {
-    let ids = Array(lasso.picked) + pickedShapeRows.filter { $0.geometry.facing == nil }.map(\.id)
-    for id in ids { lasso.turnedBy[id] = (lasso.turnedBy[id] ?? 0) + angle }
+  private func noteTurn(_ angle: Float, _ items: [PageItem]) {
+    for item in items where item.shape?.geometry.facing == nil { lasso.turnedBy[item.id] = (lasso.turnedBy[item.id] ?? 0) + angle }
   }
 
   // MARK: Picking up
 
   /// [menu]: true shows the selection menu, false
   /// keeps it away for a moment (she just moved, turned or reshaped it), nil leaves it as it was.
-  func setSelection(strokes: Set<String>, shapes picked: Set<String>, texts pickedTexts: Set<String>, menu: Bool?) {
-    let same = strokes == lasso.picked && picked == lasso.pickedShapes && pickedTexts == lasso.pickedTexts
+  func setSelection(_ ids: Set<String>, menu: Bool?) {
+    let same = ids == lasso.picked
     if !same { lasso.soft = false }
     lasso.menuClosed = menu.map { !$0 } ?? (same && lasso.menuClosed)
-    lasso.picked = strokes
-    lasso.pickedShapes = picked
-    lasso.pickedTexts = pickedTexts
-    lasso.bounds = pickedBounds()
+    lasso.picked = ids
+    lasso.bounds = pickedItems.reduce(nil) { joined($0, CGRect($1.bounds)) }
     lasso.menuTicket += 1
     if lasso.menuClosed, lasso.bounds != nil {
       let ticket = lasso.menuTicket
@@ -274,48 +326,44 @@ extension NoteCanvas.Coordinator {
         self.reportSelection()
       }
     }
+    if lasso.bounds == nil { parent.onSelection(nil) }
     redrawSelection()
   }
 
-  private func pickedBounds() -> CGRect? {
-    var out = joined(unionOf(pickedStrokes), unionOf(pickedShapeRows))
-    for t in texts where lasso.pickedTexts.contains(t.id) { out = joined(out, TextLook.frame(t)) }
-    return out
-  }
-
   func selectShape(_ shape: ShapeRow, soft: Bool = false) {
-    setSelection(strokes: [], shapes: [shape.id], texts: [], menu: true)
+    setSelection([shape.id], menu: true)
     lasso.soft = soft
   }
 
-  func pick(at p: Pt) {
-    switch item(at: p) {
-    case .stroke(let id)?: setSelection(strokes: [id], shapes: [], texts: [], menu: true)
-    case .shape(let s)?: selectShape(s)
-    case .text(let t)?: setSelection(strokes: [], shapes: [], texts: [t.id], menu: true)
-    case nil: break
-    }
-  }
-
+  /// The item under [p] (Android's `hitTest`). Writing and shapes win over text and pictures, which
+  /// are under them; a PDF's own page is never found. Locked items are left alone unless they're
+  /// asked for ([locked]) or anything goes ([anyLock]); [filter] is the lasso's choice of pens.
   /// Ink newer than [since] is left out: the dot a pen tap leaves isn't what the tap was on.
-  func item(at p: Pt, since: Date? = nil) -> TappedItem? {
+  func item(at p: Pt, locked: Bool = false, anyLock: Bool = false, filter: (PenType?) -> Bool = { _ in true }, since: Date? = nil) -> PageItem? {
     let r = Self.hitRadius / zoom
     func near(_ line: [Pt], _ reach: Float) -> Bool {
       if line.count == 1 { return line[0].dist(p) <= reach }
       return line.indices.dropLast().contains { Geo.distToSegment(p, line[$0], line[$0 + 1]) <= reach }
     }
-    var top: (z: Int64, item: TappedItem)?
-    for (key, s) in stored where !s.tags.contains("LOCKED") && s.bounds.outset(r).contains(p) {
+    func wanted(_ item: PageItem) -> Bool { (anyLock || item.locked == locked) && filter(item.pen) }
+    var top: PageItem?
+    func offer(_ item: PageItem) {
+      if top.map({ item.z >= $0.z }) ?? true { top = item }
+    }
+    func onInk(_ s: InkStroke) -> Bool { s.bounds.outset(r).contains(p) && wanted(.ink(s)) && near(s.inputs.points.map { Pt($0.x, $0.y) }, r + s.size / 2) }
+    for (key, s) in stored {
       if let since, key.created >= since.timeIntervalSinceReferenceDate { continue }
-      guard near(s.inputs.points.map { Pt($0.x, $0.y) }, r + s.size / 2) else { continue }
-      if top.map({ s.z >= $0.z }) ?? true { top = (s.z, .stroke(s.id)) }
+      if onInk(s) { offer(.ink(s)) }
     }
-    for sh in shapes where !sh.locked {
+    for s in lockedInk where onInk(s) { offer(.ink(s)) }
+    for sh in shapes where wanted(.shape(sh)) {
       guard let b = sh.geometry.bounds(sh.size), b.outset(r).contains(p), sh.geometry.paths(sh.size).contains(where: { near($0, r + sh.size / 2) }) else { continue }
-      if top.map({ sh.z >= $0.z }) ?? true { top = (sh.z, .shape(sh)) }
+      offer(.shape(sh))
     }
-    if let top { return top.item }
-    return texts.last { !$0.locked && TextLook.frame($0).contains(CGPoint(p)) }.map(TappedItem.text)
+    if let top { return top }
+    if let text = texts.filter({ wanted(.text($0)) && TextLook.frame($0).contains(CGPoint(p)) }).max(by: { $0.z < $1.z }) { return .text(text) }
+    let under = (pictures + fills.map(\.picture)).filter { wanted(.picture($0)) && !$0.pdfPage && $0.rect.contains(p) }
+    return under.max { $0.z < $1.z }.map(PageItem.picture)
   }
 
   // MARK: Drawing it
@@ -323,6 +371,8 @@ extension NoteCanvas.Coordinator {
   func drawChrome() {
     guard let canvas else { return }
     var c = SelectionChrome()
+    c.guides = lasso.snap.guides
+    c.zoom = CGFloat(zoom)
     defer { lasso.chrome.show(c, over: canvas) }
     guard let b = lasso.bounds else { return }
     let z = zoom

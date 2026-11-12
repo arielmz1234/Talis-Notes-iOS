@@ -23,6 +23,8 @@ extension NoteCanvas.Coordinator {
     if paged { rect = Placing.ontoPage(rect, pages: layout, count: pageCount) }
     let row = PictureRow(id: newId(), z: nextZ(), file: page.file, rect: rect)
     addPictures([row], pageCount: pageCount)
+    // Picked up right away so it can be dragged and resized into place.
+    setSelection([row.id], menu: true)
     return row
   }
 
@@ -78,6 +80,7 @@ extension NoteCanvas.Coordinator {
   var contentBounds: Rect? {
     var boxes = stored.compactMap { $0.stroke.inputs.bounds }
     if let under = pages?.pages.under {
+      boxes += under.lockedInk.compactMap(\.inputs.bounds)
       boxes += under.shapes.compactMap { $0.geometry.bounds($0.size) }
       boxes += under.texts.map { let f = TextLook.frame($0); return Rect(Float(f.minX), Float(f.minY), Float(f.maxX), Float(f.maxY)) }
       boxes += under.pictures.map(\.row.rect)
@@ -90,6 +93,7 @@ extension NoteCanvas.Coordinator {
     guard let c = contentBounds, c.intersects(page) else { return false }
     let under = pages?.pages.under
     return stored.contains { $0.stroke.inputs.bounds?.intersects(page) == true }
+      || under?.lockedInk.contains { $0.inputs.bounds?.intersects(page) == true } == true
       || under?.shapes.contains { $0.geometry.bounds($0.size)?.intersects(page) == true } == true
       || under?.texts.contains { Rect($0.x, $0.y, $0.x + $0.width, $0.y + 1).intersects(page) } == true
       || under?.pictures.contains { $0.row.rect.intersects(page) } == true

@@ -27,17 +27,18 @@ struct EraserSweep {
     var piece = false
   }
 
-  let before: PKDrawing
-  let shapesBefore: [ShapeRow]
-  let textsBefore: [TextRow]
+  let before: PageState
   var last: Pt
   var ink: [Ink]
+  /// Fills being rubbed out: their pictures as they are now, not yet saved (see FillEraser.swift).
+  var rubbed: [String: CGContext] = [:]
   var changed = false
 }
 
 /// The eraser (Android's `startErase`, `eraseSegment`, `finishErase`). PencilKit's own knows neither
-/// pen types, locked strokes nor shapes, and what its precise eraser leaves can't be stored as the
-/// strokes it came from, so the notebook erases by itself.
+/// pen types, shapes nor fills, and what its precise eraser leaves can't be stored as the strokes it
+/// came from, so the notebook erases by itself. Locked things are left alone: locked writing isn't
+/// in PencilKit's drawing at all (the page draws it).
 extension NoteCanvas.Coordinator {
   private static let cursorFill = UIColor(argb: Int32(bitPattern: 0x22D1_AEFF))
   private static let cursorEdge = UIColor(argb: Int32(bitPattern: 0xAA5E_4B8B))
@@ -65,7 +66,7 @@ extension NoteCanvas.Coordinator {
     if canvas.drawing.strokes.count != stored.count { sync(canvas.drawing) }
     let p = worldPoint(of: t)
     erasing.sweep = EraserSweep(
-      before: canvas.drawing, shapesBefore: shapes, textsBefore: texts, last: p,
+      before: pageState, last: p,
       ink: zip(canvas.drawing.strokes, stored).map { EraserSweep.Ink(pk: $0, stroke: $1.stroke, box: $1.stroke.bounds) })
     erase(to: p)
     moveCursor(to: t)
@@ -111,7 +112,7 @@ extension NoteCanvas.Coordinator {
     }
     for item in sweep.ink {
       let s = item.stroke
-      guard !s.locked, affects.hits(s.pen), item.box.outset(radius).intersects(path) else {
+      guard affects.hits(s.pen), item.box.outset(radius).intersects(path) else {
         ink.append(item)
         continue
       }
@@ -153,6 +154,8 @@ extension NoteCanvas.Coordinator {
     let at = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
     let goneTexts = Set(texts.filter { !$0.locked && TextLook.frame($0).insetBy(dx: -reach, dy: -reach).contains(at) }.map(\.id))
 
+    let fillsChanged = eraseFills(from: a, to: p, reach: radius, rubbed: &sweep.rubbed)
+
     if shapesChanged { setShapes(keptShapes) }
     if !goneTexts.isEmpty { setTexts(texts.filter { !goneTexts.contains($0.id) }) }
     if inkChanged {
@@ -161,7 +164,7 @@ extension NoteCanvas.Coordinator {
       canvas.drawing = PKDrawing(strokes: ink.map(\.pk))
       loading = false
     }
-    sweep.changed = sweep.changed || inkChanged || shapesChanged || !goneTexts.isEmpty
+    sweep.changed = sweep.changed || inkChanged || shapesChanged || !goneTexts.isEmpty || fillsChanged
     erasing.sweep = sweep
   }
 
@@ -179,15 +182,13 @@ extension NoteCanvas.Coordinator {
     guard sweep.changed else { return }
     if cancelled {
       // A second finger made it a pinch or a scroll: nothing is erased.
-      loading = true
-      canvas.drawing = sweep.before
-      loading = false
-      setShapes(sweep.shapesBefore)
-      setTexts(sweep.textsBefore)
+      showFills(sweep.before.fills)
+      restore(sweep.before)
       return
     }
+    finishFillErase(sweep.rubbed, from: sweep.before.fills)
     for item in sweep.ink where item.piece { pending[StrokeKey(item.pk)] = item.stroke }
-    record(sweep.before, shapes: sweep.shapesBefore, texts: sweep.textsBefore)
+    record(sweep.before)
     sync(canvas.drawing)
     reportUndo()
   }
