@@ -10,6 +10,57 @@
    screenshots, macOS runners sometimes queue). Batch changes, and read compile errors with
    `gh run view <id> --log-failed | grep error:`.
 
+## Parity run (session 3, 11–12 Nov 2026)
+
+Goal: parity with Android except backups, iCloud and Drive. Six areas were built by agents in
+their own worktrees and merged into `main` one by one, each checked by the full UI suite on the
+iPad Pro 13 simulator (see PLAN.md's "Parity with Android" for what each left). Still to come:
+"Selecting, more" (lock, free form, screenshot lasso, the menu scrolling on a phone, pictures and
+fills in the lasso, snapping) and a phone layout pass.
+
+How things fit together now (read before changing the notebook):
+- `TopBarLayout` places the wide top row by role (title, tools, corner) as Android's
+  `NotebookScreen` Layout: the tools shift over and the notebook's name shortens before anything
+  overlaps.
+- PencilKit draws only when `inkOn` (a pen, not just looking, not a pen the notebook draws itself:
+  dashed lines and the highlighter are `InkLook`/`OwnInk` on our own layer). Set
+  `drawingGestureRecognizer.isEnabled` after `canvas.tool`: setting the tool switches it back on.
+- `draws(t)` says whether a touch writes; `claim(t)` says a touch is editing the selection (chips,
+  dots). Every tool's watcher checks both.
+- Dashed shapes are cut into pieces (`ShapeRow.strokes`, Android's `StrokeFactory.dashes`) and drawn
+  in `ShapeRow.inkColor`, everywhere: page, lifted selection, live Shapes tool, fill mask, previews.
+- `ShapeGeometry` carries Android's extra fields: poly `form`, ellipse `stretchable`, group and
+  triangle `turn`, and `param` shapes with joints (subject packs).
+- The selection menu is drawn under the bars and panels (it belongs to the page, as on Android); its
+  trash is `selection-delete`.
+- Pictures and memos are typed rows (`PictureRow`, `MemoRow`); one `contentBounds` (TaliCore `Rect`).
+- Colours live in `Palettes.shared` (observable); pen helpers (`presetSizes`, `withSize`) in TaliCore.
+- `NoteCanvasView.onResize` refits and redraws chrome; `PagesLayer.paint(in:scale:print:)` is the one
+  drawing path for screen, page pictures and PDF (`drawsPaper` off when export paints one sheet).
+
+Testing:
+- One UI test class per area (`UITests/*Tests.swift` on `ShotCase`). `ONLY=<Class>` or
+  `ONLY=<Class>/<test>` with `scripts/local-shots.sh`; `scripts/one-test.sh` also stops a single test.
+- Full suite on the iPad Pro 13: about 23 minutes for 33 tests. Known failures, both checked to be
+  pre-existing on their own branches: `PagesTests.testPagesOverview` (XCUITest's tap on Duplicate
+  opens Delete; landscape coordinate taps are unreliable on this Xcode 27 simulator) and
+  `PenTests.testColours` (iPad Pro 13 width only).
+- A shape just made stays picked up (Android's soft selection): tests that count pixels or tap
+  "Delete" must put it down first or tell the menu's trash apart.
+- Test-only launch arguments: `-uitest -seed`, `-cameraPicture`, `-fakePickers`, `-fakeDrop`,
+  `-openURL <file>`, `-keep-pens`, `-fingerDraws 0`. Settings persist on a simulator between runs.
+- Never run two `local-shots.sh` on one simulator at once; a killed run can leave the test runner
+  alive (the script now stops it first).
+- The Mac is short on disk: each booted simulator is ~2.3 GB. Keep few, delete them after use.
+
+Device: the owner's iPad Air 11 (M2) installs with the free personal team, bundle id
+`com.tali.notes.idan` (build-time override only), when unlocked and plugged in:
+`xcodebuild … -destination generic/platform=iOS DEVELOPMENT_TEAM=R38D6WY53B PRODUCT_BUNDLE_IDENTIFIER=com.tali.notes.idan`
+then `xcrun devicectl device install app --device <udid> <app>`.
+
+Pushing: `idanlo` has no write access to `arielmz1234/Talis-Notes-iOS`; everything since `ea994c6`
+is local on `main` until that's sorted.
+
 ## On the Mac (session 3, 11 Nov 2026)
 
 Building and checking locally now (Xcode 27, iOS 27 simulators; the code is unchanged for it):
