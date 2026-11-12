@@ -17,6 +17,20 @@ struct ShapeToolState {
   let squareHint = CAShapeLayer()
 }
 
+/// The tips already shown (Android's `AppSettings.seenTips`); UI tests start with none seen.
+@MainActor
+enum SeenTips {
+  private static var seen: Set<String> =
+    ProcessInfo.processInfo.arguments.contains("-uitest") ? [] : Set(UserDefaults.standard.stringArray(forKey: "seenTips") ?? [])
+
+  /// False when [id] was shown before.
+  static func add(_ id: String) -> Bool {
+    guard seen.insert(id).inserted else { return false }
+    UserDefaults.standard.set(Array(seen), forKey: "seenTips")
+    return true
+  }
+}
+
 extension NoteCanvas.Coordinator {
   static let shapeStartSlide: CGFloat = 12
 
@@ -83,10 +97,22 @@ extension NoteCanvas.Coordinator {
     drawShapePreview()
     endSnap()
     if let shape {
-      selectShape(addShape(shape), soft: true)
-    } else if let tapped, case let .shape(under)? = item(at: tapped) {
-      selectShape(under)
+      pickUpShape(addShape(shape), soft: true)
+    } else if let tapped {
+      if case let .shape(under)? = item(at: tapped) { pickUpShape(under) } else { tipOnce("shape-drag", L("drag_on_the_page_to_draw")) }
     }
+  }
+
+  /// Picks up a shape just made or tapped, and the first time, says how its dots work (Android's
+  /// `selectShape`).
+  func pickUpShape(_ shape: ShapeRow, soft: Bool = false) {
+    selectShape(shape, soft: soft)
+    tipOnce("shape-tap", L("drag_a_dot_to_reshape_it"))
+  }
+
+  /// Shows [message] the first time [id] comes up, never again (Android's `NotebookViewModel.tip`).
+  func tipOnce(_ id: String, _ message: String) {
+    if SeenTips.add(id) { parent.onHint(message) }
   }
 
   private func drawShapePreview() {

@@ -168,10 +168,10 @@ extension NoteCanvas.Coordinator {
       hold.live = nil
       hold.base = nil
       hold.layer.path = nil
-      if !cancelled { selectShape(addShape(shape), soft: true) }
+      if !cancelled { pickUpShape(addShape(shape), soft: true) }
     } else if !cancelled, let tapped = shapeTappedByPen() {
       dropInk(since: hold.began.addingTimeInterval(-0.2))
-      selectShape(tapped)
+      pickUpShape(tapped)
     }
     hold.points = []
   }
