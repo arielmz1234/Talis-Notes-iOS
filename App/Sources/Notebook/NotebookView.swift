@@ -368,6 +368,7 @@ struct NotebookView: View {
     .onAppear {
       memos.bridge = bridge
       crop.bridge = bridge
+      bridge.memosMoved = { [memos] in memos.pagesRearranged() }
       memos.load(lib.db, notebook: notebook.id)
     }
     .onDisappear { memos.leave() }

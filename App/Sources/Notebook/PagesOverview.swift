@@ -8,6 +8,8 @@ final class CanvasBridge {
   weak var coordinator: NoteCanvas.Coordinator?
   /// Called once the pages have been laid out again, so page pictures can be redrawn.
   var pagesChanged: () -> Void = {}
+  /// Called once the pages have been laid out again: the voice memos beside them went with them.
+  var memosMoved: () -> Void = {}
 
   func pageImage(_ i: Int, width: CGFloat) -> UIImage? { coordinator?.pageImage(i, width: width) }
 }
@@ -59,13 +61,15 @@ extension NoteCanvas.Coordinator {
     clearSelection()
     load()
     touch()
+    parent.bridge?.memosMoved()
     parent.bridge?.pagesChanged()
   }
 }
 
 /// All the pages at a glance (Android's `PagesOverview`): tap one to look closer, then go to it or
-/// delete it; hold one and drag it to move it (the others make way); Select picks several to
-/// duplicate or delete together; Add page at the end.
+/// delete it; hold one and drag it to move it (the others make way; picked pages in an unbroken run
+/// move together); Select picks several to duplicate or delete together; a deleted page lifts away
+/// on a puff; Add page at the end.
 struct PagesOverview: View {
   var count: Int
   var current: Int
@@ -83,9 +87,14 @@ struct PagesOverview: View {
   /// Pages picked to duplicate or delete; nil when not picking.
   @State private var picked: Set<Int>?
   @State private var deletingPicked = false
-  /// The order while a page is being dragged, and the one held.
+  /// The order while a page is being dragged, the one held, and the pages carried with it.
   @State private var order: [Int]?
   @State private var held: Int?
+  @State private var carried: [Int] = []
+  /// Pages lifting away on a puff before they're deleted.
+  @State private var leaving: Set<Int> = []
+  /// Each page's latest picture, so after a move the tiles show the right page while new pictures are made.
+  @State private var thumbs: [Int: UIImage] = [:]
   @State private var version = 0
 
   /// A drag let go outside the pages never drops, and SwiftUI doesn't say so: an order left over
@@ -104,10 +113,12 @@ struct PagesOverview: View {
             ForEach(Array(shown.enumerated()), id: \.element) { at, i in
               PageTile(
                 index: i, number: at + 1, aspect: aspect, selected: i == current && picked == nil, picking: picked != nil,
-                picked: picked?.contains(i) == true, bridge: bridge, version: version
+                picked: picked?.contains(i) == true, lifted: held != nil && carried.contains(i), picture: thumbs[i], bridge: bridge, version: version,
+                onPicture: { thumbs[i] = $0 }
               ) {
                 order = nil
                 held = nil
+                carried = []
                 if var p = picked {
                   if p.contains(i) { p.remove(i) } else { p.insert(i) }
                   picked = p
@@ -115,12 +126,15 @@ struct PagesOverview: View {
                   withAnimation(Ease.outStrong(duration: 0.24)) { peek = i }
                 }
               }
-              .onDrag {
+              .puffBox(leaving: leaving.contains(i))
+              // While picking, only a picked page can be held, and it brings its unbroken run along.
+              .modifier(HoldToMove(enabled: picked?.contains(i) ?? true) {
                 held = i
+                carried = Pages.carried(with: i, picked: picked)
                 order = Array(0..<count)
                 return NSItemProvider(object: "\(i)" as NSString)
-              }
-              .onDrop(of: [.text], delegate: PageDrop(target: i, held: $held, order: $order, onDrop: finishMove))
+              })
+              .onDrop(of: [.text], delegate: PageDrop(target: i, held: $held, carried: carried, order: $order, onDrop: finishMove))
             }
             if picked == nil { addTile }
           }
@@ -144,10 +158,12 @@ struct PagesOverview: View {
         .transition(.opacity.combined(with: .scale(scale: 0.96)))
       }
     }
+    .puffLayerHost()
     .onChange(of: count) { _, _ in
       picked = nil
       order = nil
       held = nil
+      carried = []
     }
     .onAppear { bridge.pagesChanged = { version += 1 } }
     .onDisappear { bridge.pagesChanged = {} }
@@ -156,9 +172,7 @@ struct PagesOverview: View {
       isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), titleVisibility: .visible
     ) {
       Button(count == 1 ? L("clear_page") : L("delete_page"), role: .destructive) {
-        if let i = confirming { onRearrange(Pages.withoutPages(count, [i]), L("page_n_deleted_undo_brings_the", i + 1)) }
-        withAnimation(.easeOut(duration: 0.16)) { peek = nil }
-        version += 1
+        if let i = confirming { puffAway([i], L("page_n_deleted_undo_brings_the", i + 1)) }
       }
     } message: {
       Text(count == 1 ? L("everything_on_it_is_removed_undo") : L("the_page_and_everything_on_it"))
@@ -168,9 +182,7 @@ struct PagesOverview: View {
         let gone = picked ?? []
         let all = gone.count == count
         picked = nil
-        onRearrange(
-          Pages.withoutPages(count, gone),
-          all ? L("pages_cleared_undo_brings_them_back") : gone.count == 1 ? L("page_deleted_undo_brings_it_back") : L("n_pages_deleted_undo_brings_them", gone.count))
+        puffAway(gone, all ? L("pages_cleared_undo_brings_them_back") : gone.count == 1 ? L("page_deleted_undo_brings_it_back") : L("n_pages_deleted_undo_brings_them", gone.count))
       }
     } message: {
       Text(picked?.count == count ? L("everything_on_them_is_removed_and") : L("they_go_with_everything_on_them"))
@@ -267,29 +279,60 @@ struct PagesOverview: View {
     .accessibilityLabel(L("add_a_page"))
   }
 
-  /// Let go: the held page and everything on it moves to where it was dropped.
+  /// The peek closes, the pages' tiles lift away on a puff together, then they go.
+  private func puffAway(_ gone: Set<Int>, _ message: String) {
+    withAnimation(.easeOut(duration: 0.16)) { peek = nil }
+    leaving = gone
+    let left = Pages.withoutPages(count, gone)
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(PuffTiming.leave))
+      leaving = []
+      relay(left, message)
+    }
+  }
+
+  /// The pages laid out as [order]; their pictures follow them to their new places.
+  private func relay(_ order: [Int], _ message: String) {
+    thumbs = Dictionary(uniqueKeysWithValues: order.enumerated().compactMap { at, page in thumbs[page].map { (at, $0) } })
+    onRearrange(order, message)
+    version += 1
+  }
+
+  /// Let go: the held pages and everything on them move to where they were dropped.
   private func finishMove() {
     defer {
       order = nil
       held = nil
+      carried = []
     }
     guard let o = order, let h = held, o != Array(0..<count), let to = o.firstIndex(of: h) else { return }
-    onRearrange(o, L("page_n_moved_to_n", h + 1, to + 1))
+    picked = nil
+    relay(o, carried.count > 1 ? L("n_pages_moved", carried.count) : L("page_n_moved_to_n", h + 1, to + 1))
   }
 }
 
-/// A held page passing over another takes its place; the others make way.
+/// A page that can be held and dragged to a new place.
+private struct HoldToMove: ViewModifier {
+  var enabled: Bool
+  var start: () -> NSItemProvider
+
+  func body(content: Content) -> some View {
+    if enabled { content.onDrag(start) } else { content }
+  }
+}
+
+/// The held pages passing over another take its place as one block; the others make way.
 private struct PageDrop: DropDelegate {
   var target: Int
   @Binding var held: Int?
+  var carried: [Int]
   @Binding var order: [Int]?
   var onDrop: () -> Void
 
   func dropEntered(info: DropInfo) {
-    guard let h = held, h != target, var o = order, let from = o.firstIndex(of: h), let to = o.firstIndex(of: target) else { return }
-    o.remove(at: from)
-    o.insert(h, at: to)
-    withAnimation(Ease.outStrong(duration: 0.22)) { order = o }
+    guard held != nil, let o = order else { return }
+    let moved = Pages.moving(carried, in: o, onto: target)
+    if moved != o { withAnimation(Ease.outStrong(duration: 0.22)) { order = moved } }
   }
 
   func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
@@ -307,18 +350,21 @@ private struct PageTile: View {
   var selected: Bool
   var picking: Bool
   var picked: Bool
+  /// Carried with the page being dragged: it lifts a little.
+  var lifted: Bool
+  var picture: UIImage?
   var bridge: CanvasBridge
   var version: Int
+  var onPicture: (UIImage) -> Void
   var action: () -> Void
   @Environment(\.tali) private var c
-  @State private var image: UIImage?
 
   var body: some View {
     Button(action: action) {
       VStack(spacing: 8) {
         Color.white
           .aspectRatio(aspect, contentMode: .fit)
-          .overlay { if let image { Image(uiImage: image).resizable().scaledToFill() } }
+          .overlay { if let picture { Image(uiImage: picture).resizable().scaledToFill() } }
           .clipShape(RoundedRectangle(cornerRadius: 10))
           .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected || picked ? c.accent : c.line, lineWidth: selected || picked ? 2.5 : 1))
           .overlay(alignment: .topTrailing) {
@@ -333,18 +379,20 @@ private struct PageTile: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.7)))
             }
           }
-          .shadow(color: c.accent.opacity(0.2), radius: selected ? 10 : 5, y: 3)
+          .shadow(color: c.accent.opacity(0.2), radius: (selected ? 10 : 5) + (lifted ? 14 : 0), y: 3)
+          .scaleEffect(lifted ? 1.05 : 1)
         Text("\(number)").font(TaliType.labelLarge).foregroundStyle(selected ? c.onAccent : c.inkMuted)
           .padding(.horizontal, 10).padding(.vertical, 2)
           .background(RoundedRectangle(cornerRadius: 10).fill(selected ? c.accent : .clear))
       }
       .animation(.easeOut(duration: 0.15), value: picked)
       .animation(Ease.outStrong(duration: 0.2), value: picking)
+      .animation(.easeOut(duration: 0.16), value: lifted)
     }
     .buttonStyle(PressStyle())
     .accessibilityLabel(picking ? L("pick_page_n", number) : L("look_at_page_n", number))
     .accessibilityAddTraits(picked ? .isSelected : [])
-    .task(id: version) { image = bridge.pageImage(index, width: 240) }
+    .task(id: version) { if let made = bridge.pageImage(index, width: 240) { onPicture(made) } }
   }
 }
 

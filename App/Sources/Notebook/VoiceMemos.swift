@@ -53,6 +53,16 @@ final class MemoModel {
     memos = ((try? db.items(of: notebook)) ?? []).compactMap(MemoRow.init)
   }
 
+  /// The pages were laid out again (one deleted, moved or copied, or that undone): the memos are
+  /// read again, each beside the page it went with.
+  func pagesRearranged() {
+    guard let db else { return }
+    memos = ((try? db.items(of: notebookId)) ?? []).compactMap(MemoRow.init)
+    let here = Set(memos.map(\.id))
+    if let open = openMemo, !here.contains(open) { openMemo = nil }
+    if let playing = voice.current, playing != Self.draftId, !here.contains(playing) { voice.stopPlayback() }
+  }
+
   /// The page moved under the memos: they follow it.
   func cameraMoved() {
     guard let c = bridge?.coordinator, let canvas = c.canvas else { return }
