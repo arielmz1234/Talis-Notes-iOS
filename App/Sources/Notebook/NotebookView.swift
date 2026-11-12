@@ -67,6 +67,10 @@ struct NotebookView: View {
   /// What the lasso picked up (window coordinates), a held spot offering Paste, and a hint line.
   @State private var selection: SelectionInfo?
   @State private var pasteOffer: CGPoint?
+  /// A picture just taken with the screenshot lasso, waiting to be saved, shared or copied.
+  @State private var screenshot: URL?
+  @AppStorage(LassoSettings.Key.free) private var lassoFree = false
+  @AppStorage(LassoSettings.Key.shot) private var lassoShot = false
   @State private var hint: String?
   @State private var hintTask: Task<Void, Never>?
   @State private var bridge = CanvasBridge()
@@ -109,6 +113,7 @@ struct NotebookView: View {
           onSelection: { r in withAnimation(.easeOut(duration: 0.14)) { selection = r } },
           onHint: { show($0) },
           onPasteOffer: { p in withAnimation(.easeOut(duration: 0.16)) { pasteOffer = p } },
+          onScreenshot: { url in withAnimation(Ease.outStrong(duration: 0.24)) { screenshot = url } },
           onView: { p, z in
             page = p
             zoom = z
@@ -124,15 +129,13 @@ struct NotebookView: View {
         .simultaneousGesture(TapGesture().onEnded {
           if panel != nil { withAnimation(.easeOut(duration: 0.1)) { panel = nil } }
           if memos.openMemo != nil { memos.openMemo = nil }
-          crop.dismissOffer()
         })
-        .modifier(DropOnPage(enabled: !viewing, bridge: bridge, crop: crop, hint: show))
+        .modifier(DropOnPage(enabled: !viewing, bridge: bridge, hint: show))
         .overlay { MemoLayer(memos: memos, hint: show) }
-        .overlay { CropOffer(crop: crop) }
         .overlay { CropLayer(crop: crop) }
         // Under the bars and their panels, as on Android, where it belongs to the page.
         if let sel = selection, !hidden, !viewing {
-          SelectionMenuLayer(selection: sel.rect, rotatable: sel.rotatable, narrow: narrow, onSaveShape: bridge.coordinator?.hasDrawingPicked == true ? { saveShape() } : nil) { command = $0 }
+          SelectionMenuLayer(info: sel, narrow: narrow, onSaveShape: saveShape, onCrop: { if let p = bridge.coordinator?.pickedItems.first?.picture { crop.start(p) } }) { command = $0 }
             .ignoresSafeArea()
         }
         VStack(spacing: narrow ? 18 : 0) {
@@ -188,6 +191,8 @@ struct NotebookView: View {
                 }
               case .fill:
                 FillPanel()
+              case .lasso:
+                LassoPanel()
               }
             }
             .environment(\.panelRoom, geo.size.height - (narrow ? 292 : 196))
@@ -279,6 +284,13 @@ struct NotebookView: View {
           }
           .transition(.opacity)
         }
+        if let shot = screenshot {
+          let close = { withAnimation(.easeOut(duration: 0.16)) { screenshot = nil } }
+          DialogOverlay(onClose: close) {
+            ScreenshotSheet(url: shot, onCopy: { bridge.coordinator?.copyScreenshot(shot) }, onHint: show, onDone: close)
+          }
+          .transition(.opacity)
+        }
         if exporting {
           DialogOverlay(onClose: { withAnimation(.easeOut(duration: 0.16)) { exporting = false } }) {
             ExportCard(bridge: bridge, paged: !endless) { withAnimation(.easeOut(duration: 0.16)) { exporting = false } }
@@ -336,7 +348,7 @@ struct NotebookView: View {
       }
     }
     .environment(\.tali, barColors)
-    .modifier(InsertFlow(request: $inserting, bridge: bridge, crop: crop, hint: show))
+    .modifier(InsertFlow(request: $inserting, bridge: bridge, hint: show))
     .onAppear {
       memos.bridge = bridge
       crop.bridge = bridge
@@ -439,7 +451,7 @@ struct NotebookView: View {
   }
 
   private func mainToolbar(showColors: Bool) -> some View {
-    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shape: shapeSource, onKeyboard: { panel = nil; command = .newText }, onInsert: { panel = nil; inserting = $0 }, memos: memos, onVoice: { panel = nil; memos.mic(hint: show) }, showColors: showColors, compactTools: PhoneWriting.onPhone)
+    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shape: shapeSource, lasso: lassoShot ? .screenshot : lassoFree ? .freeForm : .lasso, onKeyboard: { panel = nil; command = .newText }, onInsert: { panel = nil; inserting = $0 }, memos: memos, onVoice: { panel = nil; memos.mic(hint: show) }, showColors: showColors, compactTools: PhoneWriting.onPhone)
   }
 
   private func saveShape() {
@@ -517,6 +529,11 @@ struct NotebookView: View {
           .popover(isPresented: $moreOpen, arrowEdge: .top) {
             MoreMenu(
               paged: !endless,
+              locked: bridge.coordinator?.lockedCount ?? 0,
+              onUnlockAll: {
+                moreOpen = false
+                command = .unlockAll
+              },
               papers: {
                 PaperPicker(
                   choice: paperChoice, customs: PaperSettings.shared.customPapers, dark: dark || barColors.isDark,
@@ -590,8 +607,10 @@ struct ToolIcon: View {
 
   var body: some View {
     Button(action: action) {
+      // A plain rectangle: with a rounded one, taps on the right half of the button before this one
+      // came here instead (seen on iOS 27: half of Undo fired Redo).
       Image(systemName: system).font(.system(size: 19)).foregroundStyle(enabled ? c.ink : c.inkFaint.opacity(0.5))
-        .frame(width: 44, height: 44).contentShape(RoundedRectangle(cornerRadius: 14))
+        .frame(width: 44, height: 44).contentShape(Rectangle())
     }
     .buttonStyle(PressStyle(scale: 0.9))
     .disabled(!enabled)

@@ -15,6 +15,9 @@ struct TextEditState {
   var tap: UITapGestureRecognizer?
   /// A− / A+ above the box (Android's editor `SizeButton`s).
   var sizeBar: UIView?
+
+  /// The editor's own views: a touch on one of them is the editor's, not "done".
+  var ownViews: [UIView] { [view, sizeBar].compactMap { $0 } }
 }
 
 extension NoteCanvas.Coordinator: UITextViewDelegate {
@@ -35,16 +38,32 @@ extension NoteCanvas.Coordinator: UITextViewDelegate {
       finishText()
       return
     }
-    guard !parent.viewOnly, parent.tool != .lasso, parent.tool != .fill else { return }
+    // The finger that just unlocked something by holding isn't tapping as it lifts.
+    if let unlocked = lasso.lock.unlockedAt, Date().timeIntervalSince(unlocked) < 0.5 { return }
+    guard !parent.viewOnly, parent.tool != .fill else { return }
     let q = g.location(in: canvas)
     let p = CGPoint(x: q.x / canvas.zoomScale, y: q.y / canvas.zoomScale)
-    if let t = texts.last(where: { !$0.locked && TextLook.frame($0).insetBy(dx: -6, dy: -6).contains(p) }) {
+    if parent.tool != .lasso, let t = texts.last(where: { !$0.locked && TextLook.frame($0).insetBy(dx: -6, dy: -6).contains(p) }) {
       clearSelection()
       editText(t)
-    } else if !fingersDraw, lasso.bounds != nil {
-      // A finger that doesn't write only lets go of what's picked up (a tap never picks things up by accident).
+      return
+    }
+    // A finger that writes taps as the pen does (the lasso's own touch picks up).
+    if fingersDraw { return }
+    // A finger tap only picks something up with the lasso (taps picking things up by accident were
+    // a nuisance); elsewhere it just lets go of what's picked up.
+    if parent.tool == .lasso, !LassoSettings.shot, let item = item(at: Pt(p), anyLock: LassoSettings.pickLocked, filter: LassoSettings.hits) {
+      selectGroup(item)
+    } else if lasso.bounds != nil {
       clearSelection()
     }
+  }
+
+  /// Edit text, from the selection menu of a text box picked up.
+  func editPickedText(_ id: String) {
+    guard let t = texts.first(where: { $0.id == id }) else { return }
+    clearSelection()
+    editText(t)
   }
 
   /// A new box where typing would go (Android's `startText`).

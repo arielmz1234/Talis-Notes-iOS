@@ -279,7 +279,7 @@ extension MediaTests {
     app.buttons["insert-picture"].firstMatch.tap()
     settle()
     shot("k1-offer")
-    app.buttons["crop-offer"].firstMatch.tap()
+    app.buttons["selection-crop"].firstMatch.tap()
     settle()
     shot("k2-cropping")
     let f = app.descendants(matching: .any)["crop-frame"].firstMatch.frame

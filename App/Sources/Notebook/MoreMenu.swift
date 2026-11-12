@@ -19,6 +19,9 @@ struct CanvasSettings: Equatable {
 /// one-line switches. Only what's ported shows; the rest joins as it's ported.
 struct MoreMenu<Papers: View>: View {
   var paged: Bool
+  /// How many things in the notebook are locked (counted as the menu opens), and Unlock all.
+  var locked = 0
+  var onUnlockAll: () -> Void = {}
   @ViewBuilder var papers: Papers
   @Binding var dark: Bool
   @Binding var fingerDraws: Bool?
@@ -36,6 +39,10 @@ struct MoreMenu<Papers: View>: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
+      if locked > 0 {
+        row("lock.open", locked == 1 ? L("unlock_all_one") : L("unlock_all_n", locked), action: onUnlockAll).accessibilityIdentifier("unlock-all")
+        Divider().overlay(c.line).padding(.vertical, 4)
+      }
       HStack(spacing: 6) {
         if paged { tile("book.pages", L("pages"), action: onPages) }
         tile("arrow.up.left.and.arrow.down.right", paged ? L("whole_page") : L("everything"), action: onFit)

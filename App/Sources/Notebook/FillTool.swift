@@ -241,15 +241,16 @@ extension NoteCanvas.Coordinator {
     }
   }
 
-  /// Makes [newFills] the notebook's fill pictures: new ones are saved, missing ones removed.
-  private func setFills(_ newFills: [FillPicture]) {
+  /// Makes [newFills] the notebook's fill pictures: new and changed ones are saved, missing ones removed.
+  func setFills(_ newFills: [FillPicture]) {
     guard let pages else { return }
     let before = pages.pages.under.fills
     if before == newFills { return }
-    let keep = Set(newFills.map(\.row.id)), had = Set(before.map(\.row.id))
+    let keep = Set(newFills.map(\.row.id))
+    let had = Dictionary(before.map { ($0.row.id, $0.row) }, uniquingKeysWith: { a, _ in a })
     do {
       for f in before where !keep.contains(f.row.id) { try parent.db.removeItem(f.row.id) }
-      for f in newFills where !had.contains(f.row.id) { try parent.db.put(f.row.row, in: parent.notebook.id) }
+      for f in newFills where had[f.row.id] != f.row { try parent.db.put(f.row.row, in: parent.notebook.id) }
     } catch {
       CrashNote.log("saving fills: \(error)")
     }

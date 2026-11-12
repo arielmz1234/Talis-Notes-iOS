@@ -23,6 +23,8 @@ extension NoteCanvas.Coordinator {
     if paged { rect = Placing.ontoPage(rect, pages: layout, count: pageCount) }
     let row = PictureRow(id: newId(), z: nextZ(), file: page.file, rect: rect)
     addPictures([row], pageCount: pageCount)
+    // Picked up right away so it can be dragged and resized into place.
+    setSelection([row.id], menu: true)
     return row
   }
 

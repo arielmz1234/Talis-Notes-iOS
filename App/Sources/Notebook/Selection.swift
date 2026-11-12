@@ -2,8 +2,7 @@ import PencilKit
 import TaliCore
 import UIKit
 
-/// What's picked up (by the lasso's loop, a tap on a shape, or a shape just drawn) and what the touch
-/// on it is doing.
+/// What's picked up (by the lasso's loop, a tap, or a shape just drawn) and what the touch on it is doing.
 @MainActor
 struct LassoState {
   /// The touches that draw the lasso's loop or take hold of the selection (a watcher like
@@ -12,16 +11,12 @@ struct LassoState {
   var hold: UILongPressGestureRecognizer?
   /// The loop being drawn, in world units.
   var loop: [Pt] = []
-  /// The ids of the strokes picked up, and their bounds (world units).
+  /// Everything picked up, by id (writing, shapes, text, pictures and fills alike), and its bounds.
   var picked: Set<String> = []
-  /// The shapes picked up (ids), shown while moving in [shapeLayer] and stored again on letting go.
-  var pickedShapes: Set<String> = []
-  var shapesBefore: [ShapeRow]?
-  /// Text boxes picked up, the same way.
-  var pickedTexts: Set<String> = []
-  var textsBefore: [TextRow]?
-  let shapeLayer = CALayer()
   var bounds: CGRect?
+  /// The page's items as they were before what's picked up was lifted off it to be carried.
+  var lifted: UnderItems?
+  let shapeLayer = CALayer()
   /// The touch moving, resizing, turning or reshaping what's picked up, how far it has taken it, and
   /// the drawing before it began.
   var drag: SelectionDrag?
@@ -38,7 +33,7 @@ struct LassoState {
   /// PencilKit strokes begun after this belong to a touch that was editing the selection: dropped.
   var editSince: Date?
   var chipsBackAt: Date?
-  /// A newer ticket calls off taking the carried shapes' overlay away (see `dropShapes`).
+  /// A newer ticket calls off taking the carried items' overlay away (see `dropShapes`).
   var overlayTicket = 0
   /// Where a hold offered Paste (world units).
   var pasteAt: CGPoint?
@@ -46,25 +41,24 @@ struct LassoState {
   var lastAt: CGPoint = .zero
   let loopLayer = CAShapeLayer()
   let chrome = SelectionChromeView()
+  /// What this drag snaps to and the guides it shows (see Snapping.swift).
+  var snap = SnapState()
+  /// The padlock shown as things lock and unlock, and the finger held on a locked item (see Lock.swift).
+  var lock = LockState()
+  /// The screenshot lasso's flash, and the pictures it has taken (see ScreenshotLasso.swift).
+  var shot = ShotState()
 }
 
-/// Strokes copied or cut, carried across notebooks (Android's `Clipboard`), in world units.
-@MainActor
-enum InkClipboard {
-  static var strokes: [InkStroke] = []
-  static var shapes: [ShapeRow] = []
-  static var isEmpty: Bool { strokes.isEmpty && shapes.isEmpty }
-}
-
-/// The lasso and the selection menu (Android's `NoteCanvasView` lasso, `finishLasso`, the selection
-/// menu's folded buttons and hold-to-paste): a dashed loop picks up whatever it touches, a dashed
-/// frame shows it, and the menu copies, cuts, duplicates, boxes or deletes it. Moving, resizing and
+/// The lasso and the selection menu's actions (Android's `NoteCanvasView` lasso, `finishLasso`,
+/// `withFills`, the selection menu and hold-to-paste): a dashed loop picks up whatever it touches,
+/// free form whatever the pen passes over, a dashed frame shows it, and the menu copies, cuts,
+/// duplicates, boxes, deletes, recolours, mirrors, arranges and locks it. Moving, resizing and
 /// turning it are in SelectionEdit.swift. Holding still on the page with something copied offers
 /// Paste there.
 extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   static let pasteHold: TimeInterval = 0.6
-  static let duplicateOffset: CGFloat = 24
-  static let frameGap: CGFloat = 12
+  static let duplicateOffset: Float = 24
+  static let frameGap: Float = 12
 
   func installSelection(on v: PKCanvasView) {
     let pan = StrokeWatcher(target: nil, action: nil)
@@ -89,7 +83,6 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     hold.delegate = self
     v.addGestureRecognizer(hold)
     lasso.hold = hold
-    lasso.loopLayer.fillColor = UIColor.clear.cgColor
     lasso.loopLayer.lineWidth = 1.5
     lasso.loopLayer.lineDashPattern = [5, 5]
     lasso.loopLayer.zPosition = 10
@@ -97,12 +90,14 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     lasso.shapeLayer.zPosition = 9
     v.layer.addSublayer(lasso.shapeLayer)
     v.addSubview(lasso.chrome)
+    installLock(on: v)
+    installShotFlash(on: v)
   }
 
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-    // The hold runs alongside everything; the lasso alongside PencilKit's own recognisers (scrolling
-    // waits for it to fail instead).
-    // The hold and every touch watcher (hold-to-shape, the shape eraser) run alongside everything.
+    // The hold and every touch watcher (hold-to-shape, the shape eraser, a finger held on a lock)
+    // run alongside everything; the lasso alongside PencilKit's own recognisers (scrolling waits for
+    // it to fail instead).
     if g === lasso.hold || g === textEdit.tap || (g is StrokeWatcher && g !== lasso.pan) { return true }
     if g === lasso.pan { return other !== canvas?.panGestureRecognizer }
     return false
@@ -111,15 +106,17 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
   func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     // A tap inside the text box being typed in is the text box's own (placing the cursor), not "done".
     if g === textEdit.tap, let hit = touch.view {
-      for own in [textEdit.view, textEdit.sizeBar].compactMap({ $0 }) where hit === own || hit.isDescendant(of: own) { return false }
+      for own in textEdit.ownViews where hit === own || hit.isDescendant(of: own) { return false }
     }
     // A touch that took hold of the selection is the selection's alone: no tap on what's under it, no Paste.
     if g === textEdit.tap || g === lasso.hold, claim(touch) != nil { return false }
+    // Not on a locked item: that hold unlocks it.
+    if g === lasso.hold, let canvas, item(at: Pt(touch.location(in: canvas)) / zoom, locked: true) != nil { return false }
     return true
   }
 
   func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
-    if g === lasso.hold { return !InkClipboard.isEmpty && !parent.viewOnly }
+    if g === lasso.hold { return !Clipboard.items.isEmpty && !parent.viewOnly && textEdit.view == nil }
     return true
   }
 
@@ -163,61 +160,82 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
         lasso.loop = []
         lasso.loopLayer.path = nil
       } else {
-        finishLoop()
+        finishLasso()
       }
     default: break
     }
   }
 
-  /// Picks up whatever the loop touches (Android's `Lasso.touchesPath`: a stroke counts if any of it
-  /// is inside or it crosses the loop's edge).
-  private func finishLoop() {
-    let loop = lasso.loop
+  /// The loop is done (Android's `finishLasso`): the screenshot lasso takes its picture; a tap picks
+  /// up what's under it; the lasso whatever its loop touches; free form whatever the path passes
+  /// over, plus everything in the loop if it comes back round. A fill and its outline come together.
+  private func finishLasso() {
+    let path = lasso.loop
     lasso.loop = []
     lasso.loopLayer.path = nil
-    if let end = loop.last, Geo.pathLength(loop) * zoom < 12 {
-      pick(at: end)
+    let length = Geo.pathLength(path) * zoom
+    if LassoSettings.shot {
+      if length >= Lasso.tapLength { takeScreenshot(path) }
       return
     }
-    guard loop.count > 2 else { return }
-    var picked = Set<String>()
-    var bounds: CGRect?
-    for (_, s) in stored {
-      let pts = s.inputs.points.map { Pt($0.x, $0.y) }
-      guard let r = s.inputs.bounds, Rect.around(loop).map({ $0.outset(s.size).intersects(r) }) ?? false else { continue }
-      if Lasso.touchesPath(pts, loop) {
-        picked.insert(s.id)
-        let b = CGRect(s.bounds)
-        bounds = bounds.map { $0.union(b) } ?? b
-      }
+    if length < Lasso.tapLength {
+      // A tap with the lasso picks up whatever is under it, never a whole PDF page.
+      if let end = path.last, let item = item(at: end, anyLock: LassoSettings.pickLocked, filter: LassoSettings.hits) { selectGroup(item) }
+      return
     }
-    var pickedShapes = Set<String>()
-    let loopBox = Rect.around(loop)
-    for sh in shapes where !sh.locked {
-      guard let r = sh.geometry.bounds(sh.size), loopBox.map({ $0.intersects(r) }) ?? false else { continue }
-      if sh.geometry.paths(sh.size).contains(where: { $0.count > 1 && Lasso.touchesPath($0, loop) }) {
-        pickedShapes.insert(sh.id)
-        let b = CGRect(r)
-        bounds = bounds.map { $0.union(b) } ?? b
-      }
+    guard let area = Rect.around(path) else { return }
+    let free = LassoSettings.free, pickLocked = LassoSettings.pickLocked
+    let reach = Lasso.freeReach / zoom
+    let loop = !free || Lasso.loopCloses(path, zoom: zoom)
+    let near = area.outset(reach)
+    let touched = pageItems.filter { item in
+      guard !item.locked || pickLocked, LassoSettings.hits(item.pen), item.bounds.intersects(near) else { return false }
+      return (loop && item.bounds.intersects(area) && Self.lassoTouches(item, path)) || (free && Self.touchedBy(item, path, reach))
     }
-    var pickedTexts = Set<String>()
-    for t in texts where !t.locked {
-      let f = TextLook.frame(t)
-      let r = Rect(Float(f.minX), Float(f.minY), Float(f.maxX), Float(f.maxY))
-      if Lasso.touchesRect(r, loop) {
-        pickedTexts.insert(t.id)
-        bounds = bounds.map { $0.union(f) } ?? f
-      }
+    let picked = withFills(touched.map(\.id))
+    if !picked.isEmpty { UISelectionFeedbackGenerator().selectionChanged() }
+    setSelection(Set(picked), menu: true)
+  }
+
+  /// Whether the lasso loop [poly] picks up [item]: anything it touches. A whole PDF page is never
+  /// picked up, however much of it the loop holds: it's the page itself.
+  private static func lassoTouches(_ item: PageItem, _ poly: [Pt]) -> Bool {
+    switch item {
+    case .ink(let s): Lasso.touchesPath(s.inputs.points.map { Pt($0.x, $0.y) }, poly)
+    case .shape(let s): s.geometry.paths(s.size).contains { Lasso.touchesPath($0, poly) }
+    case .picture(let p): !p.pdfPage && Lasso.touchesRect(p.rect, poly)
+    case .text: Lasso.touchesRect(item.bounds, poly)
     }
-    if bounds != nil { UISelectionFeedbackGenerator().selectionChanged() }
-    setSelection(strokes: picked, shapes: pickedShapes, texts: pickedTexts, menu: true)
+  }
+
+  /// Free form: whether the traced [path] passes over or within [r] of [item].
+  private static func touchedBy(_ item: PageItem, _ path: [Pt], _ r: Float) -> Bool {
+    switch item {
+    case .ink(let s): Lasso.nearPath(s.inputs.points.map { Pt($0.x, $0.y) }, path, r)
+    case .shape(let s): s.geometry.paths(s.size).contains { Lasso.nearPath($0, path, r) }
+    case .picture(let p): !p.pdfPage && Lasso.nearRect(p.rect, path, r)
+    case .text: Lasso.nearRect(item.bounds, path, r)
+    }
+  }
+
+  /// A fill and the drawing around it move as one: [ids] with every area fill outlined by something
+  /// in it, and every outline stroke of any fill in it. Only the eraser treats them apart.
+  func withFills(_ ids: [String], pickLocked: Bool = LassoSettings.pickLocked) -> [String] {
+    let known = fills.map(\.picture).map { FillGroup.Fill(id: $0.id, walls: $0.walls, locked: $0.locked) }
+    if known.isEmpty { return ids }
+    var locked: [String: Bool] = [:]
+    for item in pageItems { locked[item.id] = item.locked }
+    return FillGroup.with(ids, fills: known, isLocked: { locked[$0] }, pickLocked: pickLocked)
+  }
+
+  /// Picks up [item], with the fill it outlines or the outline around it if it's a fill.
+  func selectGroup(_ item: PageItem) {
+    setSelection(Set(withFills([item.id])), menu: true)
   }
 
   func clearSelection() {
+    endThicknessPreview()
     lasso.picked = []
-    lasso.pickedShapes = []
-    lasso.pickedTexts = []
     lasso.bounds = nil
     lasso.loop = []
     lasso.loopLayer.path = nil
@@ -228,13 +246,21 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     parent.onSelection(nil)
   }
 
+  /// The lasso is its closed, softly filled loop; free form a dotted trail of where she traced
+  /// (closing up only once it comes round); the screenshot lasso shows the rectangle it will take.
   private func drawLoop() {
     guard let canvas, let first = lasso.loop.first else { return }
     let z = canvas.zoomScale
     let path = CGMutablePath()
     path.move(to: CGPoint(x: CGFloat(first.x) * z, y: CGFloat(first.y) * z))
     for p in lasso.loop.dropFirst() { path.addLine(to: CGPoint(x: CGFloat(p.x) * z, y: CGFloat(p.y) * z)) }
+    let open = LassoSettings.free && !Lasso.loopCloses(lasso.loop, zoom: Float(z))
+    if !open { path.closeSubpath() }
+    if LassoSettings.shot, let area = Rect.around(lasso.loop) {
+      path.addRect(CGRect(x: CGFloat(area.left) * z, y: CGFloat(area.top) * z, width: CGFloat(area.width) * z, height: CGFloat(area.height) * z))
+    }
     lasso.loopLayer.strokeColor = SelectionChromeView.accent.cgColor
+    lasso.loopLayer.fillColor = open && !LassoSettings.shot ? UIColor.clear.cgColor : SelectionChromeView.accent.withAlphaComponent(0x1C / 255).cgColor
     lasso.loopLayer.path = path
   }
 
@@ -244,253 +270,285 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     reportSelection()
   }
 
+  /// Tells the screen what's picked up and where, for the selection menu (Android's `publishSelection`).
   func reportSelection() {
     guard let canvas, let b = lasso.bounds, lasso.drag == nil, !lasso.menuClosed else { return }
     let z = canvas.zoomScale
     let content = CGRect(x: b.minX * z, y: b.minY * z, width: b.width * z, height: b.height * z).insetBy(dx: -8, dy: -8)
-    parent.onSelection(SelectionInfo(rect: canvas.convert(content, to: nil), rotatable: canRotate))
+    let items = pickedItems
+    var info = SelectionInfo(rect: canvas.convert(content, to: nil), count: items.count, rotatable: canRotate)
+    for item in items {
+      switch item {
+      case .ink(let s):
+        info.hasDrawing = true
+        if info.color == nil { info.color = UInt32(bitPattern: s.color) | 0xFF00_0000 }
+        if info.lineSize == nil { info.lineSize = s.size }
+      case .shape(let s):
+        info.hasDrawing = true
+        if info.color == nil { info.color = UInt32(bitPattern: s.color) | 0xFF00_0000 }
+        if info.lineSize == nil { info.lineSize = s.size }
+        if info.line == nil { info.line = s.line }
+      case .text(let t):
+        if info.color == nil { info.color = UInt32(bitPattern: t.color) }
+      case .picture:
+        info.hasImage = true
+      }
+    }
+    if items.count == 1, case .text(let t) = items[0] { info.textId = t.id }
+    if items.count == 1, case .picture(let p) = items[0] { info.croppable = CropEdit.croppable(p) && !p.isFill }
+    info.locked = !items.isEmpty && items.allSatisfy(\.locked)
+    parent.onSelection(info)
   }
 
   // MARK: The menu's actions
 
   var pickedStrokes: [InkStroke] { stored.map(\.stroke).filter { lasso.picked.contains($0.id) } }
 
-  /// Makes this change one undo step: going back restores [before].
-  /// Shapes are part of the step too: [beforeShapes] (by default the shapes as they are now) come back with it.
-  func record(_ before: PKDrawing, shapes beforeShapes: [ShapeRow]? = nil, texts beforeTexts: [TextRow]? = nil) {
-    let shapesThen = beforeShapes ?? shapes
-    let textsThen = beforeTexts ?? texts
-    canvas?.undoManager?.registerUndo(withTarget: self) { coord in
-      MainActor.assumeIsolated {
-        guard let canvas = coord.canvas else { return }
-        let now = canvas.drawing
-        coord.clearSelection()
-        coord.record(now, shapes: coord.shapes, texts: coord.texts)
-        canvas.drawing = before
-        coord.setShapes(shapesThen)
-        coord.setTexts(textsThen)
-        coord.reportUndo()
-      }
-    }
+  /// Picks up [items] (things just put on the page: copies, what was pasted or changed).
+  private func select(_ items: [PageItem], menu: Bool? = nil) {
+    setSelection(Set(items.map(\.id)), menu: menu)
   }
 
   func copySelection() {
-    InkClipboard.strokes = pickedStrokes
-    InkClipboard.shapes = pickedShapeRows
-    parent.onHint(L("copied_hold_anywhere_to_paste_it"))
+    let items = pickedItems
+    guard !items.isEmpty else { return }
+    Clipboard.items = items
+    parent.onHint(items.count == 1 ? L("copied_hold_anywhere_to_paste_it") : L("copied_n_items_hold_anywhere_to", items.count))
   }
 
+  /// Cuts the selection: onto the clipboard, then off the page (undo brings it back).
   func cutSelection() {
-    InkClipboard.strokes = pickedStrokes
-    InkClipboard.shapes = pickedShapeRows
+    let items = pickedItems
+    guard !items.isEmpty else { return }
+    Clipboard.items = items
     deleteSelection()
-    parent.onHint(L("cut_hold_anywhere_to_paste_it_2"))
+    parent.onHint(items.count == 1 ? L("cut_hold_anywhere_to_paste_it_2") : L("cut_n_items_hold_anywhere_to", items.count))
   }
 
   func deleteSelection() {
-    guard let canvas, lasso.bounds != nil else { return }
-    let before = canvas.drawing
-    let keep = before.strokes.enumerated().filter { i, _ in i >= stored.count || !lasso.picked.contains(stored[i].stroke.id) }.map(\.element)
-    let gone = lasso.pickedShapes
-    let goneTexts = lasso.pickedTexts
+    let items = pickedItems
     clearSelection()
-    record(before)
-    canvas.drawing = PKDrawing(strokes: keep)
-    setShapes(shapes.filter { !gone.contains($0.id) })
-    setTexts(texts.filter { !goneTexts.contains($0.id) })
-    reportUndo()
+    commit(remove: items, add: [])
+  }
+
+  /// Copies of [items] moved by [m], with new ids, on top of everything. A fill copied with its
+  /// outline keeps outlining the copies, so the copy is one filled shape too.
+  private func copiesOf(_ items: [PageItem], _ m: Affine) -> [PageItem] {
+    var ids: [String: String] = [:]
+    for item in items { ids[item.id] = newId() }
+    var z = topZ
+    return items.map { item in
+      z += 1
+      let id = ids[item.id] ?? newId()
+      switch item.transformed(m) {
+      case .ink(var s):
+        s.id = id
+        s.z = z
+        return .ink(s)
+      case .shape(var s):
+        s.id = id
+        s.z = z
+        return .shape(s)
+      case .text(var t):
+        t.id = id
+        t.z = z
+        return .text(t)
+      case .picture(let p):
+        return .picture(p.copy(id: id, z: z, walls: FillGroup.copiedWalls(p.walls, ids: ids)))
+      }
+    }
   }
 
   /// Copies a little down and to the right, and picks the copies up instead (Android: 24 units).
   func duplicateSelection() {
-    let copies = add(pickedStrokes, shapes: pickedShapeRows, offset: CGPoint(x: Self.duplicateOffset, y: Self.duplicateOffset))
-    select(copies.strokes, shapes: copies.shapes)
+    let copies = copiesOf(pickedItems, .translate(Self.duplicateOffset, Self.duplicateOffset))
+    guard !copies.isEmpty else { return }
+    commit(remove: [], add: copies)
+    select(copies)
   }
 
-  /// A rectangle round what's picked up, drawn with the pen in use, and joining the selection.
+  /// A rectangle round what's picked up, drawn with the pen in use (its colour, thickness and line),
+  /// a little clear of it, in one undo step. It joins the selection, so the two move on together.
   func boxSelection() {
-    guard let b = lasso.bounds else { return }
-    let pen = currentPen
-    let gap = Self.frameGap + CGFloat(pen.size) / 2
-    let r = b.insetBy(dx: -gap, dy: -gap)
-    // Corners repeated so PencilKit's curve keeps them sharp.
-    let corners = [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.minX, y: r.minY)]
-    var pts: [InkInput] = []
-    var t: Float = 0
-    for p in corners {
-      for _ in 0..<3 {
-        pts.append(InkInput(x: Float(p.x), y: Float(p.y), t: t, pressure: 0.5))
-        t += 0.004
-      }
-    }
-    let box = InkStroke(id: newId(), z: 0, pen: pen.type, color: pen.inkColor, size: pen.size, inputs: InkInputs(points: pts, tool: .stylus))
-    let keepShapes = pickedShapeRows
-    let added = add([box], offset: .zero)
-    select(pickedStrokes + added.strokes, shapes: keepShapes)
-  }
-
-  /// Adds copies of [strokes] and [newShapes] moved by [offset] with new ids, as one undo step; returns them.
-  @discardableResult
-  private func add(_ strokes: [InkStroke], shapes newShapes: [ShapeRow] = [], offset: CGPoint) -> (strokes: [InkStroke], shapes: [ShapeRow]) {
-    guard let canvas, !strokes.isEmpty || !newShapes.isEmpty else { return ([], []) }
-    let before = canvas.drawing
-    var copies: [InkStroke] = []
-    var fresh: [PKStroke] = []
-    for s in strokes {
-      var c = s
-      c.id = newId()
-      c.inputs.points = s.inputs.points.map { var p = $0; p.x += Float(offset.x); p.y += Float(offset.y); return p }
-      let pk = c.pkStroke(mask: mask(for: c))
-      pending[StrokeKey(pk)] = c
-      copies.append(c)
-      fresh.append(pk)
-    }
-    record(before)
-    if !fresh.isEmpty { canvas.drawing = PKDrawing(strokes: before.strokes + fresh) }
-    var shapeCopies: [ShapeRow] = []
-    var z = max(stored.map(\.stroke.z).max() ?? 0, shapeZ)
-    for sh in newShapes {
-      var c = moved(sh, by: .translate(Float(offset.x), Float(offset.y)))
-      c.id = newId()
-      z += 1
-      c.z = z
-      shapeCopies.append(c)
-    }
-    if !shapeCopies.isEmpty {
-      shapeZ = z
-      setShapes(shapes + shapeCopies)
-    }
-    reportUndo()
-    return (copies, shapeCopies)
-  }
-
-  private func select(_ strokes: [InkStroke], shapes picked: [ShapeRow] = []) {
-    setSelection(strokes: Set(strokes.map(\.id)), shapes: Set(picked.map(\.id)), texts: [], menu: true)
-  }
-
-  /// The bounds of [strokes] together.
-  func unionOf(_ strokes: [InkStroke]) -> CGRect? {
-    var out: CGRect?
-    for s in strokes {
-      let r = CGRect(s.bounds)
-      out = out.map { $0.union(r) } ?? r
-    }
-    return out
+    guard let bounds = lasso.bounds else { return }
+    let b = TaliCore.Rect(bounds)
+    let pen = shapePen
+    let gap = Self.frameGap + pen.size / 2
+    let box = ShapeGeometry.poly(points: [Pt(b.left - gap, b.top - gap), Pt(b.right + gap, b.top - gap), Pt(b.right + gap, b.bottom + gap), Pt(b.left - gap, b.bottom + gap)], closed: true)
+    var frame = ShapeRow(id: newId(), geometry: box, pen: pen.type.rawValue, color: pen.color, size: pen.size)
+    frame.z = topZ + 1
+    let kept = lasso.picked
+    commit(remove: [], add: [.shape(frame)])
+    setSelection(kept.union([frame.id]), menu: nil)
   }
 
   // MARK: Hold to paste
 
   @objc func pasteHold(_ g: UILongPressGestureRecognizer) {
-    guard g.state == .began, let canvas, !InkClipboard.isEmpty else { return }
+    guard g.state == .began, let canvas, !Clipboard.items.isEmpty else { return }
     let p = world(g)
     lasso.pasteAt = p
+    // Whatever the touch had started there (a lasso, a dot of ink) is dropped.
+    lasso.loop = []
+    lasso.loopLayer.path = nil
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
     let z = canvas.zoomScale
     parent.onPasteOffer(canvas.convert(CGPoint(x: p.x * z, y: p.y * z), to: nil))
   }
 
-  /// Pastes what's copied centred on where the hold was, and picks it up.
+  /// Pastes what's copied centred on where the hold was, picked up so it can be moved into place.
   func pasteAtOffer() {
     parent.onPasteOffer(nil)
     guard let at = lasso.pasteAt else { return }
     lasso.pasteAt = nil
-    let strokes = InkClipboard.strokes, clipShapes = InkClipboard.shapes
-    guard let b = joined(unionOf(strokes), unionOf(clipShapes)) else { return }
-    let copies = add(strokes, shapes: clipShapes, offset: CGPoint(x: at.x - b.midX, y: at.y - b.midY))
-    if parent.tool == .lasso { select(copies.strokes, shapes: copies.shapes) }
+    let items = Clipboard.items.sorted { $0.z < $1.z }
+    guard let b = items.map(\.bounds).reduce(nil, { (all: TaliCore.Rect?, r) in all?.union(r) ?? r }) else { return }
+    let copies = copiesOf(items, .translate(Float(at.x) - b.center.x, Float(at.y) - b.center.y))
+    commit(remove: [], add: copies)
+    select(copies)
+  }
+
+  // MARK: The menu's ⋯ part: colour, thickness, order, mirror
+
+  /// Replaces what's picked up with [change] applied to each item, as one undo step, still picked up.
+  private func change(_ change: (PageItem) -> PageItem) {
+    let items = pickedItems
+    guard !items.isEmpty else { return }
+    let changed = items.map(change)
+    commit(remove: items, add: changed)
+    select(changed)
+  }
+
+  /// Another colour for the writing, shapes and text picked up; pictures keep theirs.
+  func recolourSelection(_ argb: UInt32) {
+    let color = Int32(bitPattern: argb)
+    change { item in
+      switch item {
+      case .ink(var s):
+        let c = argb | 0xFF00_0000
+        s.color = Int32(bitPattern: s.pen == .HIGHLIGHTER ? (c & 0x00FF_FFFF) | (PenSlot.highlighterAlpha << 24) : c)
+        s.locked = false
+        return .ink(s)
+      case .shape(let s): return .shape(s.recolored(color))
+      case .text(var t):
+        t.color = color
+        return .text(t)
+      case .picture: return item
+      }
+    }
+  }
+
+  /// Changes how the writing and shapes picked up are drawn: [size] thick and/or in [line] style
+  /// (nil leaves that as it is). Pictures and text keep theirs.
+  func restyleSelection(size: Float?, line: String?) {
+    endThicknessPreview()
+    // Slid back to where it was: nothing to save.
+    guard size != nil || line != nil else { return }
+    change { item in
+      switch item {
+      case .ink(var s):
+        s.size = size ?? s.size
+        s.locked = false
+        return .ink(s)
+      case .shape(var s):
+        s.size = size ?? s.size
+        s.line = line ?? s.line
+        s.locked = false
+        return .shape(s)
+      case .text, .picture: return item
+      }
+    }
+  }
+
+  /// Mirrors what's picked up around its own middle, left to right or upside down (one undo step).
+  /// Writing, shapes and area fills flip; pictures and text move to their mirrored places but keep
+  /// facing the right way.
+  func mirrorSelection(horizontal: Bool) {
+    guard let b = lasso.bounds else { return }
+    let m = Affine.scaleAround(Pt(Float(b.midX), Float(b.midY)), horizontal ? -1 : 1, horizontal ? 1 : -1)
+    change { item in
+      switch item {
+      case .picture(let p): return .picture(p.mirrored(m, horizontal: horizontal))
+      case .text:
+        let c = item.bounds.center, to = m.apply(c)
+        return item.transformed(.translate(to.x - c.x, to.y - c.y))
+      case .ink, .shape: return item.transformed(m)
+      }
+    }
+  }
+
+  /// Brings what's picked up in front of everything or sends it behind everything, keeping its own
+  /// order. Pictures brought forward can cover shapes and text; sent back, they sit behind like paper.
+  func arrangeSelection(toFront: Bool) {
+    let items = pickedItems
+    guard !items.isEmpty else { return }
+    func entry(_ item: PageItem) -> Arrange.Item { Arrange.Item(id: item.id, z: item.z, picture: item.picture != nil, front: item.picture?.front ?? false) }
+    let others = pageItems.filter { !lasso.picked.contains($0.id) }.map(entry)
+      + (pages?.pages.under.pdfPages.map { Arrange.Item(id: $0.id, z: 0, picture: true) } ?? [])
+    guard let plan = Arrange.plan(items.map(entry), others: others, toFront: toFront, top: topZ) else {
+      parent.onHint(toFront ? L("already_in_front") : L("already_at_the_back"))
+      return
+    }
+    var places: [String: (z: Int64, front: Bool)] = [:]
+    for p in plan { places[p.id] = (p.z, p.front) }
+    change { item in
+      guard let place = places[item.id] else { return item }
+      if case .picture(let p) = item { return .picture(p.inFront(place.front, z: place.z)) }
+      return item.withZ(place.z)
+    }
+    shapeZ = max(shapeZ, topZ)
+    parent.onHint(toFront ? L("brought_to_the_front") : L("sent_to_the_back"))
+  }
+
+  // MARK: Thickness, shown while the slider moves
+
+  /// The menu's thickness slider is moving: the selection is shown [size] thick straight away
+  /// (saved once the slider is let go, in `restyleSelection`).
+  func previewThickness(_ size: Float) {
+    guard let canvas, lasso.bounds != nil, lasso.drag == nil else { return }
+    if lasso.before == nil {
+      lasso.before = canvas.drawing
+      liftShapes()
+    }
+    guard let before = lasso.before else { return }
+    loading = true
+    canvas.drawing = PKDrawing(strokes: before.strokes.enumerated().map { i, pk in
+      guard i < stored.count, lasso.picked.contains(stored[i].stroke.id) else { return pk }
+      var s = stored[i].stroke
+      s.size = size
+      return s.pkStroke(mask: mask(for: s))
+    })
+    loading = false
+    showThickness(size)
+  }
+
+  func endThicknessPreview() {
+    guard lasso.drag == nil, let before = lasso.before, let canvas else { return }
+    lasso.before = nil
+    loading = true
+    canvas.drawing = before
+    loading = false
+    restoreLifted()
+    dropShapes()
   }
 }
 
-// MARK: The menu's ⋯ part: colour, thickness, order, mirror
+func joined(_ a: CGRect?, _ b: CGRect?) -> CGRect? {
+  switch (a, b) {
+  case let (a?, b?): a.union(b)
+  case let (a?, nil): a
+  case let (nil, b?): b
+  default: nil
+  }
+}
 
 extension NoteCanvas.Coordinator {
-  /// Replaces what's picked up with [change] applied to each stroke (same ids), as one undo step.
-  private func restyle(_ change: (inout InkStroke) -> Void, shapes shapeChange: (inout ShapeRow) -> Void = { _ in }) {
-    guard let canvas, lasso.bounds != nil else { return }
-    let before = canvas.drawing
-    var strokes: [PKStroke] = []
-    var changedAll: [InkStroke] = []
-    for (i, pk) in before.strokes.enumerated() {
-      guard i < stored.count, lasso.picked.contains(stored[i].stroke.id) else {
-        strokes.append(pk)
-        continue
-      }
-      var s = stored[i].stroke
-      change(&s)
-      let fresh = s.pkStroke(mask: mask(for: s))
-      pending[StrokeKey(fresh)] = s
-      strokes.append(fresh)
-      changedAll.append(s)
-    }
-    record(before)
-    if !changedAll.isEmpty { canvas.drawing = PKDrawing(strokes: strokes) }
-    var changedShapes: [ShapeRow] = []
-    var next: [ShapeRow] = []
-    for sh in shapes {
-      var c = sh
-      if lasso.pickedShapes.contains(sh.id) {
-        shapeChange(&c)
-        changedShapes.append(c)
-      }
-      next.append(c)
-    }
-    setShapes(next)
-    reportUndo()
-    lasso.bounds = joined(unionOf(changedAll), unionOf(changedShapes))
-    redrawSelection()
+  /// The bounds of [strokes] together.
+  func unionOf(_ strokes: [InkStroke]) -> CGRect? {
+    strokes.reduce(nil) { joined($0, CGRect($1.bounds)) }
   }
 
-  func recolourSelection(_ argb: UInt32) {
-    restyle({ s in
-      let c = argb | 0xFF00_0000
-      s.color = Int32(bitPattern: s.pen == .HIGHLIGHTER ? (c & 0x00FF_FFFF) | (PenSlot.highlighterAlpha << 24) : c)
-    }, shapes: { sh in
-      // A shape keeps its own opacity (Android: recolouring keeps it).
-      sh.color = Int32(bitPattern: (UInt32(bitPattern: sh.color) & 0xFF00_0000) | (argb & 0x00FF_FFFF))
-    })
-  }
-
-  func thickenSelection(_ size: Float) {
-    restyle({ s in s.size = size }, shapes: { sh in sh.size = size })
-  }
-
-  /// Mirrors what's picked up around its own middle (writing flips, as on Android).
-  func mirrorSelection(horizontal: Bool) {
-    guard let b = lasso.bounds else { return }
-    let cx = Float(b.midX), cy = Float(b.midY)
-    let flip = Affine.scaleAround(Pt(cx, cy), horizontal ? -1 : 1, horizontal ? 1 : -1)
-    let mirror: (ShapeRow, Affine) -> ShapeRow = { self.moved($0, by: $1) }
-    restyle({ s in
-      s.inputs.points = s.inputs.points.map { p in
-        var q = p
-        if horizontal { q.x = 2 * cx - p.x } else { q.y = 2 * cy - p.y }
-        return q
-      }
-    }, shapes: { sh in sh = mirror(sh, flip) })
-  }
-
-  /// Brings what's picked up in front of everything else, or sends it behind (Android's Arrange).
-  func arrangeSelection(toFront: Bool) {
-    guard let canvas, !lasso.picked.isEmpty else { return }
-    let before = canvas.drawing
-    let indices = before.strokes.indices
-    let mine = indices.filter { $0 < stored.count && lasso.picked.contains(stored[$0].stroke.id) }
-    let others = indices.filter { !mine.contains($0) }
-    let order = toFront ? others + mine : mine + others
-    // New stacking numbers in the new order, saved straight away (the strokes themselves don't change).
-    let zs = stored.map(\.stroke.z)
-    let lo = zs.min() ?? 0
-    var newStored = order.compactMap { $0 < stored.count ? stored[$0] : nil }
-    for k in newStored.indices {
-      newStored[k].stroke.z = lo + Int64(k)
-      try? parent.db.put(newStored[k].stroke.row, in: parent.notebook.id)
-    }
-    stored = newStored
-    record(before)
-    loading = true
-    canvas.drawing = PKDrawing(strokes: order.map { before.strokes[$0] })
-    loading = false
-    reportUndo()
-    redrawSelection()
+  func unionOf(_ list: [ShapeRow]) -> CGRect? {
+    list.reduce(nil) { all, s in joined(all, s.geometry.bounds(s.size).map { CGRect($0) }) }
   }
 }

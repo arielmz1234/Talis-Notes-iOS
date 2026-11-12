@@ -14,9 +14,13 @@ struct SelectionChrome {
   var hints: [(from: CGPoint, to: CGPoint, centre: Bool)] = []
   /// When a move or a dot drag ended: the chips, hidden meanwhile, fade back in from then.
   var chipsBackAt: Date?
+  /// Where things snap (world units, drawn at [zoom]): dashed lines where they line up, a small cross where they touch.
+  var guides: [SnapGuide] = []
+  var zoom: CGFloat = 1
 
   var isEmpty: Bool {
     frame == nil && outline.isEmpty && resizeChip == nil && moveChip == nil && rotate == nil && dots.isEmpty && badges.isEmpty && angle == nil && hints.isEmpty
+      && guides.isEmpty
   }
 }
 
@@ -84,6 +88,41 @@ final class SelectionChromeView: UIView {
     chips(cg, c)
     for b in c.badges { badge(cg, b, Self.badgeFont, extra: 18) }
     if let a = c.angle { badge(cg, a, Self.angleFont, extra: 16) }
+    for g in c.guides { guide(cg, g, zoom: c.zoom) }
+  }
+
+  private func guide(_ cg: CGContext, _ g: SnapGuide, zoom z: CGFloat) {
+    cg.saveGState()
+    defer { cg.restoreGState() }
+    switch g {
+    case let .align(vertical, at, from, to):
+      let pad: CGFloat = 14
+      let a = CGFloat(at) * z, lo = CGFloat(from) * z - pad, hi = CGFloat(to) * z + pad
+      cg.setStrokeColor(Self.accent.cgColor)
+      cg.setLineWidth(1.2)
+      cg.setLineCap(.butt)
+      cg.setLineDash(phase: 0, lengths: [5, 4])
+      cg.move(to: vertical ? CGPoint(x: a, y: lo) : CGPoint(x: lo, y: a))
+      cg.addLine(to: vertical ? CGPoint(x: a, y: hi) : CGPoint(x: hi, y: a))
+      cg.strokePath()
+    case let .touch(p):
+      // A small cross where they meet, on a soft white halo so it reads over any line.
+      let s = CGPoint(x: CGFloat(p.x) * z, y: CGFloat(p.y) * z), k: CGFloat = 2.6
+      func cross() {
+        cg.move(to: CGPoint(x: s.x - k, y: s.y - k))
+        cg.addLine(to: CGPoint(x: s.x + k, y: s.y + k))
+        cg.move(to: CGPoint(x: s.x - k, y: s.y + k))
+        cg.addLine(to: CGPoint(x: s.x + k, y: s.y - k))
+        cg.strokePath()
+      }
+      cg.setLineCap(.round)
+      cg.setStrokeColor(UIColor.white.withAlphaComponent(0.9).cgColor)
+      cg.setLineWidth(3.4)
+      cross()
+      cg.setStrokeColor(Self.accent.cgColor)
+      cg.setLineWidth(1.4)
+      cross()
+    }
   }
 
   private func dashed(_ cg: CGContext, _ build: () -> Void) {

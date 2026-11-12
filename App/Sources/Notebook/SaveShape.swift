@@ -3,7 +3,7 @@ import TaliCore
 
 extension NoteCanvas.Coordinator {
   /// Whether writing or shapes are picked up (text alone can't be saved as a shape).
-  var hasDrawingPicked: Bool { !lasso.picked.isEmpty || !lasso.pickedShapes.isEmpty }
+  var hasDrawingPicked: Bool { !pickedStrokes.isEmpty || !pickedShapeRows.isEmpty }
 
   /// What's picked up as one shape to save (Android's `selectionGeometry`): clean shapes keep their
   /// exact geometry, writing becomes smooth lines; nil when there's nothing usable.
@@ -13,7 +13,7 @@ extension NoteCanvas.Coordinator {
     let parts = (strokes.map { (z: $0.z, part: CustomShape.Part.ink($0.inputs.points.map { Pt($0.x, $0.y) })) } + picked.map { (z: $0.z, part: .shape($0.geometry)) })
       .sorted { $0.z < $1.z }
     let boxes = strokes.map(\.bounds) + picked.compactMap { $0.geometry.bounds($0.size) }
-      + texts.filter { lasso.pickedTexts.contains($0.id) }.map { t in
+      + texts.filter { lasso.picked.contains($0.id) }.map { t in
         let f = TextLook.frame(t)
         return Rect(Float(f.minX), Float(f.minY), Float(f.maxX), Float(f.maxY))
       }

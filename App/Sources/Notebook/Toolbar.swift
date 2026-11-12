@@ -6,7 +6,11 @@ import TaliCore
 // the pen's settings, her first few colours, her three thicknesses, then the tools.
 
 /// Which panel hangs under the toolbar.
-enum PanelKind { case pen, eraser, shapes, fill }
+enum PanelKind { case pen, eraser, shapes, fill, lasso }
+
+/// How the lasso is set, which its toolbar button shows (Android: the lasso drawn dotted, a dotted
+/// circle for free form, a screenshot sign for the screenshot lasso).
+enum LassoKind { case lasso, freeForm, screenshot }
 
 /// Saved colours (Android's `savedColors` / `highlighterColors`) and how many sit in the toolbar.
 enum Palette {
@@ -151,6 +155,7 @@ struct MainToolbar: View {
   @Binding var tool: Tool
   @Binding var panel: PanelKind?
   var shape: ShapeSource = .kind(.LINE)
+  var lasso: LassoKind = .lasso
   /// The keyboard: a new text box to type in.
   var onKeyboard: () -> Void = {}
   var onInsert: (InsertChoice) -> Void = { _ in }
@@ -228,6 +233,8 @@ struct MainToolbar: View {
               ShapeChoiceIcon(source: shape, color: c.blue, size: 24)
             } else if tool == .fill {
               FillIcon(color: c.blue)
+            } else if tool == .lasso {
+              lassoIcon(c.blue)
             } else {
               Image(systemName: currentToolIcon).font(.system(size: 19)).foregroundStyle(isPen ? c.ink : c.blue)
             }
@@ -263,7 +270,7 @@ struct MainToolbar: View {
   private var tools: some View {
     HStack(spacing: 0) {
       toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
-      toolButton(.lasso, icon: "lasso", label: L("lasso"), id: "lasso")
+      toolButton(.lasso, icon: "lasso", label: lasso == .screenshot ? L("screenshot_lasso") : lasso == .freeForm ? L("free_form_select") : L("lasso"), id: "lasso")
       toolButton(.fill, icon: "", label: L("fill"), id: "fill")
       toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
       InsertButton { toolsOpen = false; onInsert($0) }
@@ -281,6 +288,14 @@ struct MainToolbar: View {
   }
 
   private var isPen: Bool { if case .pen = tool { true } else { false } }
+
+  @ViewBuilder private func lassoIcon(_ color: Color) -> some View {
+    switch lasso {
+    case .screenshot: Image(systemName: "camera.viewfinder").font(.system(size: 19)).foregroundStyle(color)
+    case .freeForm: SelectIcon(kind: .freeForm, color: color)
+    case .lasso: SelectIcon(kind: .lasso, color: color)
+    }
+  }
 
   private var currentToolIcon: String {
     switch tool {
@@ -308,6 +323,7 @@ struct MainToolbar: View {
         if t == .eraser { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .eraser ? nil : .eraser } }
         if t == .shape { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .shapes ? nil : .shapes } }
         if t == .fill { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .fill ? nil : .fill } }
+        if t == .lasso { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .lasso ? nil : .lasso } }
       } else {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { tool = t }
         // The Shapes tool opens its panel straight away, to choose what to draw.
@@ -320,6 +336,8 @@ struct MainToolbar: View {
           ShapeChoiceIcon(source: shape, color: c.blue, size: 24)
         } else if t == .fill {
           FillIcon(color: on ? c.blue : c.ink)
+        } else if t == .lasso {
+          lassoIcon(on ? c.blue : c.ink)
         } else {
           Image(systemName: icon).font(.system(size: 19)).foregroundStyle(on ? c.blue : c.ink)
         }
@@ -328,6 +346,9 @@ struct MainToolbar: View {
         .background {
           if on { RoundedRectangle(cornerRadius: 14).fill(c.blueSoft).matchedGeometryEffect(id: "tool", in: toolGlide) }
         }
+        // Its own 44 pt and no more: the rounded highlight of the tool in use took taps meant for
+        // the tool before it (seen on iOS 27: with the lasso on, a tap on the eraser reached the lasso).
+        .contentShape(Rectangle())
     }
     .buttonStyle(PressStyle(scale: 0.9))
     .accessibilityLabel(label)
