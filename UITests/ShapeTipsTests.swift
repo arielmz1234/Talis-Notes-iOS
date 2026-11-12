@@ -8,12 +8,10 @@ final class ShapeTipsTests: ShotCase {
   private let dots = "Drag a dot to reshape it · the menu changes its colour, thickness and line"
 
   private func pickShape(_ app: XCUIApplication, _ kind: String) {
-    showTool(app, "tool-shapes")
-    app.buttons["tool-shapes"].firstMatch.tap()
+    tapTool(app, "tool-shapes")
     settle()
     if !app.buttons["shape-\(kind)"].exists {
-      showTool(app, "tool-shapes")
-      app.buttons["tool-shapes"].firstMatch.tap()
+      tapTool(app, "tool-shapes")
       settle()
     }
     if app.buttons["tools-button"].exists, app.buttons["tool-lasso"].exists {
@@ -44,8 +42,7 @@ final class ShapeTipsTests: ShotCase {
       settle()
     }
     pickShape(app, "PART_CIRCLE")
-    showTool(app, "tool-shapes")
-    app.buttons["tool-shapes"].firstMatch.tap()
+    tapTool(app, "tool-shapes")
     settle()
     XCTAssert(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Part circle: drag from the centre'")).firstMatch.exists, "the panel explains the part circle")
     shot("st1-part-circle-panel")
