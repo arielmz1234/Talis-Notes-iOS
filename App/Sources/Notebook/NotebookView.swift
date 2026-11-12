@@ -172,7 +172,7 @@ struct NotebookView: View {
               Spacer(minLength: 10)
               if !hidden { rightBars(showName: !PhoneWriting.onPhone).bar("undo", 2, bars) }
             }
-            if !hidden { mainToolbar(showColors: !PhoneWriting.onPhone).bar("tools", 1, bars) }
+            if !hidden { mainToolbar(showColors: !PhoneWriting.onPhone, toolsRoom: geo.size.width - 44).bar("tools", 1, bars) }
           } else {
             TopBarLayout {
               if !hidden { leftBars.bar("title", 0, bars).topBarRole(.title) }
@@ -228,6 +228,24 @@ struct NotebookView: View {
               .asymmetric(
                 insertion: .opacity.combined(with: .scale(scale: 0.9)).animation(Ease.outStrong(duration: 0.24).delay(0.08)),
                 removal: .opacity.combined(with: .scale(scale: 0.95)).animation(Ease.outStrong(duration: 0.14))))
+        }
+        // The page and zoom chips, bottom right, under any card that opens over the notebook.
+        if !hidden {
+          VStack {
+            Spacer()
+            HStack(spacing: 8) {
+              Spacer()
+              if !endless {
+                PageChip(page: page, count: pageCount, onGo: { command = .goToPage($0) }) {
+                  withAnimation(Ease.outStrong(duration: 0.24)) { showPages = true }
+                }
+              }
+              ZoomChip(zoom: zoom) { command = .fitZoom }
+            }
+          }
+          .padding(.horizontal, 16)
+          .padding(.bottom, 12)
+          .transition(.opacity)
         }
         if let at = pasteOffer {
           // A tap anywhere else takes the offer away.
@@ -332,24 +350,6 @@ struct NotebookView: View {
             HintPill(text: hint).padding(.bottom, 64)
           }
           .allowsHitTesting(false)
-        }
-        // The page and zoom chips, bottom right.
-        if !hidden {
-          VStack {
-            Spacer()
-            HStack(spacing: 8) {
-              Spacer()
-              if !endless {
-                PageChip(page: page, count: pageCount, onGo: { command = .goToPage($0) }) {
-                  withAnimation(Ease.outStrong(duration: 0.24)) { showPages = true }
-                }
-              }
-              ZoomChip(zoom: zoom) { command = .fitZoom }
-            }
-          }
-          .padding(.horizontal, 16)
-          .padding(.bottom, 12)
-          .transition(.opacity)
         }
       }
     }
@@ -489,8 +489,13 @@ struct NotebookView: View {
     return nil
   }
 
-  private func mainToolbar(showColors: Bool) -> some View {
-    MainToolbar(pens: $pens, tool: $tool, panel: $panel, shape: shapeSource, lasso: lassoShot ? .screenshot : lassoFree ? .freeForm : .lasso, onKeyboard: { panel = nil; command = .newText }, onInsert: { panel = nil; inserting = $0 }, memos: memos, onVoice: { panel = nil; memos.mic(hint: show) }, showColors: showColors, compactTools: PhoneWriting.onPhone)
+  /// [toolsRoom]: how wide the phone's folded tools may be (the screen less the bar's margins and padding).
+  private func mainToolbar(showColors: Bool, toolsRoom: CGFloat = .infinity) -> some View {
+    MainToolbar(
+      pens: $pens, tool: $tool, panel: $panel, shape: shapeSource, lasso: lassoShot ? .screenshot : lassoFree ? .freeForm : .lasso,
+      onKeyboard: { panel = nil; command = .newText }, onInsert: { panel = nil; inserting = $0 }, memos: memos,
+      onVoice: { panel = nil; memos.mic(hint: show) }, showColors: showColors, compactTools: PhoneWriting.onPhone,
+      toolsRoom: PhoneWriting.narrowerForTests ?? toolsRoom)
   }
 
   private func saveShape() {
@@ -683,6 +688,12 @@ enum PhoneWriting {
     if kind != .notebook && !(UserDefaults.standard.stringArray(forKey: "writeOn") ?? []).contains(id) { return true }
     return ViewOnly.contains(id)
   }
+
+  /// A UI test can ask for a narrower phone than the simulator's (`-toolsRoom 300`), to see the tools page.
+  static let narrowerForTests: CGFloat? = {
+    guard ProcessInfo.processInfo.arguments.contains("-uitest"), let room = UserDefaults.standard.string(forKey: "toolsRoom").flatMap(Double.init) else { return nil }
+    return CGFloat(room)
+  }()
 
   static func startWriting(_ id: String) {
     let key = onPhone ? "phoneWriting" : "writeOn"

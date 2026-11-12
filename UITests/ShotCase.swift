@@ -39,14 +39,45 @@ class ShotCase: XCTestCase {
 
   func settle() { Thread.sleep(forTimeInterval: 1.2) }
 
-  /// On a phone the tools are folded behind one button: open it when the tool isn't showing.
-  func showTool(_ app: XCUIApplication, _ id: String) {
-    if !app.buttons[id].exists, app.buttons["tools-button"].exists {
-      app.buttons["tools-button"].firstMatch.tap()
+  /// Taps a tool's button. On a phone the tools are folded behind one button, which opens them and
+  /// closes whatever panel is open: so there, tapping the tool in use to close its panel is that
+  /// button alone, and the tools are folded away again.
+  func tapTool(_ app: XCUIApplication, _ id: String, file: StaticString = #filePath, line: UInt = #line) {
+    let fold = app.buttons["tools-button"].firstMatch
+    let folded = fold.exists && !app.buttons[id].exists
+    let panelOpen = app.descendants(matching: .any)["tool-panel"].firstMatch.exists
+    if folded {
+      fold.tap()
       settle()
     }
+    let tool = app.buttons[id].firstMatch
+    XCTAssertTrue(tool.waitForExistence(timeout: 3), "\(id) is in the toolbar", file: file, line: line)
+    if folded, panelOpen, tool.isSelected {
+      fold.tap()
+      return
+    }
+    tool.tap()
   }
 
+  /// Every button, switch and slider outside a scrolling area lies wholly on the screen: nothing is
+  /// cut off by an edge. (What scrolls is reached by scrolling; a memo follows its page off the screen.)
+  func assertAllOnScreen(_ app: XCUIApplication, _ where_: String, file: StaticString = #filePath, line: UInt = #line) {
+    guard let tree = try? app.snapshot() else { return XCTFail("no snapshot of the screen", file: file, line: line) }
+    let screen = tree.frame.insetBy(dx: -0.5, dy: -0.5)
+    let controls: Set<XCUIElement.ElementType> = [.button, .switch, .slider, .textField, .secureTextField]
+    var off: [String] = []
+    func walk(_ e: XCUIElementSnapshot, scrolls: Bool) {
+      if controls.contains(e.elementType), !scrolls, e.frame.width > 0, e.frame.height > 0, !e.identifier.hasPrefix("memo-"), !screen.contains(e.frame) {
+        off.append("\(e.identifier.isEmpty ? e.label : e.identifier) at \(e.frame.integral)")
+      }
+      let inside = scrolls || [.scrollView, .table, .collectionView].contains(e.elementType)
+      for child in e.children { walk(child, scrolls: inside) }
+    }
+    // The keyboard is the system's own, in a window of its own.
+    func hasKeyboard(_ e: XCUIElementSnapshot) -> Bool { e.elementType == .keyboard || e.children.contains(where: hasKeyboard) }
+    for window in tree.children where !hasKeyboard(window) { walk(window, scrolls: false) }
+    XCTAssertTrue(off.isEmpty, "\(where_): off the screen: \(off.joined(separator: "; "))", file: file, line: line)
+  }
 }
 
 /// The screen's pixels, upright: the tests check what was drawn, not only that nothing failed.

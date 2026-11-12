@@ -157,7 +157,8 @@ struct CropBar: View {
     }
     .padding(.horizontal, 10).padding(.vertical, 8)
     .cloudSurface(radius: 22, crown: .softEdge)
-    .padding(.bottom, 24)
+    // On a phone it sits above the page and zoom chips instead of under them.
+    .padding(.bottom, PhoneWriting.onPhone ? 64 : 24)
     .transition(.opacity.combined(with: .offset(y: 20)))
   }
 }

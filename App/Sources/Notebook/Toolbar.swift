@@ -120,6 +120,8 @@ struct MainToolbar: View {
   var showColors = true
   /// On a phone the tools fold into one button (Android's `MainToolbarPhone`).
   var compactTools = false
+  /// How wide the folded tools may be when they drop down.
+  var toolsRoom: CGFloat = .infinity
   @State private var toolsOpen = false
   @Environment(\.tali) private var c
   @Namespace private var toolGlide
@@ -128,6 +130,21 @@ struct MainToolbar: View {
   private var activeIndex: Int? { pens.firstIndex { $0.id == activeId } }
 
   var body: some View {
+    VStack(spacing: 6) {
+      pensBar
+      if compactTools && toolsOpen {
+        ToolStrip(items: toolItems, selected: toolKey, room: toolsRoom)
+          .padding(.horizontal, 6).padding(.vertical, 4)
+          .frame(height: 60)
+          .cloudSurface(radius: 22, crown: .edge)
+          .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .top)))
+      }
+    }
+    .onChange(of: tool) { _, _ in if compactTools { withAnimation(.easeOut(duration: 0.14)) { toolsOpen = false } } }
+    .animation(Ease.outStrong(duration: 0.22), value: activeIndex.map { Palettes.shared.toolbarCount(for: pens[$0]) })
+  }
+
+  private var pensBar: some View {
     HStack(spacing: 0) {
       // The pen tray: pens stand at the bottom edge, the active one lifted.
       HStack(alignment: .bottom, spacing: 0) {
@@ -181,68 +198,86 @@ struct MainToolbar: View {
       }
       BarDivider()
       if compactTools {
-        // A phone (Android's `MainToolbarPhone`): one button showing the tool in use drops the tools down.
+        // A phone (Android's `MainToolbarPhone`): one button showing the tool in use drops the tools
+        // down in a bar of their own, and closes whatever panel was open.
         Button {
-          withAnimation(Ease.outStrong(duration: 0.2)) { toolsOpen.toggle() }
-        } label: {
-          Group {
-            if tool == .shape {
-              ShapeChoiceIcon(source: shape, color: c.blue, size: 24)
-            } else if tool == .fill {
-              FillIcon(color: c.blue)
-            } else if tool == .lasso {
-              lassoIcon(c.blue)
-            } else {
-              Image(systemName: currentToolIcon).font(.system(size: 19)).foregroundStyle(isPen ? c.ink : c.blue)
-            }
+          withAnimation(Ease.outStrong(duration: 0.2)) {
+            toolsOpen.toggle()
+            panel = nil
           }
-          .frame(width: 44, height: 44)
-          .background(RoundedRectangle(cornerRadius: 14).fill(isPen ? (toolsOpen ? c.accentSoft : .clear) : c.blueSoft))
+        } label: {
+          HStack(spacing: 0) {
+            Group {
+              if tool == .shape {
+                ShapeChoiceIcon(source: shape, color: c.blue, size: 22)
+              } else if tool == .fill {
+                FillIcon(color: c.blue)
+              } else if tool == .lasso {
+                lassoIcon(c.blue)
+              } else {
+                Image(systemName: currentToolIcon).font(.system(size: 19)).foregroundStyle(isPen ? c.ink : c.blue)
+              }
+            }
+            .frame(width: 24, height: 24)
+            Image(systemName: "chevron.down").font(.system(size: 13, weight: .semibold)).foregroundStyle(c.inkMuted)
+              .rotationEffect(.degrees(toolsOpen ? 180 : 0))
+              .frame(width: 20, height: 20)
+          }
+          .padding(.leading, 8).padding(.trailing, 4)
+          .frame(height: 44)
+          .background(RoundedRectangle(cornerRadius: 14).fill(toolsOpen || !isPen ? c.blueSoft : .clear))
+          .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle(scale: 0.9))
         .accessibilityLabel(L("more_tools"))
         .accessibilityIdentifier("tools-button")
         .padding(.trailing, 2)
       } else {
-        tools.padding(.trailing, 2)
+        HStack(spacing: 0) { ForEach(toolItems) { $0.view } }.padding(.trailing, 2)
       }
     }
     .padding(.horizontal, 6).padding(.vertical, 4)
     .frame(height: 60)
     .cloudSurface(radius: 22, crown: .edge)
-    .overlay(alignment: .topTrailing) {
-      if compactTools && toolsOpen {
-        tools
-          .padding(.horizontal, 6).padding(.vertical, 4)
-          .frame(height: 56)
-          .cloudSurface(radius: 20, crown: .none, shadowDepth: 8)
-          .offset(y: 68)
-          .transition(.opacity.combined(with: .offset(y: -6)))
-      }
-    }
-    .onChange(of: tool) { _, _ in if compactTools { withAnimation(.easeOut(duration: 0.14)) { toolsOpen = false } } }
-    .animation(Ease.outStrong(duration: 0.22), value: activeIndex.map { Palettes.shared.toolbarCount(for: pens[$0]) })
   }
 
-  /// The tools: eraser, lasso, fill, laser, shapes, then the keyboard (a new text box).
-  private var tools: some View {
-    HStack(spacing: 0) {
-      toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser")
-      toolButton(.lasso, icon: "lasso", label: lasso == .screenshot ? L("screenshot_lasso") : lasso == .freeForm ? L("free_form_select") : L("lasso"), id: "lasso")
-      toolButton(.fill, icon: "", label: L("fill"), id: "fill")
-      toolButton(.laser, icon: "laser.burst", label: L("laser"), id: "laser")
-      toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes")
-      InsertButton { toolsOpen = false; onInsert($0) }
-      if let memos { MicButton(memos: memos) { toolsOpen = false; onVoice() } }
-      Button {
-        toolsOpen = false
-        onKeyboard()
-      } label: {
-        Image(systemName: "keyboard").font(.system(size: 19)).foregroundStyle(c.ink).frame(width: 44, height: 44)
-      }
-      .buttonStyle(PressStyle(scale: 0.9))
-      .accessibilityLabel(L("keyboard"))
-      .accessibilityIdentifier("tool-keyboard")
+  /// The tools: eraser, lasso, fill, laser, shapes, insert, the mic, then the keyboard (a new text box).
+  private var toolItems: [ToolStrip.Item] {
+    var items = [
+      ToolStrip.Item(id: "eraser", view: AnyView(toolButton(.eraser, icon: "eraser", label: L("eraser"), id: "eraser"))),
+      ToolStrip.Item(
+        id: "lasso",
+        view: AnyView(toolButton(.lasso, icon: "lasso", label: lasso == .screenshot ? L("screenshot_lasso") : lasso == .freeForm ? L("free_form_select") : L("lasso"), id: "lasso"))),
+      ToolStrip.Item(id: "fill", view: AnyView(toolButton(.fill, icon: "", label: L("fill"), id: "fill"))),
+      ToolStrip.Item(id: "laser", view: AnyView(toolButton(.laser, icon: "laser.burst", label: L("laser"), id: "laser"))),
+      ToolStrip.Item(id: "shapes", view: AnyView(toolButton(.shape, icon: "square.on.circle", label: L("shapes"), id: "shapes"))),
+      ToolStrip.Item(id: "insert", view: AnyView(InsertButton { toolsOpen = false; onInsert($0) })),
+    ]
+    if let memos { items.append(ToolStrip.Item(id: "voice", view: AnyView(MicButton(memos: memos) { toolsOpen = false; onVoice() }))) }
+    items.append(
+      ToolStrip.Item(
+        id: "keyboard",
+        view: AnyView(
+          Button {
+            toolsOpen = false
+            onKeyboard()
+          } label: {
+            Image(systemName: "keyboard").font(.system(size: 19)).foregroundStyle(c.ink).frame(width: 44, height: 44).contentShape(Rectangle())
+          }
+          .buttonStyle(PressStyle(scale: 0.9))
+          .accessibilityLabel(L("keyboard"))
+          .accessibilityIdentifier("tool-keyboard"))))
+    return items
+  }
+
+  private var toolKey: String? {
+    switch tool {
+    case .eraser: "eraser"
+    case .lasso: "lasso"
+    case .fill: "fill"
+    case .laser: "laser"
+    case .shape: "shapes"
+    case .pen: nil
     }
   }
 
@@ -279,6 +314,8 @@ struct MainToolbar: View {
   private func toolButton(_ t: Tool, icon: String, label: String, id: String) -> some View {
     let on = tool == t
     return Button {
+      // On a phone, choosing a tool folds the tools away again.
+      if compactTools { withAnimation(.easeOut(duration: 0.14)) { toolsOpen = false } }
       if tool == t {
         if t == .eraser { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .eraser ? nil : .eraser } }
         if t == .lasso { withAnimation(Ease.outStrong(duration: 0.18)) { panel = panel == .lasso ? nil : .lasso } }
@@ -312,7 +349,63 @@ struct MainToolbar: View {
     }
     .buttonStyle(PressStyle(scale: 0.9))
     .accessibilityLabel(label)
+    .accessibilityAddTraits(on ? .isSelected : [])
     .accessibilityIdentifier("tool-\(id)")
+  }
+}
+
+/// The tools after the pens (Android's `ToolStrip`). When they all fit they sit in a row. When the
+/// bar runs out of room they're split into pages with an arrow at the end, and the arrow goes to
+/// the next page, so nothing is cut off.
+struct ToolStrip: View {
+  struct Item: Identifiable {
+    let id: String
+    let view: AnyView
+  }
+
+  var items: [Item]
+  /// The tool in use, whose page shows when the strip opens.
+  var selected: String?
+  var room: CGFloat
+  @State private var page = 0
+  @Environment(\.tali) private var c
+
+  static let item: CGFloat = 44
+  static let arrow: CGFloat = 30
+
+  /// The tools in pages that fit [room], one page when they all do.
+  static func pages<T>(_ items: [T], room: CGFloat) -> [[T]] {
+    if room >= item * CGFloat(items.count) + 2 { return [items] }
+    let per = min(max(Int((room - arrow) / item), 1), max(items.count, 1))
+    return stride(from: 0, to: items.count, by: per).map { Array(items[$0..<min($0 + per, items.count)]) }
+  }
+
+  var body: some View {
+    let pages = Self.pages(items, room: room)
+    let shown = min(page, pages.count - 1)
+    let last = shown == pages.count - 1
+    HStack(spacing: 0) {
+      HStack(spacing: 0) { ForEach(pages[shown]) { $0.view } }
+        .id(shown)
+        .transition(.opacity)
+      if pages.count > 1 {
+        Button {
+          withAnimation(Ease.outStrong(duration: 0.24)) { page = last ? 0 : shown + 1 }
+        } label: {
+          Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(c.inkMuted)
+            .rotationEffect(.degrees(last ? 180 : 0))
+            .frame(width: Self.arrow, height: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(last ? L("first_tools") : L("more_tools"))
+        .accessibilityIdentifier("tools-page")
+      } else {
+        Spacer().frame(width: 2)
+      }
+    }
+    .onChange(of: selected, initial: true) { _, key in
+      if let at = pages.firstIndex(where: { $0.contains { $0.id == key } }) { page = at }
+    }
   }
 }
 
@@ -407,6 +500,8 @@ struct ToolPanel<Content: View>: View {
     .frame(maxWidth: width, alignment: .leading)
     .padding(18)
     .cloudSurface(radius: 22, crown: .none, shadowDepth: 10)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("tool-panel")
   }
 
   private var column: some View { VStack(alignment: .leading, spacing: 0) { content } }
