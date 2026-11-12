@@ -445,6 +445,48 @@ final class SelectingTests: ShotCase {
     tool(app, "tool-eraser")
   }
 
+  /// A fill's outline cut by the precise eraser still belongs to the fill: the pieces travel with
+  /// the fill and the rest of its outline.
+  func testACutOutlineStaysWithItsFill() {
+    let app = openNewNotebook()
+    let window = app.windows.firstMatch.frame
+    drag(app, (0.16, 0.42), (0.40, 0.42))
+    drag(app, (0.38, 0.40), (0.38, 0.62))
+    drag(app, (0.40, 0.60), (0.16, 0.60))
+    drag(app, (0.18, 0.62), (0.18, 0.40))
+    tool(app, "tool-fill")
+    if !app.buttons["no-fill"].exists { tool(app, "tool-fill") }
+    app.buttons["fill-colour-4"].firstMatch.tap()
+    tool(app, "tool-fill")
+    at(app, 0.28, 0.51).tap()
+    Thread.sleep(forTimeInterval: 2.5)
+    // The top side cut in two, a quarter of the way along.
+    tool(app, "tool-eraser")
+    if !app.buttons["option-true"].exists { tool(app, "tool-eraser") }
+    app.buttons["option-true"].firstMatch.tap()
+    tool(app, "tool-eraser")
+    foldTools(app)
+    drag(app, (0.24, 0.395), (0.24, 0.43))
+    calmShot("c1-outline-cut")
+    // Picked up by its right side and carried away: both pieces of the cut side go too.
+    func topSide(shiftedBy dx: CGFloat) -> Int {
+      Pixels().count(rows: 0.405...0.435, from: 0.20 + dx, to: 0.36 + dx) { $0.r < 110 && $0.g < 110 && $0.b < 125 }
+    }
+    XCTAssertGreaterThan(topSide(shiftedBy: 0), 20, "the cut side is still drawn")
+    lasso(app)
+    drag(app, (0.37, 0.50), (0.39, 0.52))
+    let f = selectionFrame(app)
+    drag(app, CGPoint(x: f.midX, y: f.midY), CGPoint(x: f.midX + window.width * 0.4, y: f.midY))
+    at(app, 0.5, 0.85).tap()
+    calmShot("c2-carried-with-its-cut-side")
+    XCTAssertEqual(topSide(shiftedBy: 0), 0, "nothing of the cut side stays behind")
+    XCTAssertGreaterThan(topSide(shiftedBy: 0.4), 20, "its pieces went with the fill")
+    tool(app, "tool-eraser")
+    if !app.buttons["option-false"].exists { tool(app, "tool-eraser") }
+    app.buttons["option-false"].firstMatch.tap()
+    tool(app, "tool-eraser")
+  }
+
   func testTypedTextInTheLasso() {
     let app = openNewNotebook()
     tool(app, "tool-keyboard")

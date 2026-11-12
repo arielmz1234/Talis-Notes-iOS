@@ -111,6 +111,23 @@ struct FillGroupTests {
   @Test func aCopiedFillOutlinesTheCopies() {
     #expect(FillGroup.copiedWalls(["a", "b", "gone"], ids: ["a": "a2", "b": "b2", "f": "f2"]) == ["a2", "b2"])
   }
+
+  @Test func aCutOutlineKeepsItsPieces() {
+    // The precise eraser cut "b" in two and took "c" whole; "x" was cut from a line of another drawing.
+    let walls = FillGroup.wallsAfterErasing(["a", "b", "c"], gone: ["b", "c", "z"], pieces: ["b1": "b", "b2": "b", "x": "z"])
+    #expect(walls == ["a", "b1", "b2"])
+  }
+
+  @Test func aFillWhoseOutlineWasNotErasedIsLeftAsItIs() {
+    #expect(FillGroup.wallsAfterErasing(["a", "b"], gone: ["z"], pieces: ["x": "z"]) == nil)
+    #expect(FillGroup.wallsAfterErasing([], gone: ["z"], pieces: [:]) == nil)
+  }
+
+  @Test func thePiecesOfACutOutlineArePickedUpWithTheFill() {
+    let cut = FillGroup.wallsAfterErasing(["a", "b"], gone: ["b"], pieces: ["b1": "b", "b2": "b"]) ?? []
+    let picked = FillGroup.with(["b1"], fills: [FillGroup.Fill(id: "f", walls: cut)], isLocked: { _ in false }, pickLocked: false)
+    #expect(Set(picked) == ["b1", "f", "a", "b2"])
+  }
 }
 
 struct ArrangeTests {

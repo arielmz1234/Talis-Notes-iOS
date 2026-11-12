@@ -144,6 +144,16 @@ public enum FillGroup {
 
   /// The outlines of copied fills: each copy outlines the copies of what the original outlined.
   public static func copiedWalls(_ walls: [String], ids: [String: String]) -> [String] { walls.compactMap { ids[$0] } }
+
+  /// What a fill outlines once the eraser has passed (Android's `finishErase`): the lines of [walls]
+  /// that are left, and every piece cut from one of them ([pieces]: a piece's id to the id of the
+  /// line it was cut from), so a cut outline still travels with its fill. Nil when the eraser
+  /// touched none of its lines.
+  public static func wallsAfterErasing(_ walls: [String], gone: Set<String>, pieces: [String: String]) -> [String]? {
+    guard walls.contains(where: gone.contains) else { return nil }
+    let outline = Set(walls)
+    return (walls.filter { !gone.contains($0) } + pieces.filter { outline.contains($0.value) }.keys).sorted()
+  }
 }
 
 /// Bring to front and Send to back (Android's `arrangeSelection`).
