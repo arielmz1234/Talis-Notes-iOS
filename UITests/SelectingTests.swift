@@ -499,6 +499,61 @@ final class SelectingTests: ShotCase {
     calmShot("t7-kept")
   }
 
+  /// The small bar above a text box being typed in: size, colour, delete and done.
+  func testTextBar() {
+    let app = openNewNotebook()
+    let window = app.windows.firstMatch.frame
+    tool(app, "tool-keyboard")
+    guard app.keyboards.firstMatch.waitForExistence(timeout: 4) else { return XCTFail("the keyboard came") }
+    if app.buttons["Continue"].exists { app.buttons["Continue"].firstMatch.tap() }
+    app.typeText("Shear V = 6 kN")
+    let editor = app.textViews["text-editor"].firstMatch
+    for id in ["text-smaller", "text-bigger", "text-colour-0", "text-delete", "text-done"] {
+      let b = app.buttons[id].firstMatch
+      XCTAssertTrue(b.waitForExistence(timeout: 3) && b.isHittable, "\(id) is in the bar")
+      XCTAssertTrue(window.contains(b.frame), "\(id) is on the screen, at \(b.frame)")
+      XCTAssertLessThan(b.frame.maxY, editor.frame.minY, "the bar sits above the box")
+    }
+    XCTAssertGreaterThan(app.buttons["text-smaller"].firstMatch.frame.minY, app.buttons["pen-p1"].firstMatch.frame.maxY, "and below the toolbars")
+    shot("b1-text-bar")
+    let small = editor.frame.height
+    for _ in 0..<4 { app.buttons["text-bigger"].firstMatch.tap() }
+    settle()
+    XCTAssertGreaterThan(editor.frame.height, small * 1.5, "A+ makes the text bigger")
+    app.buttons["text-smaller"].firstMatch.tap()
+    settle()
+    XCTAssertTrue(app.keyboards.firstMatch.exists, "the keyboard stays while the bar is used")
+    // Her fourth colour is red.
+    app.buttons["text-colour-3"].firstMatch.tap()
+    settle()
+    let box = editor.frame
+    shot("b2-bigger-and-red")
+    app.buttons["text-done"].firstMatch.tap()
+    XCTAssertFalse(app.textViews["text-editor"].waitForExistence(timeout: 1.5), "Done finishes the text")
+    XCTAssertFalse(app.buttons["text-done"].exists, "and the bar goes with it")
+    func redText() -> Int {
+      Pixels().count(rows: (box.minY / window.height)...(box.maxY / window.height), from: box.minX / window.width, to: min(box.maxX / window.width, 0.99)) { $0.r > 170 && $0.g < 110 && $0.b < 110 }
+    }
+    Thread.sleep(forTimeInterval: 2)
+    shot("b3-done")
+    XCTAssertGreaterThan(redText(), 8, "the text is on the page in the colour chosen")
+    // Opened again from its menu, the bar's bin deletes it; undo brings it back.
+    lasso(app)
+    point(app, CGPoint(x: box.minX + 16, y: box.midY)).press(forDuration: 0.05)
+    openMore(app)
+    menuButton(app, "selection-edit-text").tap()
+    XCTAssertTrue(app.buttons["text-delete"].waitForExistence(timeout: 3), "the bar comes with the box picked up")
+    shot("b4-opened-again")
+    app.buttons["text-delete"].firstMatch.tap()
+    XCTAssertFalse(app.textViews["text-editor"].waitForExistence(timeout: 1.5))
+    Thread.sleep(forTimeInterval: 2)
+    shot("b5-deleted")
+    XCTAssertEqual(redText(), 0, "the bin deletes the text")
+    app.buttons["undo"].firstMatch.tap()
+    Thread.sleep(forTimeInterval: 2)
+    XCTAssertGreaterThan(redText(), 8, "undo brings it back")
+  }
+
   func testSnapping() {
     let app = openNewNotebook()
     let window = app.windows.firstMatch.frame

@@ -70,6 +70,8 @@ struct NotebookView: View {
   /// What the lasso picked up (window coordinates), a held spot offering Paste, and a hint line.
   @State private var selection: SelectionInfo?
   @State private var pasteOffer: CGPoint?
+  /// The text box being typed in, for the small bar above it.
+  @State private var textBar: TextBarInfo?
   /// A picture just taken with the screenshot lasso, waiting to be saved, shared or copied.
   @State private var screenshot: URL?
   @AppStorage(LassoSettings.Key.free) private var lassoFree = false
@@ -115,6 +117,7 @@ struct NotebookView: View {
           onPageCount: { pageCount = $0 },
           onSelection: { r in withAnimation(.easeOut(duration: 0.14)) { selection = r } },
           onHint: { show($0) },
+          onTextBar: { textBar = $0 },
           onPasteOffer: { p in withAnimation(.easeOut(duration: 0.16)) { pasteOffer = p } },
           onPencil: pencilGesture,
           onScreenshot: { url in withAnimation(Ease.outStrong(duration: 0.24)) { screenshot = url } },
@@ -210,6 +213,13 @@ struct NotebookView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 20)
+        // Over the toolbars, as on Android: the box may be scrolled up under them.
+        if let bar = textBar, !viewing {
+          TextBarLayer(
+            info: bar, topLimit: (narrow ? 164 : 104) - 10,
+            onSize: { bridge.coordinator?.resizeText($0) }, onColour: { bridge.coordinator?.recolourText($0) },
+            onDelete: { bridge.coordinator?.deleteText() }, onDone: { bridge.coordinator?.finishText() })
+        }
         RecorderPanel(memos: memos, hint: show)
         if crop.edit != nil {
           VStack {
