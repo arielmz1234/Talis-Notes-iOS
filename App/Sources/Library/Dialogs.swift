@@ -172,9 +172,9 @@ private struct MoveTarget: View {
       }
       .padding(.horizontal, 12)
       .frame(height: 44)
-      .contentShape(RoundedRectangle(cornerRadius: 12))
+      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.plain).contentShape(Rectangle())
     .disabled(current)
     .padding(.leading, CGFloat(depth) * 18)
   }

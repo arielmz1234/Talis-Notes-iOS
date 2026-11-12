@@ -106,7 +106,7 @@ struct SelectionMenu: View {
         Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(c.inkMuted)
           .rotationEffect(.degrees(more ? 180 : 0)).frame(width: 30, height: 44).contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).contentShape(Rectangle())
       .accessibilityLabel(more ? L("fewer_options") : L("more_options"))
       .accessibilityIdentifier("selection-more")
     }

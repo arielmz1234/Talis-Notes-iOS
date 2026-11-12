@@ -46,7 +46,7 @@ struct Sidebar: View {
         Button { onNewFolder(nil) } label: {
           Image(systemName: "plus").font(.system(size: 15)).foregroundStyle(c.inkMuted).frame(width: 30, height: 30).contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain).contentShape(Rectangle())
         .accessibilityLabel(L("new_folder"))
         .accessibilityIdentifier("sidebar-new-folder")
       }
@@ -81,9 +81,9 @@ struct Sidebar: View {
           Text(L("settings")).font(TaliType.labelLarge).foregroundStyle(c.inkMuted)
           Spacer()
         }
-        .padding(10).contentShape(RoundedRectangle(cornerRadius: 14))
+        .padding(10).contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).contentShape(Rectangle())
       .accessibilityIdentifier("settings")
       Button {
         onPicked()
@@ -100,7 +100,7 @@ struct Sidebar: View {
         }
         .padding(10).contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).contentShape(Rectangle())
       .accessibilityIdentifier("backups")
       .padding(.bottom, 10)
     }
@@ -132,7 +132,7 @@ struct Sidebar: View {
           .scaleEffect(x: rtl && !expanded ? -1 : 1)
           .frame(width: 28, height: 28).contentShape(Circle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).contentShape(Rectangle())
       .accessibilityLabel(expanded ? L("fold") : L("unfold"))
     }
     .contextMenu {
@@ -236,7 +236,7 @@ struct NavRow<Icon: View, More: View>: View {
     }
     .padding(.leading, 12).padding(.trailing, trailing ? 4 : 12)
     .frame(height: 44)
-    .contentShape(RoundedRectangle(cornerRadius: 14))
+    .contentShape(Rectangle())
     .onTapGesture(perform: action)
     .slidingOption(key, in: nav, fill: fill, clipped: clipped)
     .accessibilityElement(children: .contain)
@@ -399,10 +399,13 @@ func relativeTime(_ millis: Int64) -> String {
 }
 
 /// Presses in a little, quickly.
+/// Every button style here gives its label a plain rectangle to be touched by. A rounded touch
+/// shape (or none, over a rounded background) answered taps about 20 pt to its left on the iOS 26.4
+/// simulators: the right side of the button before it fired this one.
 struct PressStyle: ButtonStyle {
   var scale: CGFloat = 0.96
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label.scaleEffect(configuration.isPressed ? scale : 1)
+    configuration.label.contentShape(Rectangle()).scaleEffect(configuration.isPressed ? scale : 1)
       .animation(.easeOut(duration: configuration.isPressed ? 0.09 : 0.16), value: configuration.isPressed)
   }
 }
@@ -414,6 +417,7 @@ struct PrimaryButtonStyle: ButtonStyle {
     configuration.label.font(TaliType.labelLarge).foregroundStyle(c.onAccent).lineLimit(1).fixedSize(horizontal: true, vertical: false)
       .padding(.horizontal, 20).frame(minHeight: 48)
       .background(RoundedRectangle(cornerRadius: 16).fill(c.accentGradient))
+      .contentShape(Rectangle())
       .scaleEffect(configuration.isPressed ? 0.96 : 1)
       .animation(.easeOut(duration: configuration.isPressed ? 0.09 : 0.16), value: configuration.isPressed)
   }
@@ -429,6 +433,7 @@ struct QuietButtonStyle: ButtonStyle {
     configuration.label.font(TaliType.labelLarge).foregroundStyle(warning ? c.danger : c.accent).lineLimit(1).fixedSize(horizontal: true, vertical: false)
       .padding(.horizontal, 18).frame(minHeight: 44)
       .background(RoundedRectangle(cornerRadius: 14).fill(wash))
+      .contentShape(Rectangle())
       .scaleEffect(configuration.isPressed ? 0.96 : 1)
       .animation(.easeOut(duration: configuration.isPressed ? 0.09 : 0.16), value: configuration.isPressed)
   }

@@ -534,7 +534,7 @@ private struct LookChoices: View {
               Text(name(l)).font(TaliType.labelMedium).foregroundStyle(on ? c.ink : c.inkMuted).lineLimit(1)
             }
             .padding(4)
-            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .contentShape(Rectangle())
             .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { look = l } }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)

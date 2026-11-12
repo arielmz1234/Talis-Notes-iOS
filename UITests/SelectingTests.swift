@@ -201,6 +201,82 @@ final class SelectingTests: ShotCase {
     XCTAssertTrue(app.buttons["selection-delete"].exists, "still picked up: it was copied, not cut")
   }
 
+  /// A tap just inside a control's right side is that control's, not its neighbour's: a rounded
+  /// touch shape answered taps up to 22 pt to its left. One of each kind of neighbours.
+  func testTapsStayOnTheControlUnderThem() {
+    let app = openNewNotebook()
+    func tapRightSide(_ e: XCUIElement) {
+      XCTAssertTrue(e.waitForExistence(timeout: 3), "\(e) is there")
+      point(app, CGPoint(x: e.frame.maxX - 4, y: e.frame.midY)).tap()
+      settle()
+    }
+    func penPanel() {
+      app.buttons["pen-p1"].firstMatch.tap()
+      settle()
+      if !app.buttons["Add a pen"].exists { app.buttons["pen-p1"].firstMatch.tap() }
+      settle()
+    }
+    // A pen beside the arrow to the pens' settings, while they're open.
+    penPanel()
+    tapRightSide(app.buttons["pen-p5"].firstMatch)
+    XCTAssertTrue(app.buttons["pen-p5"].firstMatch.isSelected, "the right side of the last pen picks that pen")
+    // Line styles, and the two buttons at the foot of the pen's panel.
+    penPanel()
+    app.buttons["Dotted"].firstMatch.tap()
+    settle()
+    tapRightSide(app.buttons["Solid"].firstMatch)
+    XCTAssertTrue(app.buttons["Solid"].firstMatch.isSelected, "the right side of Solid chooses Solid")
+    if !app.buttons["colour-D83A3A"].firstMatch.isHittable { at(app, 0.5, 0.7).press(forDuration: 0.05, thenDragTo: at(app, 0.5, 0.5)) }
+    tapRightSide(app.buttons["colour-D83A3A"].firstMatch)
+    XCTAssertTrue(app.buttons["colour-D83A3A"].firstMatch.isSelected, "the right side of a colour picks that colour")
+    let pens = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "pen-"))
+    let before = pens.count
+    if !app.buttons["Add a pen"].firstMatch.isHittable { at(app, 0.5, 0.7).press(forDuration: 0.05, thenDragTo: at(app, 0.5, 0.3)) }
+    tapRightSide(app.buttons["Add a pen"].firstMatch)
+    XCTAssertEqual(pens.count, before + 1, "the right side of Add a pen adds one (it doesn't remove this one)")
+    app.buttons["Remove this pen"].firstMatch.tap()
+    settle()
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
+    // Shape tiles.
+    tool(app, "tool-shapes")
+    if !app.buttons["shape-ARROW"].exists { tool(app, "tool-shapes") }
+    app.buttons["shape-ARROW"].firstMatch.tap()
+    settle()
+    tool(app, "tool-shapes")
+    if !app.buttons["shape-LINE"].exists { tool(app, "tool-shapes") }
+    tapRightSide(app.buttons["shape-LINE"].firstMatch)
+    tool(app, "tool-shapes")
+    if !app.buttons["shape-LINE"].exists { tool(app, "tool-shapes") }
+    XCTAssertTrue(app.buttons["shape-LINE"].firstMatch.isSelected, "the right side of Line chooses the line")
+    app.buttons["pen-p1"].firstMatch.tap()
+    settle()
+    // The ⋯ menu: its tiles, the papers, the two chips.
+    func more() {
+      app.buttons["more"].firstMatch.tap()
+      settle()
+    }
+    more()
+    tapRightSide(app.buttons["Dark paper"].firstMatch)
+    XCTAssertTrue(app.buttons["Dark paper"].firstMatch.isSelected, "the right side of Dark paper turns the paper dark")
+    XCTAssertFalse(app.buttons["Endless canvas"].firstMatch.isSelected, "and leaves the pages as they are")
+    app.buttons["Dark paper"].firstMatch.tap()
+    tapRightSide(app.descendants(matching: .any)["paper-BLANK"].firstMatch)
+    XCTAssertTrue(app.descendants(matching: .any)["paper-BLANK"].firstMatch.isSelected, "the right side of Blank chooses blank paper")
+    tapRightSide(app.buttons["Pages"].firstMatch)
+    XCTAssertTrue(app.buttons["Look at page 1"].waitForExistence(timeout: 3), "the right side of Pages opens the pages")
+    app.buttons["Done"].firstMatch.tap()
+    settle()
+    // A card's buttons.
+    more()
+    app.buttons["Export PDF"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["export-share"].waitForExistence(timeout: 8), "the export card")
+    settle()
+    tapRightSide(app.buttons["Cancel"].firstMatch)
+    XCTAssertFalse(app.buttons["export-share"].exists, "the right side of Cancel closes the card")
+    shot("k1-every-tap-its-own")
+  }
+
   func testLock() {
     let app = openNewNotebook()
     drawWithFinger(app, "Auto")

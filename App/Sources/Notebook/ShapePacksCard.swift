@@ -77,7 +77,7 @@ struct ShapePacksCard: View {
     .padding(.leading, 12)
     .frame(height: 42)
     .background(RoundedRectangle(cornerRadius: 12).fill(on ? c.accentSoft : (narrow ? c.background : .clear)))
-    .contentShape(RoundedRectangle(cornerRadius: 12))
+    .contentShape(Rectangle())
     .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { shown = p.id } }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(name)

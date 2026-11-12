@@ -156,7 +156,7 @@ struct MainToolbar: View {
             .contentShape(Rectangle())
             .onTapGesture { tapPen(pen) }
             .accessibilityLabel(penName(pen.type))
-            .accessibilityAddTraits(.isButton)
+            .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
             .accessibilityIdentifier("pen-\(pen.id)")
         }
       }
@@ -174,7 +174,7 @@ struct MainToolbar: View {
           .frame(width: 28, height: 44)
           .background(RoundedRectangle(cornerRadius: 10).fill(panel == .pen ? c.accentSoft : .clear))
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).contentShape(Rectangle())
       .accessibilityLabel(L("pen_settings"))
       if showColors, let i = activeIndex {
         let pen = pens[i]
@@ -396,7 +396,7 @@ struct ToolStrip: View {
             .rotationEffect(.degrees(last ? 180 : 0))
             .frame(width: Self.arrow, height: 44).contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.plain).contentShape(Rectangle())
         .accessibilityLabel(last ? L("first_tools") : L("more_tools"))
         .accessibilityIdentifier("tools-page")
       } else {
@@ -424,7 +424,8 @@ struct ColorDot: View {
 
   var body: some View {
     Button(action: action) { ColorDotFace(color: color, selected: selected, size: size) }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).contentShape(Rectangle())
+      .accessibilityAddTraits(selected ? .isSelected : [])
   }
 }
 
@@ -719,7 +720,7 @@ struct PageChip: View {
       } label: {
         Text(L("n_n_3", page + 1, count)).font(TaliType.labelMedium).foregroundStyle(c.inkMuted).padding(.horizontal, 6).padding(.vertical, 6)
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.plain).contentShape(Rectangle())
       .disabled(onOverview == nil)
       .accessibilityHint(L("all_pages"))
       arrow("chevron.down", L("next_page"), enabled: page < count - 1) { onGo(page + 1) }
@@ -733,7 +734,7 @@ struct PageChip: View {
       Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundStyle(enabled ? c.blue : c.inkFaint.opacity(0.5))
         .frame(width: 32, height: 32)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.plain).contentShape(Rectangle())
     .disabled(!enabled)
     .accessibilityLabel(label)
   }

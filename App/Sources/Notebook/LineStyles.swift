@@ -44,7 +44,7 @@ struct LineStylePicker: View {
       if on { RoundedRectangle(cornerRadius: 14).fill(c.accentSoft).matchedGeometryEffect(id: "line", in: glide) }
     }
     .overlay(RoundedRectangle(cornerRadius: 14).stroke(on ? Color.clear : c.line, lineWidth: 1))
-    .contentShape(RoundedRectangle(cornerRadius: 14))
+    .contentShape(Rectangle())
     .onTapGesture {
       withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { selected = style }
     }

@@ -316,7 +316,7 @@ struct ShapeTileLabel<Icon: View>: View {
     .padding(.vertical, 8)
     .frame(maxWidth: .infinity)
     .background(RoundedRectangle(cornerRadius: 14).fill(on ? c.blueSoft : c.background))
-    .contentShape(RoundedRectangle(cornerRadius: 14))
+    .contentShape(Rectangle())
     .animation(.easeOut(duration: 0.22), value: on)
   }
 }
@@ -334,7 +334,7 @@ struct StarToggle: View {
         .symbolEffect(.bounce, value: on)
         .frame(width: 40, height: 40).contentShape(Circle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.plain).contentShape(Rectangle())
     .accessibilityLabel(label)
     .accessibilityAddTraits(on ? .isSelected : [])
   }

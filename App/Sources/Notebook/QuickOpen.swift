@@ -80,7 +80,7 @@ private struct QuickOpenRow: View {
       .padding(.horizontal, 12).padding(.vertical, 6)
       .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.plain).contentShape(Rectangle())
     .accessibilityLabel(L("open_n", notebook.title))
     .opacity(shown ? 1 : 0)
     .offset(y: shown ? 0 : -10)

@@ -86,7 +86,7 @@ struct CloudSurface: ViewModifier {
         }
       }
       // Solid to touch: nothing under a surface gets a touch that lands on it.
-      .contentShape(RoundedRectangle(cornerRadius: radius))
+      .contentShape(Rectangle())
       // What iOS draws itself on a cloud (a switch's track, a field's hint, glass buttons) takes the
       // cloud's look, not the system's: in dark mode a notebook's bars over white paper are light.
       .environment(\.colorScheme, c.isDark ? .dark : .light)
