@@ -117,8 +117,8 @@ A. Notebook and phone:
 - [ ] iPad Pro 13: the first tap on another pen after "Remove this pen" only closes the panel.
 - [ ] The 14 remaining rounded `contentShape`s (taps reach the neighbouring control).
 B. Library, look and export:
-- [ ] The first-run tour's other steps (subject shapes, voice memos and PDFs, Apple Pencil tricks)
+- [x] The first-run tour's other steps (subject shapes, voice memos and PDFs, Apple Pencil tricks)
       and Settings' Tips and tricks card.
-- [ ] The new-notebook card and library card pictures show her own papers.
-- [ ] Export PDF draws writing as vector lines (Android's), not a picture.
-- [ ] The Shapes tool's tips ("Drag on the page to draw the shape", part circle).
+- [x] The new-notebook card and library card pictures show her own papers.
+- [x] Export PDF draws writing as vector lines (Android's), not a picture.
+- [x] The Shapes tool's tips ("Drag on the page to draw the shape", part circle).
