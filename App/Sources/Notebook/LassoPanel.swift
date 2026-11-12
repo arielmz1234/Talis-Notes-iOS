@@ -92,7 +92,7 @@ struct PickChip: View {
       .padding(.leading, on ? 8 : 12).padding(.trailing, 12).padding(.vertical, 7)
       .background(RoundedRectangle(cornerRadius: 12).fill(on ? c.blueSoft : .clear))
       .overlay(RoundedRectangle(cornerRadius: 12).stroke(on ? c.sky : c.line, lineWidth: 1))
-      .contentShape(RoundedRectangle(cornerRadius: 12))
+      .contentShape(Rectangle())
       .animation(.easeOut(duration: 0.2), value: on)
     }
     .buttonStyle(.plain)
