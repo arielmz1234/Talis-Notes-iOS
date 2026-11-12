@@ -576,17 +576,17 @@ struct ZoomChip: View {
 enum ShapeLook {
   static var firstColor: Int32 { Int32(bitPattern: PenSlot.defaultColors[0]) }
 
-  static func decode(_ raw: String) -> ShapeStyle? {
-    raw.data(using: .utf8).flatMap { try? JSONDecoder().decode(ShapeStyle.self, from: $0) }
+  static func decode(_ raw: String) -> TaliCore.ShapeStyle? {
+    raw.data(using: .utf8).flatMap { try? JSONDecoder().decode(TaliCore.ShapeStyle.self, from: $0) }
   }
 
-  static func encode(_ s: ShapeStyle) -> String {
+  static func encode(_ s: TaliCore.ShapeStyle) -> String {
     (try? JSONEncoder().encode(s)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
   }
 
   /// Its own style, as she set it (or the first pen's starting colour and 2.4).
-  static var own: ShapeStyle {
-    ShapeStyle.own(decode(UserDefaults.standard.string(forKey: "shapeStyle") ?? ""), firstColor: firstColor)
+  static var own: TaliCore.ShapeStyle {
+    TaliCore.ShapeStyle.own(decode(UserDefaults.standard.string(forKey: "shapeStyle") ?? ""), firstColor: firstColor)
   }
 
   static var followsPen: Bool { UserDefaults.standard.bool(forKey: "shapeFollowsPen") }
@@ -599,9 +599,9 @@ enum ShapeLook {
   }
 
   /// How the Shapes tool draws now.
-  static func look(_ active: PenSlot?, _ pens: [PenSlot]) -> ShapeStyle {
+  static func look(_ active: PenSlot?, _ pens: [PenSlot]) -> TaliCore.ShapeStyle {
     let p = slot(active, pens)
-    return ShapeStyle.look(own: own, followsPen: followsPen, penColor: p.color, penSize: p.size)
+    return TaliCore.ShapeStyle.look(own: own, followsPen: followsPen, penColor: p.color, penSize: p.size)
   }
 
   /// Snapping to other shapes and hold-to-shape (Android's `snapShapes`, `holdToShape`; both on at first).

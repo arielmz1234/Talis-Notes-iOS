@@ -116,12 +116,12 @@ struct ShapeStylePicker: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Environment(\.tali) private var c
 
-  private var own: ShapeStyle { ShapeStyle.own(ShapeLook.decode(raw), firstColor: ShapeLook.firstColor) }
-  private var look: ShapeStyle {
+  private var own: TaliCore.ShapeStyle { TaliCore.ShapeStyle.own(ShapeLook.decode(raw), firstColor: ShapeLook.firstColor) }
+  private var look: TaliCore.ShapeStyle {
     let p = ShapeLook.slot(pens.first { $0.id == activePen }, pens)
-    return ShapeStyle.look(own: own, followsPen: followsPen, penColor: p.color, penSize: p.size)
+    return TaliCore.ShapeStyle.look(own: own, followsPen: followsPen, penColor: p.color, penSize: p.size)
   }
-  private func update(_ f: (inout ShapeStyle) -> Void) {
+  private func update(_ f: (inout TaliCore.ShapeStyle) -> Void) {
     var s = own
     f(&s)
     raw = ShapeLook.encode(s)
@@ -183,7 +183,7 @@ struct ShapeStylePicker: View {
         Text(L("size")).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).frame(width: 84, alignment: .leading)
         StepSlider(
           value: Binding(get: { l.size }, set: { v in if !following { update { $0.size = v } } }),
-          range: ShapeStyle.minSize...ShapeStyle.maxSize, step: 0.5)
+          range: TaliCore.ShapeStyle.minSize...TaliCore.ShapeStyle.maxSize, step: 0.5)
         Text(String(format: "%.1f", l.size)).font(TaliType.titleSmall).foregroundStyle(c.ink).frame(width: 40, alignment: .leading)
       }
       .opacity(following ? 0.4 : 1)
@@ -221,9 +221,9 @@ struct OpacitySlider: View {
       Text(label).font(TaliType.bodyMedium).foregroundStyle(c.inkMuted).frame(width: 84, alignment: .leading)
       Slider(
         value: Binding(get: { Double(value) }, set: { v in
-          onChange(min(max(Float((v * 20).rounded() / 20), ShapeStyle.minOpacity), 1))
+          onChange(min(max(Float((v * 20).rounded() / 20), TaliCore.ShapeStyle.minOpacity), 1))
         }),
-        in: Double(ShapeStyle.minOpacity)...1
+        in: Double(TaliCore.ShapeStyle.minOpacity)...1
       )
       .tint(c.accent)
       .disabled(!enabled)
@@ -263,7 +263,7 @@ struct NoneDot: View {
 /// A box and an arrow drawn in the shape style (opacities too), so each change shows at once
 /// (Android's `ShapeStylePreview`).
 struct ShapeStylePreview: View {
-  var look: ShapeStyle
+  var look: TaliCore.ShapeStyle
   @Environment(\.tali) private var c
 
   var body: some View {
