@@ -227,7 +227,6 @@ struct ScreenshotSheet: View {
   }
 }
 
-/// Saves a picture to Photos and says whether it worked.
 @MainActor
 final class PhotoSaver: NSObject {
   static let shared = PhotoSaver()

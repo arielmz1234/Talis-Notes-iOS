@@ -45,7 +45,6 @@ extension NoteCanvas.Coordinator {
     v.addSubview(lasso.lock.cues)
   }
 
-  /// How many things in this notebook are locked.
   var lockedCount: Int { pageItems.filter(\.locked).count }
 
   /// Locks what's picked up in place. Picked up while locked (the lasso can be set to), the same
@@ -68,7 +67,6 @@ extension NoteCanvas.Coordinator {
     parent.onHint(items.count == 1 ? L("locked_hold_it_to_unlock") : L("n_items_locked_hold_one_to", items.count))
   }
 
-  /// Unlocks everything in the notebook (one undo step).
   func unlockAll() {
     let locked = pageItems.filter(\.locked)
     guard !locked.isEmpty else { return }

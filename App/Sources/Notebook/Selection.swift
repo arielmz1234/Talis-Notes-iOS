@@ -307,7 +307,6 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
 
   var pickedStrokes: [InkStroke] { stored.map(\.stroke).filter { lasso.picked.contains($0.id) } }
 
-  /// Picks up [items] (things just put on the page: copies, what was pasted or changed).
   private func select(_ items: [PageItem], menu: Bool? = nil) {
     setSelection(Set(items.map(\.id)), menu: menu)
   }
@@ -422,7 +421,6 @@ extension NoteCanvas.Coordinator: UIGestureRecognizerDelegate {
     select(changed)
   }
 
-  /// Another colour for the writing, shapes and text picked up; pictures keep theirs.
   func recolourSelection(_ argb: UInt32) {
     let color = Int32(bitPattern: argb)
     change { item in
@@ -546,7 +544,6 @@ func joined(_ a: CGRect?, _ b: CGRect?) -> CGRect? {
 }
 
 extension NoteCanvas.Coordinator {
-  /// The bounds of [strokes] together.
   func unionOf(_ strokes: [InkStroke]) -> CGRect? {
     strokes.reduce(nil) { joined($0, CGRect($1.bounds)) }
   }

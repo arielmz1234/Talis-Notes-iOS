@@ -86,6 +86,15 @@ final class SelectingTests: ShotCase {
     settle()
     tool(app, "tool-lasso")
     XCTAssertFalse(app.switches["lasso-screenshot"].exists, "the Select panel closed")
+    foldTools(app)
+  }
+
+  /// On a phone the folded tools stay open while the tool doesn't change, over the top of the page: fold them away.
+  private func foldTools(_ app: XCUIApplication) {
+    if app.buttons["tools-button"].exists, app.buttons["tool-eraser"].exists {
+      app.buttons["tools-button"].firstMatch.tap()
+      settle()
+    }
   }
 
   private func openMore(_ app: XCUIApplication) {
@@ -249,14 +258,41 @@ final class SelectingTests: ShotCase {
     drag(app, (0.16, 0.42), (0.40, 0.42))
     lasso(app)
     drag(app, (0.27, 0.38), (0.29, 0.46))
+    let one = selectionFrame(app).height
     app.buttons["selection-duplicate"].firstMatch.tap()
     settle()
     tool(app, "tool-eraser")
-    drag(app, (0.60, 0.80), (0.62, 0.81))
+    foldTools(app)
+    drag(app, (0.60, 0.70), (0.62, 0.71))
     lasso(app)
     drag(app, (0.27, 0.38), (0.29, 0.50))
-    XCTAssertGreaterThan(selectionFrame(app).height, 30, "the line and its copy are both still there")
+    XCTAssertGreaterThan(selectionFrame(app).height, one + 3, "the line and its copy are both still there")
     calmShot("e1-copy-survived-the-eraser")
+  }
+
+  /// The lasso never picks up a whole PDF page, however much of it the loop holds.
+  func testAPdfPageIsNeverPickedUp() {
+    continueAfterFailure = true
+    XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait
+    let app = launch()
+    settle()
+    let pdf = app.descendants(matching: .any)["notebook-Lecture slides"].firstMatch
+    XCTAssertTrue(pdf.waitForExistence(timeout: 5), "the seeded PDF is in the library")
+    pdf.tap()
+    settle()
+    if app.buttons["write"].exists {
+      app.buttons["write"].firstMatch.tap()
+      settle()
+    }
+    drag(app, (0.40, 0.50), (0.60, 0.52))
+    lasso(app)
+    drag(app, (0.30, 0.40), (0.70, 0.62))
+    XCTAssertLessThan(selectionFrame(app).height, app.windows.firstMatch.frame.height * 0.1, "only the writing, not the page under it")
+    shot("d1-pdf-page-left-alone")
+    at(app, 0.5, 0.85).tap()
+    settle()
+    at(app, 0.5, 0.7).tap()
+    XCTAssertFalse(app.buttons["selection-delete"].waitForExistence(timeout: 1.5), "a lasso tap on the page picks nothing up")
   }
 
   func testSelectPanel() {
@@ -275,6 +311,8 @@ final class SelectingTests: ShotCase {
     shot("p2-free-form")
     // The screenshot lasso: the rectangle round what's drawn becomes a picture.
     lasso(app, free: false, screenshot: true)
+    at(app, 0.5, 0.66).tap()
+    settle()
     drag(app, (0.28, 0.36), (0.80, 0.56))
     XCTAssertTrue(app.buttons["screenshot-copy"].waitForExistence(timeout: 6), "the screenshot is offered")
     calmShot("p3-screenshot")
@@ -403,7 +441,7 @@ final class SelectingTests: ShotCase {
     let grip = resizeChip(f)
     drag(app, grip, CGPoint(x: f.minX + (grip.x - f.minX) * 1.15, y: f.minY + (grip.y - f.minY) * 1.15))
     let bigger = selectionFrame(app)
-    XCTAssertGreaterThan(bigger.height, f.height * 1.06, "the text grew")
+    XCTAssertGreaterThan(bigger.width, f.width * 1.08, "the text grew")
     f = bigger
     drag(app, moveChip(f), CGPoint(x: moveChip(f).x + 30, y: moveChip(f).y + 60))
     calmShot("t2-bigger-and-moved")
@@ -432,7 +470,8 @@ final class SelectingTests: ShotCase {
     let move = app.descendants(matching: .any)["text-move"].firstMatch.frame
     drag(app, CGPoint(x: move.midX, y: move.midY), CGPoint(x: move.midX + 80, y: move.midY + 40))
     XCTAssertEqual(editor.frame.minX, wide.minX + 80, accuracy: 6, "carried by its move chip")
-    editor.tap()
+    // Between its dots (on a phone the box is small and they stand close together).
+    point(app, CGPoint(x: editor.frame.minX + editor.frame.width * 0.25, y: editor.frame.minY + 5)).tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4), "a tap on it brings the keyboard")
     calmShot("t6-typing")
     // A tap elsewhere finishes it; the box keeps its new place and size.

@@ -149,6 +149,7 @@ extension NoteCanvas.Coordinator {
   /// Whether the lasso's watcher follows this touch: one that took hold of the selection, or one
   /// that draws while the lasso is the tool (a finger that only scrolls still scrolls).
   func takes(_ t: UITouch) -> Bool {
+    if t.type == .pencil { lasso.lock.lastPencilAt = Date() }
     if textEdit.view != nil { return false }
     if claim(t) != nil { return true }
     lasso.editSince = nil

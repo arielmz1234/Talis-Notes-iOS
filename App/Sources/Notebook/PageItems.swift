@@ -154,7 +154,6 @@ extension InkStroke: Equatable {
 }
 
 extension FillPicture {
-  /// The fill as a picture item, for picking up and moving with its outline.
   var picture: PictureRow { PictureRow(row.row) ?? PictureRow(id: row.id, z: row.row.z, file: row.file, rect: row.rect) }
 
   /// The same coloured cells shown as [p] says (moved, mirrored, locked, outlining other lines).
@@ -210,7 +209,6 @@ extension NoteCanvas.Coordinator {
       lockedInk: under.lockedInk)
   }
 
-  /// The highest place in the stack in use.
   var topZ: Int64 {
     let under = pages?.pages.under ?? UnderItems()
     let all = [stored.map(\.stroke.z).max(), under.lockedInk.map(\.z).max(), under.shapes.map(\.z).max(), under.texts.map(\.z).max(), under.pictures.map(\.row.z).max(), under.fills.map(\.row.row.z).max(), shapeZ]
@@ -233,7 +231,6 @@ extension NoteCanvas.Coordinator {
     }
   }
 
-  /// Puts the page as it was in [state], saving what differs.
   func restore(_ state: PageState) {
     guard let canvas else { return }
     setInk(state.stored, drawing: state.drawing, on: canvas)
@@ -248,6 +245,7 @@ extension NoteCanvas.Coordinator {
   /// undo step (Android's `commit(Change(old, new))`).
   func commit(remove old: [PageItem], add new: [PageItem]) {
     if old.isEmpty && new.isEmpty { return }
+    endThicknessPreview()
     let before = pageState
     apply(remove: old, add: new)
     record(before)
@@ -297,7 +295,6 @@ extension NoteCanvas.Coordinator {
     if let box = new.map(\.bounds).reduce(nil, { (all: TaliCore.Rect?, r) in all?.union(r) ?? r }) { growPages(toHold: box) }
   }
 
-  /// Makes [next] the writing PencilKit shows and what's stored of it, saving what differs.
   private func setInk(_ next: [(key: StrokeKey, stroke: InkStroke)], drawing: PKDrawing, on canvas: PKCanvasView) {
     var was: [String: InkStroke] = [:]
     for (_, s) in stored { was[s.id] = s }
@@ -317,7 +314,6 @@ extension NoteCanvas.Coordinator {
     touch()
   }
 
-  /// Makes [new] the page's pictures: what changed is saved, what's gone is removed.
   func setPictures(_ new: [PictureRow]) {
     guard let pages else { return }
     let old = pages.pages.under.pictures
@@ -344,7 +340,6 @@ extension NoteCanvas.Coordinator {
     touch()
   }
 
-  /// Makes [new] the page's locked writing: what changed is saved, what's gone is removed.
   func setLockedInk(_ new: [InkStroke]) {
     guard let pages else { return }
     let old = pages.pages.under.lockedInk

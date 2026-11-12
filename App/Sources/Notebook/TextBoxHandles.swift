@@ -38,23 +38,20 @@ final class TextBoxHandle: UIView, UIGestureRecognizerDelegate {
 
   required init?(coder: NSCoder) { fatalError() }
 
-  /// Where the finger came down: the drag is measured from there, so the box stays under the
-  /// finger (a pan's own translation leaves out the first few points, before it knew it was a pan).
+  /// Where the finger came down, on the screen: the drag is measured from there, so the box stays
+  /// under the finger (a pan's own translation leaves out the first few points, and the canvas's
+  /// coordinates move if the page does). Noted as the pan is offered the touch: the scroll view
+  /// holds `touchesBegan` back from its content while it works out whether the page is being scrolled.
   private var down: CGPoint?
 
-  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-    down = touches.first?.location(in: superview)
-    super.touchesBegan(touches, with: event)
+  func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    down = touch.location(in: nil)
+    return true
   }
 
   @objc private func panned() {
-    let at = pan.location(in: superview), from = down ?? at
+    let at = pan.location(in: nil), from = down ?? at
     dragged(pan.state, CGPoint(x: at.x - from.x, y: at.y - from.y))
-  }
-
-  /// The page doesn't scroll, and nothing is written, while one of these is dragged.
-  func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
-    other.view is UIScrollView
   }
 
   override func draw(_ rect: CGRect) {
@@ -153,6 +150,7 @@ extension NoteCanvas.Coordinator {
       }
       canvas.addSubview(handle)
       canvas.drawingGestureRecognizer.require(toFail: handle.pan)
+      canvas.panGestureRecognizer.require(toFail: handle.pan)
       return handle
     }
     // Picked up, not yet typing: dragging the box carries it, a tap on it brings the keyboard.
@@ -212,8 +210,8 @@ extension NoteCanvas.Coordinator {
 
   @objc func carryTextBox(_ g: UIPanGestureRecognizer) {
     guard let canvas, !textEdit.typing, var t = textEdit.editing else { return }
-    let by = g.translation(in: canvas)
-    g.setTranslation(.zero, in: canvas)
+    let by = g.translation(in: nil)
+    g.setTranslation(.zero, in: nil)
     let z = Float(max(canvas.zoomScale, 0.01))
     t.x += Float(by.x) / z
     t.y += Float(by.y) / z

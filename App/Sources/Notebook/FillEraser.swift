@@ -117,7 +117,6 @@ extension NoteCanvas.Coordinator {
 }
 
 extension FillPicture {
-  /// Which cells of the picture drawn in [cg] are coloured.
   static func covered(_ cg: CGContext) -> [Bool]? {
     guard let data = cg.data else { return nil }
     let n = cg.width * cg.height
@@ -125,7 +124,6 @@ extension FillPicture {
     return (0..<n).map { bytes[$0 * 4 + 3] > 0 }
   }
 
-  /// Saves [image] as [file] in the app's images folder.
   static func write(_ image: CGImage, to file: String) -> Bool {
     let url = AppFiles.folders.images.appendingPathComponent(file)
     guard let out = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { return false }
