@@ -59,7 +59,9 @@ The Android app (`C:\dev\Talis-Notes`, its `CLAUDE.md` and `README.md`) is the s
 - [x] Hold-to-shape (recogniser ported with its tests; shapes stored the Android way)
 - [x] Shapes in the eraser and lasso; Shapes tool and panel (standard + civil symbols)
 - [x] Shape dots (every kind's `withHandle`, tests ported) and snapping (`Snap`, `SnapTest` ported); dots snap
-- [x] Snapping when moving/drawing shapes; resize and move chips; rotate handle (written, not yet compiled)
-- [ ] Soft selection after drawing a shape; Shapes Style tab; fill; subject packs
+- [x] Snapping when moving/drawing shapes; resize and move chips; rotate handle
+- [x] Shapes Style tab (own colour/size/opacity/line/fill, Like the pen, snap and hold switches)
+- [x] Soft selection after drawing with the Shapes tool
+- [ ] Soft selection after hold-to-shape / pen tap on a shape; fill tool; subject packs
 ### 7. iPhone layout throughout (view-only by default, Write button)
 ### 8. App Store readiness (icon done from `tools/icon-source.png`; privacy manifest, screenshots, store text)

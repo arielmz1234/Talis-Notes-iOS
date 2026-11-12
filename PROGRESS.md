@@ -411,3 +411,41 @@ toolbars.
 Old: next was to check the CI run of this push (compile errors first: `gh run view <id> --log-failed | grep error:`),
 then look at `4f2`/`4f3`/`4f4` and the chips; then soft selection after drawing a shape, the
 Shapes Style tab, line styles.
+
+## Session 5 (12 Nov 2026, ~06:00 UTC, scheduled run, owner's Windows PC)
+
+No commits from the Mac yet (origin/main was this PC's last push), so carried on here.
+
+Looked at run 43133066028's screenshots myself (the notes above were partly wrong):
+- iPhone: the lasso does pick up the drawn shape (`iphone-light-4f2`: a circle, since the Ellipse
+  tool snaps a nearly round drag into a circle, with four dots, frame and menu); dragging the right
+  dot stretches it about its middle (`4f3`, same as Android's `EllipseShape.withHandle`).
+- **Bug found:** the selection menu, placed below the selection, covered the rotate handle and both
+  chips; the test's "rotate" drag landed on the menu's Delete and the ellipse vanished (`4f4`).
+  Android leaves 48 dp under the frame for the handle when what's picked up can turn. Fixed: the
+  reported selection rect grows 48 pt at the bottom when `canRotate` (Selection.swift,
+  `reportSelection`).
+- iPad: the lasso tap straight from the Shapes tool landed on the Shapes button (panel reopened).
+  The test now picks the pen first, then the lasso (as in `4d`, which works).
+
+Done (pushed together, run 43168581847):
+- The Shapes panel's Style tab (Android's `ShapeStylePicker`): Choose | Style segmented beside
+  the title; preview (box and arrow in the style), outline colours, fill (None + colours), Its own /
+  Like the pen, size (StepSlider 0.5–12), opacity and fill opacity (10–100% in 5% steps), line
+  style (`CompactLineStylePicker`, six strokes with a gliding highlight), and the *Snap to other
+  shapes* / *Hold to perfect shapes* switches (both now honoured: `ShapeLook.snaps` empties
+  `snapTargets`, `ShapeLook.holdToShape` stops the hold timer). On a phone the two columns stack
+  and scroll. Stored as JSON with Android's field names under "shapeStyle" (`TaliCore/ShapeStyle.swift`,
+  `ShapeStyleTests`); `shapeFollowsPen`, `snapShapes`, `holdToShape` in UserDefaults.
+- The Shapes tool draws with that style: outline alpha, fill on closed shapes, dashes; the live
+  preview shows fill and dashes too. (Hold-to-shape keeps the pen's look, as on Android.)
+- Soft selection for the Shapes tool (Android's item 23): a shape just drawn stays picked up
+  (frame, dots, chips, menu); with the Shapes tool still on, a touch on its dots/chips/handle or
+  inside it edits or moves it (the watcher forwards to `lassoStep`), anywhere else starts a new
+  shape. Changing tool puts it down (`toolChanged` in `applyTool`).
+- UI test: `4e2-shape-style` (the Style tab), and the rotate drag aimed at the ellipse's middle.
+
+Not done (next):
+- Soft selection after hold-to-shape and a pen tap on a shape's outline (pen tool): needs the pen
+  to write through a soft selection (Android's `writesThrough`) while a finger moves it.
+- Fill tool; subject packs; line styles for ink.
