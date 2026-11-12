@@ -178,6 +178,58 @@ final class LibraryTests: ShotCase {
     XCTAssertFalse(app.buttons["tour-next"].exists, "Done closes the tips after the fifteenth")
   }
 
+  /// Her own paper made from the new-notebook card: the card comes back with it chosen, the notebook
+  /// is made on it, its library card shows it, and the next new notebook starts on it.
+  func testHerPapers() {
+    let app = launch()
+    settle()
+    app.buttons["add"].firstMatch.tap()
+    settle()
+    app.buttons["add-notebook"].firstMatch.tap()
+    settle()
+    if !app.descendants(matching: .any)["paper-own"].exists { app.buttons["paper-more"].firstMatch.tap() }
+    settle()
+    app.descendants(matching: .any)["paper-own"].firstMatch.tap()
+    settle()
+    let name = app.textFields["paper-name"].firstMatch
+    XCTAssert(name.waitForExistence(timeout: 3), "Your own opens the paper card")
+    for label in ["Grid", "Heavy"] {
+      let b = app.buttons[label].firstMatch
+      if b.exists { b.tap() } else { app.staticTexts[label].firstMatch.tap() }
+    }
+    if app.switches.firstMatch.exists { app.switches.firstMatch.tap() }
+    settle()
+    shot("lib-59-her-paper-heavy")
+    name.tap()
+    name.typeText("Margins")
+    settle()
+    shot("lib-60-her-paper-card")
+    app.buttons["save-paper"].firstMatch.tap()
+    settle()
+    let mine = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Margins'")).firstMatch
+    XCTAssert(mine.waitForExistence(timeout: 3), "the new-notebook card offers her paper")
+    XCTAssert(mine.isSelected, "her new paper is the one chosen")
+    shot("lib-61-new-notebook-her-paper")
+    app.buttons["create"].firstMatch.tap()
+    settle()
+    if app.buttons["write"].exists {
+      app.buttons["write"].firstMatch.tap()
+      settle()
+    }
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.4)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.45)))
+    settle()
+    app.buttons["back"].firstMatch.tap()
+    settle()
+    shot("lib-62-her-paper-card-picture")
+    app.buttons["add"].firstMatch.tap()
+    settle()
+    app.buttons["add-notebook"].firstMatch.tap()
+    settle()
+    let again = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Margins'")).firstMatch
+    XCTAssert(again.waitForExistence(timeout: 3) && again.isSelected, "the next notebook starts on her paper")
+    shot("lib-63-next-starts-on-her-paper")
+  }
+
   /// Shoots each of a steps card's [steps] a moment into its drawing, then taps through the last.
   private func walk(_ app: XCUIApplication, steps: Int, name: String) {
     for i in 1...steps {

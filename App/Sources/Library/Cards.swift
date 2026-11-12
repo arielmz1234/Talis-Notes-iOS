@@ -274,7 +274,8 @@ struct NotebookCard: View {
           // Its first page with the writing on it, from the top (Android's crop, top centre).
           Color.clear.overlay(alignment: .top) { Image(uiImage: thumb).resizable().scaledToFill() }.clipped()
         } else {
-          PaperPreview(style: notebook.paper, landscape: notebook.landscape, dark: notebook.dark, zoom: 1)
+          PaperPreview(
+            style: notebook.paper, landscape: notebook.landscape, dark: notebook.dark, zoom: 1, custom: PaperSettings.shared.custom(notebook.customPaper))
         }
         if document {
           // The folded-over corner, and what it is (PDF, picture, scan) in a small badge.

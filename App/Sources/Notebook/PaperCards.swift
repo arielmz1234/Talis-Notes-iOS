@@ -174,6 +174,7 @@ struct NewPaperCard: View {
       .background(RoundedRectangle(cornerRadius: 14).fill(c.sunken.opacity(0.7)))
       .submitLabel(.done)
       .onSubmit(save)
+      .accessibilityIdentifier("paper-name")
   }
 
   private var footnote: some View {

@@ -4,7 +4,8 @@ import TaliCore
 /// The new-notebook card, as Android's `NewNotebookDialog`: the title with a little drifting cloud,
 /// the name field, the papers, Pages beside Orientation (which fades out for an endless canvas but
 /// keeps its place), a line saying what that means, Dark paper, the cover colours, Cancel / Create.
-/// It fits a landscape tablet without scrolling; on a short screen the middle scrolls.
+/// It fits a landscape tablet without scrolling; on a short screen the middle scrolls. Her own papers
+/// are offered with the built-in ones, and Your own turns the card into the paper card until it's saved.
 struct NewNotebookCard: View {
   var onClose: () -> Void = {}
   /// In the folder being looked at, shown under the title.
@@ -12,7 +13,7 @@ struct NewNotebookCard: View {
   /// What it's called if she leaves the name empty (shown as the hint).
   var suggestedName = English.newNotebook
   var defaultCover = Covers.soft[0]
-  var onCreate: (_ title: String, _ paper: PaperStyle, _ paged: Bool, _ landscape: Bool, _ dark: Bool, _ cover: UInt32) -> Void
+  var onCreate: (_ title: String, _ paper: PaperChoice, _ paged: Bool, _ landscape: Bool, _ dark: Bool, _ cover: UInt32) -> Void
   @Environment(\.tali) private var c
   @State private var title = ""
   @AppStorage("defaultPaper") private var paperRaw = PaperStyle.GRID.rawValue
@@ -20,10 +21,22 @@ struct NewNotebookCard: View {
   @AppStorage("defaultPaged") private var paged = true
   @State private var dark = false
   @State private var cover: UInt32 = 0
+  @State private var makingPaper = false
   @FocusState private var nameFocused: Bool
 
-  private var paper: Binding<PaperStyle> {
-    Binding(get: { PaperStyle(rawValue: paperRaw) ?? .GRID }, set: { paperRaw = $0.rawValue })
+  /// The paper the last notebook started with (or was given): one of hers, else a built-in one.
+  private var paper: Binding<PaperChoice> {
+    let papers = PaperSettings.shared
+    return Binding(
+      get: { papers.custom(papers.defaultCustomPaper).map { .custom($0.id) } ?? .style(PaperStyle(rawValue: paperRaw) ?? .GRID) },
+      set: { choice in
+        switch choice {
+        case .style(let s):
+          paperRaw = s.rawValue
+          papers.defaultCustomPaper = nil
+        case .custom(let id): papers.defaultCustomPaper = id
+        }
+      })
   }
 
   private var pagesChoice: some View {
@@ -46,6 +59,21 @@ struct NewNotebookCard: View {
   }
 
   var body: some View {
+    if makingPaper {
+      NewPaperCard(
+        onSave: { p in
+          PaperSettings.shared.add(p)
+          paper.wrappedValue = .custom(p.id)
+          withAnimation(.easeOut(duration: 0.16)) { makingPaper = false }
+        }, onCancel: { withAnimation(.easeOut(duration: 0.16)) { makingPaper = false } }
+      )
+      .transition(.opacity)
+    } else {
+      notebookCard.transition(.opacity)
+    }
+  }
+
+  private var notebookCard: some View {
     VStack(alignment: .leading, spacing: 0) {
       CardBody {
         HStack(alignment: .top) {
@@ -67,7 +95,10 @@ struct NewNotebookCard: View {
         Spacer().frame(height: 14)
         SectionLabel(text: L("paper"))
         Spacer().frame(height: 4)
-        PaperPicker(style: paper, tileWidth: PhoneWriting.onPhone ? 62 : 80, perRow: 7, dark: dark || c.isDark)
+        PaperPicker(
+          choice: paper, customs: PaperSettings.shared.customPapers, tileWidth: PhoneWriting.onPhone ? 62 : 80, perRow: 7, dark: dark || c.isDark,
+          onAdd: { withAnimation(Ease.outStrong(duration: 0.24)) { makingPaper = true } },
+          onRemove: { PaperSettings.shared.remove($0.id) })
         Spacer().frame(height: 12)
         // Side by side, or one under the other on a narrow phone.
         ViewThatFits(in: .horizontal) {

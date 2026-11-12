@@ -12,6 +12,15 @@ enum PaperChoice: Hashable {
     case .custom(let id): id
     }
   }
+
+  /// The built-in style a notebook keeps; Blank under one of hers, as `NotesDb` reads such a notebook back.
+  var style: PaperStyle {
+    if case .style(let s) = self { s } else { .BLANK }
+  }
+
+  var customId: String? {
+    if case .custom(let id) = self { id } else { nil }
+  }
 }
 
 /// The papers to choose from (Android's `PaperPicker`): as many tiles as fit on one row (up to
@@ -50,13 +59,6 @@ struct PaperPicker: View {
     self.onAdd = onAdd
     self.onRemove = onRemove
     self.onEditCurrent = onEditCurrent
-  }
-
-  /// Built-in papers only (the new-notebook card).
-  init(style: Binding<PaperStyle>, tileWidth: CGFloat = 62, perRow: Int = 4, dark: Bool = false) {
-    self.init(
-      choice: Binding(get: { .style(style.wrappedValue) }, set: { if case .style(let s) = $0 { style.wrappedValue = s } }), tileWidth: tileWidth,
-      perRow: perRow, dark: dark)
   }
 
   private var fit: Int {

@@ -128,12 +128,12 @@ final class Library {
   }
 
   @discardableResult
-  func create(title: String, paper: PaperStyle, pages: Bool, landscape: Bool, dark: Bool = false, cover: UInt32) -> NotebookMeta {
+  func create(title: String, paper: PaperChoice, pages: Bool, landscape: Bool, dark: Bool = false, cover: UInt32) -> NotebookMeta {
     let folder: String? = if case .folder(let id) = shelf { id } else { nil }
     let name = Names.numbered(title.isEmpty ? English.newNotebook : title, taken: takenTitles(in: folder))
     let now = nowMillis()
     let n = NotebookMeta(
-      id: newId(), title: name, created: now, updated: now, cover: cover, paper: paper, folderId: folder, pages: pages ? 1 : nil,
+      id: newId(), title: name, created: now, updated: now, cover: cover, paper: paper.style, customPaper: paper.customId, folderId: folder, pages: pages ? 1 : nil,
       dark: dark, landscape: pages && landscape)
     try? db.insert(n)
     if shelf == .starred { starred.insert(n.id) }
@@ -298,7 +298,7 @@ final class Library {
     let titles = ["Beam deflection", "Week 3 lecture", "Truss problems", "Lab report", "Fluid mechanics", "Exam revision"]
     for (i, t) in titles.enumerated() {
       shelf = i < 2 ? .folder(uni.id) : .all
-      let n = create(title: t, paper: [.GRID, .LINES, .ENGINEERING, .DOTS][i % 4], pages: true, landscape: i == 3, cover: Covers.soft[i % Covers.soft.count])
+      let n = create(title: t, paper: .style([.GRID, .LINES, .ENGINEERING, .DOTS][i % 4]), pages: true, landscape: i == 3, cover: Covers.soft[i % Covers.soft.count])
       if i == 0 { starred.insert(n.id) }
     }
     shelf = .all
